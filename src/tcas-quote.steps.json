@@ -1,0 +1,22 @@
+[
+  {
+    "action": "wait",
+    "selector": "h1",
+    "text": "Cover details"
+  },
+  {
+    "action": "click",
+    "selector": "div.av-timeline-all-sections > ul > li[title=\"Contact details\"]"
+  },
+  {
+    "action": "click",
+    "selector": "button",
+    "text": "Get your quote"
+  },
+  {
+    "action": "waitForQuote",
+    "selector": "h2",
+    "textPattern": "^Welcome\\s+.*?,\\s*here['’‘ʼ]s\\s+your\\s+quote\\s*$",
+    "errorSelector": "div.av-card-error-summary"
+  }
+]

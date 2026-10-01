@@ -96,6 +96,13 @@ and `screenshots/ABCDEF1234567890ABCDEF1234567890-42-tcas.png`, then calls `comp
 and TCAS as after. Screenshots are overwritten on repeat runs; comparison reports
 use a new timestamped directory under `comparisons/`. A failed step stops the action.
 
+Before capturing TCAS, the action runs `src/tcas-quote.steps.json` in order:
+wait for Cover details, click Contact details, click Get your quote, then wait
+for either an error summary or the welcome quote heading. Error summaries are
+reported with their text and stop capture and comparison. The heading accepts
+any customer name and straight or curly apostrophes. Edit the JSON file to change
+the selectors or steps; failures identify the step that stopped the journey.
+
 ## Build and verify
 
 `src/main.ts` is the CLI entry point for `screenshot`, `compare`, and `quote-page`.

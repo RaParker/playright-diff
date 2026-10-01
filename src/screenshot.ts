@@ -8,6 +8,7 @@ export interface ScreenshotOptions {
   height?: number;
   wait?: number;
   timeout?: number;
+  beforeCapture?: (page: Page) => Promise<void>;
 }
 
 export async function screenshot(urlArgument: string, options: ScreenshotOptions = {}): Promise<void> {
@@ -22,6 +23,7 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
       throw new Error(`Website returned HTTP ${response.status()}.`);
     }
 
+    await options.beforeCapture?.(page);
     await scrollPage(page);
     await page.waitForTimeout(wait);
     await mkdir(dirname(output), { recursive: true });

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { compare } from './compare.js';
 import { screenshot } from './screenshot.js';
+import { tcasQuote } from './tcas-quote.js';
 
 export interface QuotePageOptions {
   mrpAndQuoteOutputDir: string;
@@ -30,7 +31,7 @@ export async function quotePage(policyArgument: string, historyId: number, optio
   const nhiPath = resolve('screenshots', `${basename}-nhi.png`);
   const tcasPath = resolve('screenshots', `${basename}-tcas.png`);
   await screenshot(nhiUrl, { output: nhiPath });
-  await screenshot(tcasUrl, { output: tcasPath });
+  await screenshot(tcasUrl, { output: tcasPath, beforeCapture: tcasQuote });
   await compare(nhiPath, tcasPath, { useOcr: options.useOcr });
 }
 

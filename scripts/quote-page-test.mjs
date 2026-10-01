@@ -9,7 +9,12 @@ const requested = [];
 const server = createServer((request, response) => {
   requested.push(request.url);
   response.setHeader('Content-Type', 'text/html');
-  response.end('<!doctype html><html><body>Quote page integration test</body></html>');
+  const quote = '<h2>Welcome Alex, here&rsquo;s your quote</h2>';
+  const journey = `<h1>Cover details</h1>
+    <div class="av-timeline-all-sections"><ul><li title="Contact details"
+      onclick="document.querySelector('button').hidden = false">Contact details</li></ul></div>
+    <button hidden onclick="document.body.innerHTML = '${quote}'">Get your quote</button>`;
+  response.end(`<!doctype html><html><body>${request.url.startsWith('/tcas/') ? journey : quote}</body></html>`);
 });
 await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
 try {
