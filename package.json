@@ -1,0 +1,31 @@
+{
+  "name": "playwright-full-page-screenshot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Capture full-page website screenshots with Playwright and TypeScript.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "compare": "tsx src/compare.ts",
+    "test:compare": "npm run build && node --test scripts/compare-test.mjs",
+    "screenshot": "tsx src/screenshot.ts",
+    "build": "tsc",
+    "test": "npm run build && node scripts/smoke-test.mjs",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/screenshot.js",
+    "install:browser": "playwright install chromium"
+  },
+  "dependencies": {
+    "diff": "^9.0.0",
+    "playwright": "^1.63.0",
+    "sharp": "^0.35.5",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
