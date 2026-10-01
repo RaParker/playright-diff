@@ -34,7 +34,7 @@ async function main() {
       help: { type: 'boolean', short: 'h' }
     }
   });
-  if (values.help) {
+  if (values.help === true) {
     console.log(help);
     return;
   }
@@ -45,7 +45,7 @@ async function main() {
   }
 
   const threshold = Number(values.threshold);
-  if (Number.isInteger(threshold) === false || threshold < 0 || threshold > 255) {
+  if (!Number.isInteger(threshold) || threshold < 0 || threshold > 255) {
     throw new Error('threshold must be an integer between 0 and 255.');
   }
 
@@ -111,7 +111,7 @@ async function main() {
           const nx = x + dx,
             ny = y + dy,
             next = ny * columns + nx;
-          if (nx >= 0 && nx < columns && ny >= 0 && ny < rows && changedTiles[next]) {
+          if (nx >= 0 && nx < columns && ny >= 0 && ny < rows && changedTiles[next] === 1) {
             changedTiles[next] = 0;
             queue.push(next);
           }
@@ -129,9 +129,12 @@ async function main() {
     });
   }
 
-  boxes.sort((a, b) => a.top - b.top || a.left - b.left);
+  boxes.sort((a, b) => (a.top === b.top ? a.left - b.left : a.top - b.top));
   // A fresh directory prevents overwriting inputs or previous reports.
-  const output = values.output ? resolve(values.output) : resolve('comparisons', `run-${Date.now()}`);
+  const output =
+    values.output !== undefined && values.output.length > 0
+      ? resolve(values.output)
+      : resolve('comparisons', `run-${Date.now()}`);
   await mkdir(dirname(output), { recursive: true });
   await mkdir(output, { recursive: false });
   await sharp(highlight, { raw: { width, height, channels: 3 } })
@@ -169,14 +172,15 @@ async function main() {
           .png()
           .toBuffer();
         await writeFile(join(output, image), crop);
-        const result = worker
-          ? await worker.recognize(
-              await sharp(crop)
-                .resize({ width: cropWidth * 2 })
-                .png()
-                .toBuffer()
-            )
-          : undefined;
+        const result =
+          worker !== undefined
+            ? await worker.recognize(
+                await sharp(crop)
+                  .resize({ width: cropWidth * 2 })
+                  .png()
+                  .toBuffer()
+              )
+            : undefined;
         readings.push({ text: result?.data.text.trim() ?? '', confidence: result?.data.confidence ?? null, image });
       }
 
@@ -185,11 +189,12 @@ async function main() {
         throw new Error('Expected before and after readings for each region.');
       }
 
-      const changes = worker
-        ? diffWordsWithSpace(old.text, current.text)
-            .filter((p) => p.added || p.removed)
-            .map((p) => ({ type: p.added ? 'added' : 'removed', text: p.value }))
-        : [];
+      const changes =
+        worker !== undefined
+          ? diffWordsWithSpace(old.text, current.text)
+              .filter((p) => p.added || p.removed)
+              .map((p) => ({ type: p.added ? 'added' : 'removed', text: p.value }))
+          : [];
       const region = {
         id: i + 1,
         bounds: box,
@@ -199,9 +204,9 @@ async function main() {
         assessment:
           worker === undefined
             ? 'OCR disabled'
-            : changes.length
+            : changes.length > 0
               ? 'Recognized text differs'
-              : old.text
+              : old.text.length > 0
                 ? 'Recognized text unchanged; visual appearance differs'
                 : 'No text recognized; inspect crops'
       };
@@ -249,10 +254,10 @@ async function main() {
       lines.push(
         `${label} (OCR confidence: ${reading.confidence ?? 'unavailable'}):`,
         '',
-        '    ' + (reading.text || '(no text)').replaceAll('\n', '\n    '),
+        '    ' + (reading.text.length > 0 ? reading.text : '(no text)').replaceAll('\n', '\n    '),
         ''
       );
-      if (reading.image) {
+      if (reading.image !== null && reading.image.length > 0) {
         lines.push(`[${label} crop](${reading.image})`, '');
       }
     }

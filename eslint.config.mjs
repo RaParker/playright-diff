@@ -47,16 +47,18 @@ export default defineConfig([
         ...globals.jasmine,
         ...globals.jest
       },
-      parser: tsParser
+      parser: tsParser,
+      parserOptions: { projectService: true, tsconfigRootDir: __dirname }
     },
     rules: {
       curly: 'error',
       '@typescript-eslint/no-non-null-assertion': 'error',
-      'no-restricted-syntax': [
+      '@typescript-eslint/strict-boolean-expressions': [
         'error',
         {
-          selector: "UnaryExpression[operator='!']",
-          message: 'Use an explicit comparison instead of negating truthiness.'
+          allowString: false,
+          allowNumber: false,
+          allowNullableObject: false
         }
       ],
       'prettier/prettier': [
