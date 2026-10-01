@@ -51,6 +51,14 @@ export default defineConfig([
     },
     rules: {
       curly: 'error',
+      '@typescript-eslint/no-non-null-assertion': 'error',
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "UnaryExpression[operator='!']",
+          message: 'Use an explicit comparison instead of negating truthiness.'
+        }
+      ],
       'prettier/prettier': [
         'error',
         {

@@ -39,19 +39,18 @@ async function main() {
     return;
   }
 
-  if (positionals.length !== 2) {
+  const [beforeArgument, afterArgument] = positionals;
+  if (positionals.length !== 2 || beforeArgument === undefined || afterArgument === undefined) {
     throw new Error(help);
   }
 
   const threshold = Number(values.threshold);
-  if (!Number.isInteger(threshold) || threshold < 0 || threshold > 255) {
+  if (Number.isInteger(threshold) === false || threshold < 0 || threshold > 255) {
     throw new Error('threshold must be an integer between 0 and 255.');
   }
 
-  const paths = positionals.map((p) => resolve(p));
-  const [before, after] = await Promise.all(paths.map((p) => load(p)));
-  const a = before!,
-    b = after!;
+  const paths = [resolve(beforeArgument), resolve(afterArgument)] as const;
+  const [a, b] = await Promise.all([load(paths[0]), load(paths[1])]);
   const width = Math.max(a.info.width, b.info.width),
     height = Math.max(a.info.height, b.info.height);
   // Bound allocations for exceptionally large screenshots.
@@ -72,10 +71,13 @@ async function main() {
       const ai = (y * a.info.width + x) * 3,
         bi = (y * b.info.width + x) * 3;
       const changed =
-        inA !== inB || (inA && inB && [0, 1, 2].some((c) => Math.abs(a.data[ai + c]! - b.data[bi + c]!) > threshold));
+        inA !== inB ||
+        (inA &&
+          inB &&
+          [0, 1, 2].some((c) => Math.abs(a.data.readUInt8(ai + c) - b.data.readUInt8(bi + c)) > threshold));
       const out = (y * width + x) * 3;
       for (let c = 0; c < 3; c++) {
-        highlight[out + c] = changed ? (c === 1 ? 0 : 255) : inB ? b.data[bi + c]! : 255;
+        highlight[out + c] = changed ? (c === 1 ? 0 : 255) : inB ? b.data.readUInt8(bi + c) : 255;
       }
 
       if (changed) {
@@ -87,7 +89,7 @@ async function main() {
 
   const boxes: { left: number; top: number; width: number; height: number }[] = [];
   for (let start = 0; start < changedTiles.length; start++) {
-    if (!changedTiles[start]) {
+    if (changedTiles[start] === 0) {
       continue;
     }
 
@@ -97,9 +99,8 @@ async function main() {
       maxX = 0,
       minY = rows,
       maxY = 0;
-    for (let i = 0; i < queue.length; i++) {
-      const cell = queue[i]!,
-        x = cell % columns,
+    for (const cell of queue) {
+      const x = cell % columns,
         y = Math.floor(cell / columns);
       minX = Math.min(minX, x);
       maxX = Math.max(maxX, x);
@@ -140,7 +141,7 @@ async function main() {
   let worker: Awaited<ReturnType<typeof createWorker>> | undefined;
   const regions = [];
   try {
-    if (boxes.length && !values['no-ocr']) {
+    if (boxes.length > 0 && values['no-ocr'] !== true) {
       await mkdir(cachePath, { recursive: true });
       console.log('Loading local OCR (first use downloads language data)…');
       worker = await createWorker(values.language, undefined, { cachePath });
@@ -179,28 +180,33 @@ async function main() {
         readings.push({ text: result?.data.text.trim() ?? '', confidence: result?.data.confidence ?? null, image });
       }
 
-      const old = readings[0]!,
-        current = readings[1]!;
+      const [old, current] = readings;
+      if (old === undefined || current === undefined) {
+        throw new Error('Expected before and after readings for each region.');
+      }
+
       const changes = worker
         ? diffWordsWithSpace(old.text, current.text)
             .filter((p) => p.added || p.removed)
             .map((p) => ({ type: p.added ? 'added' : 'removed', text: p.value }))
         : [];
-      regions.push({
+      const region = {
         id: i + 1,
         bounds: box,
         before: old,
         after: current,
         textChanges: changes,
-        assessment: !worker
-          ? 'OCR disabled'
-          : changes.length
-            ? 'Recognized text differs'
-            : old.text
-              ? 'Recognized text unchanged; visual appearance differs'
-              : 'No text recognized; inspect crops'
-      });
-      console.log(`Region ${i + 1}: ${regions.at(-1)!.assessment}`);
+        assessment:
+          worker === undefined
+            ? 'OCR disabled'
+            : changes.length
+              ? 'Recognized text differs'
+              : old.text
+                ? 'Recognized text unchanged; visual appearance differs'
+                : 'No text recognized; inspect crops'
+      };
+      regions.push(region);
+      console.log(`Region ${i + 1}: ${region.assessment}`);
       for (const change of changes) {
         console.log(`  ${change.type}: ${JSON.stringify(change.text)}`);
       }
@@ -216,7 +222,7 @@ async function main() {
     threshold,
     changedPixels,
     changedPercent: (changedPixels / (width * height)) * 100,
-    ocrEnabled: !values['no-ocr'],
+    ocrEnabled: values['no-ocr'] !== true,
     language: values.language,
     regions
   };

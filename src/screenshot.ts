@@ -16,7 +16,7 @@ Options:
 
 function integer(value: string, name: string, minimum: number): number {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number < minimum) {
+  if (Number.isSafeInteger(number) === false || number < minimum) {
     throw new Error(`${name} must be an integer of at least ${minimum}.`);
   }
 
@@ -40,12 +40,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (positionals.length !== 1) {
+  const [urlArgument] = positionals;
+  if (positionals.length !== 1 || urlArgument === undefined) {
     throw new Error(help);
   }
 
-  const url = new URL(positionals[0]!);
-  if (!['http:', 'https:'].includes(url.protocol)) {
+  const url = new URL(urlArgument);
+  if (['http:', 'https:'].includes(url.protocol) === false) {
     throw new Error('URL must use http:// or https://.');
   }
 
@@ -55,7 +56,7 @@ async function main(): Promise<void> {
   const timeout = integer(values.timeout, 'timeout', 1);
   const output = resolve(values.output);
   const extension = extname(output).toLowerCase();
-  if (!['.png', '.jpg', '.jpeg'].includes(extension)) {
+  if (['.png', '.jpg', '.jpeg'].includes(extension) === false) {
     throw new Error('Output must have a .png, .jpg, or .jpeg extension.');
   }
 
@@ -65,7 +66,7 @@ async function main(): Promise<void> {
     page.setDefaultTimeout(timeout);
     page.setDefaultNavigationTimeout(timeout);
     const response = await page.goto(url.href, { waitUntil: 'load' });
-    if (response && !response.ok()) {
+    if (response !== null && response.ok() === false) {
       throw new Error(`Website returned HTTP ${response.status()}.`);
     }
 
@@ -83,7 +84,7 @@ async function main(): Promise<void> {
       }
     }
 
-    if (!reachedBottom) {
+    if (reachedBottom === false) {
       console.warn('Scroll limit reached; capturing currently loaded content.');
     }
 
