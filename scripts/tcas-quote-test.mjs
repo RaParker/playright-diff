@@ -20,6 +20,36 @@ function journey(outcome) {
 }
 
 const cases = [
+  ...[
+    ['2026-10-02', 'Friday, October 2nd, 2026', false, undefined],
+    ['2026-11-11', 'Choose Wednesday, November 11th, 2026', false, undefined],
+    ['2026-10-02', 'Friday, October 2nd, 2026', true, /step 2.*The cover start field/],
+    ['2026-02-30', 'Monday, March 2nd, 2026', false, /Invalid cover start date/]
+  ].map(([date, label, keepError, expectedError]) => [
+    `cover start recovery: ${date}, persistent error ${keepError}`,
+    `${cover}${contact}<svg class="av-icon-calendar" width="24" height="24"><rect width="24" height="24" /></svg>
+    <div hidden aria-label="${label}">Select date</div>
+    <div aria-label="October 02, 2026">Wrong date format</div>
+    <div aria-label="October 2nd, 2025">Wrong year</div><button hidden>Get your quote</button>
+    <script>
+      let selected = false;
+      let attempts = 0;
+      document.querySelector('li').onclick = () => {
+        attempts++;
+        if (attempts > 2) throw new Error('Too many retries');
+        if (selected && !${keepError}) {
+          document.querySelector('.av-card-error-summary')?.remove();
+          document.querySelector('button').hidden = false;
+        } else if (!document.querySelector('.av-card-error-summary')) {
+          document.body.insertAdjacentHTML('beforeend', '<div class="av-card-error-summary"><ul><li><a>The cover start field needs to be between ${date} and 2027-01-01</a></li></ul></div>');
+        }
+      };
+      document.querySelector('svg').onclick = () => { document.querySelector('[aria-label]').hidden = false; };
+      document.querySelector('[aria-label]').onclick = () => { selected = true; };
+      document.querySelector('button').onclick = () => { document.body.innerHTML = "<h2>Welcome Alex, here's your quote</h2>"; };
+    </script>`,
+    expectedError
+  ]),
   ['straight apostrophe', journey("<h2>Welcome Alex, here's your quote</h2>"), undefined],
   ['curly apostrophe', journey('<h2>Welcome Sam Smith, here&rsquo;s your quote</h2>'), undefined],
   ['missing cover heading', contact + '<button>Get your quote</button>', /step 1/],

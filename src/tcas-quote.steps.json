@@ -6,7 +6,8 @@
   },
   {
     "action": "click",
-    "selector": "div.av-timeline-all-sections > ul > li[title=\"Contact details\"]"
+    "selector": "div.av-timeline-all-sections > ul > li[title=\"Contact details\"]",
+    "recoverCoverStart": true
   },
   {
     "action": "click",

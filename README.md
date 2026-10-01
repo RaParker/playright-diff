@@ -107,6 +107,10 @@ After each click, the action checks for `div.av-card-error-summary`; if present,
 it reports each `.av-card-error-summary > ul > li > a` link's text on a separate
 line and stops before running the next step. Summaries without links fall back
 to their full text.
+If the Contact details click reports "The cover start field needs to be between
+YYYY-MM-DD ...", the action opens `svg.av-icon-calendar`, selects the calendar
+`div` whose aria-label ends with that date (such as `October 2nd, 2026`), and
+retries Contact details once. Remaining errors stop the journey as usual.
 
 If navigation or a Playwright step fails after the page is created, the action captures
 the current page beside the intended output with a `-failed.png` suffix (for example,
