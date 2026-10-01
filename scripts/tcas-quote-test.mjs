@@ -29,6 +29,7 @@ const cases = [
     `cover start recovery: ${date}, persistent error ${keepError}`,
     `${cover}${contact}<svg class="av-icon-calendar" width="24" height="24"><rect width="24" height="24" /></svg>
     <div hidden aria-label="${label}">Select date</div>
+    <div class="react-datepicker__day react-datepicker__day--outside-month" aria-label="${label}">Outside month</div>
     <div aria-label="October 02, 2026">Wrong date format</div>
     <div aria-label="October 2nd, 2025">Wrong year</div><button hidden>Get your quote</button>
     <script>

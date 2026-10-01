@@ -113,5 +113,5 @@ async function selectCoverStart(page: Page, dateText: string): Promise<void> {
   const month = date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
   const label = `${month} ${day}${suffix}, ${date.getUTCFullYear()}`;
   await page.locator('svg.av-icon-calendar').click();
-  await page.locator(`div[aria-label$="${label}"]`).click();
+  await page.locator(`div[aria-label$="${label}"]:not(.react-datepicker__day--outside-month)`).click();
 }
