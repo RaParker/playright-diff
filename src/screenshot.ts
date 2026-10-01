@@ -19,6 +19,7 @@ function integer(value: string, name: string, minimum: number): number {
   if (!Number.isSafeInteger(number) || number < minimum) {
     throw new Error(`${name} must be an integer of at least ${minimum}.`);
   }
+
   return number;
 }
 
@@ -38,11 +39,16 @@ async function main(): Promise<void> {
     console.log(help);
     return;
   }
-  if (positionals.length !== 1) throw new Error(help);
+
+  if (positionals.length !== 1) {
+    throw new Error(help);
+  }
+
   const url = new URL(positionals[0]!);
   if (!['http:', 'https:'].includes(url.protocol)) {
     throw new Error('URL must use http:// or https://.');
   }
+
   const width = integer(values.width, 'width', 1);
   const height = integer(values.height, 'height', 1);
   const wait = integer(values.wait, 'wait', 0);
@@ -72,9 +78,15 @@ async function main(): Promise<void> {
       reachedBottom = await page.evaluate(
         () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1
       );
-      if (reachedBottom) break;
+      if (reachedBottom) {
+        break;
+      }
     }
-    if (!reachedBottom) console.warn('Scroll limit reached; capturing currently loaded content.');
+
+    if (!reachedBottom) {
+      console.warn('Scroll limit reached; capturing currently loaded content.');
+    }
+
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(wait);
     await mkdir(dirname(output), { recursive: true });

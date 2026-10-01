@@ -17,6 +17,7 @@ const compat = new FlatCompat({
 });
 
 export default defineConfig([
+  { ignores: ['dist/**', 'screenshots/**', 'comparisons/**'] },
   {
     extends: compat.extends('eslint:recommended', 'plugin:prettier/recommended'),
     plugins: { prettier },

@@ -67,3 +67,8 @@ npm test
 npm run build
 npm start -- https://example.com --output screenshots/example.png
 ```
+
+Run `npx eslint` (or `npm run lint`) from the project root. Generated output is ignored.
+
+Builds and type checks use TypeScript 7 through the `typescript-compiler` package alias.
+TypeScript 6 remains installed as `typescript` for ESLint's parser, which does not yet support the TypeScript 7 compiler API.

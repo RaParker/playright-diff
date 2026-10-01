@@ -8,12 +8,13 @@
     "node": ">=22"
   },
   "scripts": {
+    "lint": "eslint",
     "compare": "tsx src/compare.ts",
     "test:compare": "npm run build && node --test scripts/compare-test.mjs",
     "screenshot": "tsx src/screenshot.ts",
-    "build": "tsc",
+    "build": "node node_modules/typescript-compiler/bin/tsc",
     "test": "npm run build && node scripts/smoke-test.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node node_modules/typescript-compiler/bin/tsc --noEmit",
     "start": "node dist/screenshot.js",
     "install:browser": "playwright install chromium"
   },
@@ -27,12 +28,15 @@
     "@eslint/eslintrc": "^3.3.7",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.3",
+    "@typescript-eslint/eslint-plugin": "^8.71.0",
+    "@typescript-eslint/parser": "^8.71.0",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.6",
     "globals": "^17.13.0",
     "prettier": "^3.9.9",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "~6.0.0",
+    "typescript-compiler": "npm:typescript@^7.0.2"
   }
 }

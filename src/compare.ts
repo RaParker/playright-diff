@@ -38,10 +38,16 @@ async function main() {
     console.log(help);
     return;
   }
-  if (positionals.length !== 2) throw new Error(help);
+
+  if (positionals.length !== 2) {
+    throw new Error(help);
+  }
+
   const threshold = Number(values.threshold);
-  if (!Number.isInteger(threshold) || threshold < 0 || threshold > 255)
+  if (!Number.isInteger(threshold) || threshold < 0 || threshold > 255) {
     throw new Error('threshold must be an integer between 0 and 255.');
+  }
+
   const paths = positionals.map((p) => resolve(p));
   const [before, after] = await Promise.all(paths.map((p) => load(p)));
   const a = before!,
@@ -49,14 +55,17 @@ async function main() {
   const width = Math.max(a.info.width, b.info.width),
     height = Math.max(a.info.height, b.info.height);
   // Bound allocations for exceptionally large screenshots.
-  if (width * height > 40_000_000) throw new Error('Combined image canvas exceeds 40 million pixels.');
+  if (width * height > 40_000_000) {
+    throw new Error('Combined image canvas exceeds 40 million pixels.');
+  }
+
   const tile = 32,
     columns = Math.ceil(width / tile),
     rows = Math.ceil(height / tile);
   const changedTiles = new Uint8Array(columns * rows);
   const highlight = Buffer.alloc(width * height * 3, 255);
   let changedPixels = 0;
-  for (let y = 0; y < height; y++)
+  for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const inA = x < a.info.width && y < a.info.height,
         inB = x < b.info.width && y < b.info.height;
@@ -65,15 +74,23 @@ async function main() {
       const changed =
         inA !== inB || (inA && inB && [0, 1, 2].some((c) => Math.abs(a.data[ai + c]! - b.data[bi + c]!) > threshold));
       const out = (y * width + x) * 3;
-      for (let c = 0; c < 3; c++) highlight[out + c] = changed ? (c === 1 ? 0 : 255) : inB ? b.data[bi + c]! : 255;
+      for (let c = 0; c < 3; c++) {
+        highlight[out + c] = changed ? (c === 1 ? 0 : 255) : inB ? b.data[bi + c]! : 255;
+      }
+
       if (changed) {
         changedPixels++;
         changedTiles[Math.floor(y / tile) * columns + Math.floor(x / tile)] = 1;
       }
     }
+  }
+
   const boxes: { left: number; top: number; width: number; height: number }[] = [];
   for (let start = 0; start < changedTiles.length; start++) {
-    if (!changedTiles[start]) continue;
+    if (!changedTiles[start]) {
+      continue;
+    }
+
     const queue = [start];
     changedTiles[start] = 0;
     let minX = columns,
@@ -88,7 +105,7 @@ async function main() {
       maxX = Math.max(maxX, x);
       minY = Math.min(minY, y);
       maxY = Math.max(maxY, y);
-      for (let dy = -1; dy <= 1; dy++)
+      for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           const nx = x + dx,
             ny = y + dy,
@@ -98,7 +115,9 @@ async function main() {
             queue.push(next);
           }
         }
+      }
     }
+
     const left = Math.max(0, minX * tile - 40),
       top = Math.max(0, minY * tile - 40);
     boxes.push({
@@ -108,6 +127,7 @@ async function main() {
       height: Math.min(height, (maxY + 1) * tile + 40) - top
     });
   }
+
   boxes.sort((a, b) => a.top - b.top || a.left - b.left);
   // A fresh directory prevents overwriting inputs or previous reports.
   const output = values.output ? resolve(values.output) : resolve('comparisons', `run-${Date.now()}`);
@@ -126,6 +146,7 @@ async function main() {
       worker = await createWorker(values.language, undefined, { cachePath });
       await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
     }
+
     for (const [i, box] of boxes.entries()) {
       const readings = [];
       for (const [label, source] of [
@@ -138,6 +159,7 @@ async function main() {
           readings.push({ text: '', confidence: null, image: null });
           continue;
         }
+
         const image = `region-${i + 1}-${label}.png`;
         const crop = await sharp(source.data, {
           raw: { width: source.info.width, height: source.info.height, channels: 3 }
@@ -156,6 +178,7 @@ async function main() {
           : undefined;
         readings.push({ text: result?.data.text.trim() ?? '', confidence: result?.data.confidence ?? null, image });
       }
+
       const old = readings[0]!,
         current = readings[1]!;
       const changes = worker
@@ -178,11 +201,14 @@ async function main() {
               : 'No text recognized; inspect crops'
       });
       console.log(`Region ${i + 1}: ${regions.at(-1)!.assessment}`);
-      for (const change of changes) console.log(`  ${change.type}: ${JSON.stringify(change.text)}`);
+      for (const change of changes) {
+        console.log(`  ${change.type}: ${JSON.stringify(change.text)}`);
+      }
     }
   } finally {
     await worker?.terminate();
   }
+
   const report = {
     before: paths[0],
     after: paths[1],
@@ -220,10 +246,16 @@ async function main() {
         '    ' + (reading.text || '(no text)').replaceAll('\n', '\n    '),
         ''
       );
-      if (reading.image) lines.push(`[${label} crop](${reading.image})`, '');
+      if (reading.image) {
+        lines.push(`[${label} crop](${reading.image})`, '');
+      }
     }
-    for (const change of region.textChanges) lines.push(`${change.type}: ${JSON.stringify(change.text)}`, '');
+
+    for (const change of region.textChanges) {
+      lines.push(`${change.type}: ${JSON.stringify(change.text)}`, '');
+    }
   }
+
   await writeFile(join(output, 'report.md'), lines.join('\n'));
   console.log(
     `${changedPixels} changed pixels (${report.changedPercent.toFixed(2)}%). Report: ${join(output, 'report.md')}`
