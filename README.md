@@ -106,7 +106,7 @@ import { screenshot } from './src/screenshot.js';
 import { compare } from './src/compare.js';
 
 await screenshot('https://example.com', { output: 'screenshots/example.png', width: 390 });
-await compare('screenshots/before.png', 'screenshots/example.png', { noOcr: true });
+await compare('screenshots/before.png', 'screenshots/example.png', { useOcr: false });
 ```
 
 `quotePage(policyDetailsId, historyId, options)` accepts the MRP directory and both

@@ -8,7 +8,45 @@ export interface CompareOptions {
   output?: string;
   threshold?: number;
   language?: string;
-  noOcr?: boolean;
+  useOcr?: boolean;
+}
+
+export async function compare(
+  beforeArgument: string,
+  afterArgument: string,
+  options: CompareOptions = {}
+): Promise<void> {
+  const threshold = options.threshold ?? 20;
+  const language = options.language ?? 'eng';
+  const useOcr = options.useOcr ?? true;
+  if (!Number.isInteger(threshold) || threshold < 0 || threshold > 255) {
+    throw new Error('threshold must be an integer between 0 and 255.');
+  }
+
+  const paths = [resolve(beforeArgument), resolve(afterArgument)] as const;
+  const [a, b] = await Promise.all([load(paths[0]), load(paths[1])]);
+  const { width, height, highlight, changedPixels, boxes } = detectChanges(a, b, threshold);
+  const output = await createOutputDirectory(options.output);
+  await sharp(highlight, { raw: { width, height, channels: 3 } })
+    .png()
+    .toFile(join(output, 'diff.png'));
+  const regions = await processRegions(a, b, boxes, output, language, useOcr);
+
+  const report = {
+    before: paths[0],
+    after: paths[1],
+    dimensions: { before: a.info, after: b.info },
+    threshold,
+    changedPixels,
+    changedPercent: (changedPixels / (width * height)) * 100,
+    ocrEnabled: useOcr,
+    language: language,
+    regions
+  };
+  await writeReport(output, report);
+  console.log(
+    `${changedPixels} changed pixels (${report.changedPercent.toFixed(2)}%). Report: ${join(output, 'report.md')}`
+  );
 }
 
 async function load(path: string) {
@@ -21,19 +59,16 @@ async function load(path: string) {
     .toBuffer({ resolveWithObject: true });
 }
 
-export async function compare(
-  beforeArgument: string,
-  afterArgument: string,
-  options: CompareOptions = {}
-): Promise<void> {
-  const threshold = options.threshold ?? 20;
-  const language = options.language ?? 'eng';
-  if (!Number.isInteger(threshold) || threshold < 0 || threshold > 255) {
-    throw new Error('threshold must be an integer between 0 and 255.');
-  }
+type LoadedImage = Awaited<ReturnType<typeof load>>;
+type OcrWorker = Awaited<ReturnType<typeof createWorker>>;
+interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
 
-  const paths = [resolve(beforeArgument), resolve(afterArgument)] as const;
-  const [a, b] = await Promise.all([load(paths[0]), load(paths[1])]);
+function detectChanges(a: LoadedImage, b: LoadedImage, threshold: number) {
   const width = Math.max(a.info.width, b.info.width),
     height = Math.max(a.info.height, b.info.height);
   // Bound allocations for exceptionally large screenshots.
@@ -70,7 +105,24 @@ export async function compare(
     }
   }
 
-  const boxes: { left: number; top: number; width: number; height: number }[] = [];
+  return {
+    width,
+    height,
+    highlight,
+    changedPixels,
+    boxes: groupChangedTiles(changedTiles, columns, rows, tile, width, height)
+  };
+}
+
+function groupChangedTiles(
+  changedTiles: Uint8Array,
+  columns: number,
+  rows: number,
+  tile: number,
+  width: number,
+  height: number
+): Box[] {
+  const boxes: Box[] = [];
   for (let start = 0; start < changedTiles.length; start++) {
     if (changedTiles[start] === 0) {
       continue;
@@ -113,21 +165,73 @@ export async function compare(
   }
 
   boxes.sort((a, b) => (a.top === b.top ? a.left - b.left : a.top - b.top));
+  return boxes;
+}
+
+async function createOutputDirectory(outputArgument?: string) {
   // A fresh directory prevents overwriting inputs or previous reports.
   const output =
-    options.output !== undefined && options.output.length > 0
-      ? resolve(options.output)
+    outputArgument !== undefined && outputArgument.length > 0
+      ? resolve(outputArgument)
       : resolve('comparisons', `run-${Date.now()}`);
   await mkdir(dirname(output), { recursive: true });
   await mkdir(output, { recursive: false });
-  await sharp(highlight, { raw: { width, height, channels: 3 } })
+  return output;
+}
+
+async function readRegion(source: LoadedImage, box: Box, image: string, output: string, worker?: OcrWorker) {
+  const cropWidth = Math.min(box.width, source.info.width - box.left);
+  const cropHeight = Math.min(box.height, source.info.height - box.top);
+  if (cropWidth <= 0 || cropHeight <= 0) {
+    return { text: '', confidence: null, image: null };
+  }
+
+  const crop = await sharp(source.data, {
+    raw: { width: source.info.width, height: source.info.height, channels: 3 }
+  })
+    .extract({ ...box, width: cropWidth, height: cropHeight })
     .png()
-    .toFile(join(output, 'diff.png'));
+    .toBuffer();
+  await writeFile(join(output, image), crop);
+  const result =
+    worker !== undefined
+      ? await worker.recognize(
+          await sharp(crop)
+            .resize({ width: cropWidth * 2 })
+            .png()
+            .toBuffer()
+        )
+      : undefined;
+  return { text: result?.data.text.trim() ?? '', confidence: result?.data.confidence ?? null, image };
+}
+
+function assessRegion(useOcr: boolean, hasChanges: boolean, text: string) {
+  if (useOcr) {
+    if (hasChanges) {
+      return 'Recognized text differs';
+    }
+
+    return text.length > 0
+      ? 'Recognized text unchanged; visual appearance differs'
+      : 'No text recognized; inspect crops';
+  }
+
+  return 'OCR disabled';
+}
+
+async function processRegions(
+  a: LoadedImage,
+  b: LoadedImage,
+  boxes: Box[],
+  output: string,
+  language: string,
+  useOcr: boolean
+) {
   const cachePath = resolve('comparisons', '.ocr-cache');
-  let worker: Awaited<ReturnType<typeof createWorker>> | undefined;
+  let worker: OcrWorker | undefined;
   const regions = [];
   try {
-    if (boxes.length > 0 && options.noOcr !== true) {
+    if (boxes.length > 0 && useOcr) {
       await mkdir(cachePath, { recursive: true });
       console.log('Loading local OCR (first use downloads language data)…');
       worker = await createWorker(language, undefined, { cachePath });
@@ -135,42 +239,8 @@ export async function compare(
     }
 
     for (const [i, box] of boxes.entries()) {
-      const readings = [];
-      for (const [label, source] of [
-        ['before', a],
-        ['after', b]
-      ] as const) {
-        const cropWidth = Math.min(box.width, source.info.width - box.left);
-        const cropHeight = Math.min(box.height, source.info.height - box.top);
-        if (cropWidth <= 0 || cropHeight <= 0) {
-          readings.push({ text: '', confidence: null, image: null });
-          continue;
-        }
-
-        const image = `region-${i + 1}-${label}.png`;
-        const crop = await sharp(source.data, {
-          raw: { width: source.info.width, height: source.info.height, channels: 3 }
-        })
-          .extract({ ...box, width: cropWidth, height: cropHeight })
-          .png()
-          .toBuffer();
-        await writeFile(join(output, image), crop);
-        const result =
-          worker !== undefined
-            ? await worker.recognize(
-                await sharp(crop)
-                  .resize({ width: cropWidth * 2 })
-                  .png()
-                  .toBuffer()
-              )
-            : undefined;
-        readings.push({ text: result?.data.text.trim() ?? '', confidence: result?.data.confidence ?? null, image });
-      }
-
-      const [old, current] = readings;
-      if (old === undefined || current === undefined) {
-        throw new Error('Expected before and after readings for each region.');
-      }
+      const old = await readRegion(a, box, `region-${i + 1}-before.png`, output, worker);
+      const current = await readRegion(b, box, `region-${i + 1}-after.png`, output, worker);
 
       const changes =
         worker !== undefined
@@ -184,14 +254,7 @@ export async function compare(
         before: old,
         after: current,
         textChanges: changes,
-        assessment:
-          worker === undefined
-            ? 'OCR disabled'
-            : changes.length > 0
-              ? 'Recognized text differs'
-              : old.text.length > 0
-                ? 'Recognized text unchanged; visual appearance differs'
-                : 'No text recognized; inspect crops'
+        assessment: assessRegion(worker !== undefined, changes.length > 0, old.text)
       };
       regions.push(region);
       console.log(`Region ${i + 1}: ${region.assessment}`);
@@ -203,25 +266,31 @@ export async function compare(
     await worker?.terminate();
   }
 
-  const report = {
-    before: paths[0],
-    after: paths[1],
-    dimensions: { before: a.info, after: b.info },
-    threshold,
-    changedPixels,
-    changedPercent: (changedPixels / (width * height)) * 100,
-    ocrEnabled: options.noOcr !== true,
-    language: language,
-    regions
-  };
+  return regions;
+}
+
+type Report = {
+  before: string;
+  after: string;
+  changedPixels: number;
+  changedPercent: number;
+  regions: Awaited<ReturnType<typeof processRegions>>;
+};
+
+async function writeReport(output: string, report: Report) {
   await writeFile(join(output, 'report.json'), JSON.stringify(report, null, 2));
+  await writeFile(join(output, 'report.md'), formatReport(report));
+}
+
+function formatReport(report: Report) {
+  const { changedPixels, regions } = report;
   const lines = [
     `# Image comparison`,
     '',
     `${changedPixels} changed pixels (${report.changedPercent.toFixed(2)}%). ${regions.length} regions.`,
     '',
-    `Before: ${paths[0]}`,
-    `After: ${paths[1]}`,
+    `Before: ${report.before}`,
+    `After: ${report.after}`,
     '',
     '[Highlighted differences](diff.png)',
     '',
@@ -250,8 +319,5 @@ export async function compare(
     }
   }
 
-  await writeFile(join(output, 'report.md'), lines.join('\n'));
-  console.log(
-    `${changedPixels} changed pixels (${report.changedPercent.toFixed(2)}%). Report: ${join(output, 'report.md')}`
-  );
+  return lines.join('\n');
 }

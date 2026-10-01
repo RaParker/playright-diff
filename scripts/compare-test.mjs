@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import sharp from 'sharp';
+import { compare } from '../dist/compare.js';
 
 async function run(args) {
   const child = spawn(process.execPath, [resolve('dist/main.js'), 'compare', ...args]);
@@ -59,6 +60,15 @@ test('comparison detects pixel, dimension, and OCR changes', { timeout: 180000 }
     report = JSON.parse(await readFile(join(dimensions, 'report.json'), 'utf8'));
     assert.equal(report.changedPixels, 700 * 50);
     assert.equal(report.ocrEnabled, false);
+
+    const directOutput = join(dir, 'direct-dimensions');
+    await compare(before, taller, { useOcr: false, output: directOutput });
+    const directReport = JSON.parse(await readFile(join(directOutput, 'report.json'), 'utf8'));
+    assert.deepEqual(directReport, report);
+    assert.equal(
+      await readFile(join(directOutput, 'report.md'), 'utf8'),
+      await readFile(join(dimensions, 'report.md'), 'utf8')
+    );
 
     result = await run([before, after, '--output', same]);
     assert.notEqual(result.code, 0, 'Must refuse an existing output directory');

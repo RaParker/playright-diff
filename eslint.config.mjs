@@ -65,7 +65,7 @@ export default defineConfig([
         'error',
         {
           singleQuote: true,
-          endOfLine: 'auto'
+          endOfLine: 'lf'
         }
       ],
       'padding-line-between-statements': [

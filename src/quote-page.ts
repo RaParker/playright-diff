@@ -7,7 +7,45 @@ export interface QuotePageOptions {
   mrpAndQuoteOutputDir: string;
   nhiQuotePageUrlTemplate: string;
   tcasQuotePageUrlTemplate: string;
-  noOcr?: boolean;
+  useOcr?: boolean;
+}
+
+export async function quotePage(policyArgument: string, historyId: number, options: QuotePageOptions): Promise<void> {
+  if (!/^[0-9a-f]{32}$/i.test(policyArgument)) {
+    throw new Error('policyDetailsId must be a UUID with dashes removed (32 hexadecimal characters).');
+  }
+
+  const policyDetailsId = policyArgument.toUpperCase();
+  if (!Number.isSafeInteger(historyId) || historyId < 0) {
+    throw new Error('historyId must be a non-negative safe integer.');
+  }
+
+  const basename = `${policyDetailsId}-${historyId}`;
+  const artemisQuotGuid = await readQuoteGuid(resolve(options.mrpAndQuoteOutputDir, `${basename}-mrp.json`));
+  const nhiUrl = templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuotGuid });
+  const tcasUrl = templateUrl(options.tcasQuotePageUrlTemplate, {
+    policyDetailsId,
+    historyId: String(historyId)
+  });
+  const nhiPath = resolve('screenshots', `${basename}-nhi.png`);
+  const tcasPath = resolve('screenshots', `${basename}-tcas.png`);
+  await screenshot(nhiUrl, { output: nhiPath });
+  await screenshot(tcasUrl, { output: tcasPath });
+  await compare(nhiPath, tcasPath, { useOcr: options.useOcr });
+}
+
+async function readQuoteGuid(mrpPath: string): Promise<string> {
+  const mrp: unknown = JSON.parse(await readFile(mrpPath, 'utf8'));
+  if (mrp === null || typeof mrp !== 'object' || !('//artemisQuotGuid' in mrp)) {
+    throw new Error(`MRP file must contain the "//artemisQuotGuid" property: ${mrpPath}`);
+  }
+
+  const artemisQuotGuid = mrp['//artemisQuotGuid'];
+  if (typeof artemisQuotGuid !== 'string' || artemisQuotGuid.trim().length === 0) {
+    throw new Error('MRP "//artemisQuotGuid" must be a non-empty string.');
+  }
+
+  return artemisQuotGuid;
 }
 
 function templateUrl(template: string, replacements: Record<string, string>): string {
@@ -26,38 +64,4 @@ function templateUrl(template: string, replacements: Record<string, string>): st
   }
 
   return url.href;
-}
-
-export async function quotePage(policyArgument: string, historyId: number, options: QuotePageOptions): Promise<void> {
-  if (!/^[0-9a-f]{32}$/i.test(policyArgument)) {
-    throw new Error('policyDetailsId must be a UUID with dashes removed (32 hexadecimal characters).');
-  }
-
-  const policyDetailsId = policyArgument.toUpperCase();
-  if (!Number.isSafeInteger(historyId) || historyId < 0) {
-    throw new Error('historyId must be a non-negative safe integer.');
-  }
-
-  const basename = `${policyDetailsId}-${historyId}`;
-  const mrpPath = resolve(options.mrpAndQuoteOutputDir, `${basename}-mrp.json`);
-  const mrp: unknown = JSON.parse(await readFile(mrpPath, 'utf8'));
-  if (mrp === null || typeof mrp !== 'object' || !('//artemisQuotGuid' in mrp)) {
-    throw new Error(`MRP file must contain the "//artemisQuotGuid" property: ${mrpPath}`);
-  }
-
-  const artemisQuotGuid = mrp['//artemisQuotGuid'];
-  if (typeof artemisQuotGuid !== 'string' || artemisQuotGuid.trim().length === 0) {
-    throw new Error('MRP "//artemisQuotGuid" must be a non-empty string.');
-  }
-
-  const nhiUrl = templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuotGuid });
-  const tcasUrl = templateUrl(options.tcasQuotePageUrlTemplate, {
-    policyDetailsId,
-    historyId: String(historyId)
-  });
-  const nhiPath = resolve('screenshots', `${basename}-nhi.png`);
-  const tcasPath = resolve('screenshots', `${basename}-tcas.png`);
-  await screenshot(nhiUrl, { output: nhiPath });
-  await screenshot(tcasUrl, { output: tcasPath });
-  await compare(nhiPath, tcasPath, { noOcr: options.noOcr });
 }

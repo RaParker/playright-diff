@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
-import { chromium } from 'playwright';
+import { chromium, type Page } from 'playwright';
 
 export interface ScreenshotOptions {
   output?: string;
@@ -10,15 +10,34 @@ export interface ScreenshotOptions {
   timeout?: number;
 }
 
-function integer(value: number, name: string, minimum: number): number {
-  if (!Number.isSafeInteger(value) || value < minimum) {
-    throw new Error(`${name} must be an integer of at least ${minimum}.`);
-  }
+export async function screenshot(urlArgument: string, options: ScreenshotOptions = {}): Promise<void> {
+  const { url, width, height, wait, timeout, output, extension } = validateOptions(urlArgument, options);
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+    page.setDefaultTimeout(timeout);
+    page.setDefaultNavigationTimeout(timeout);
+    const response = await page.goto(url.href, { waitUntil: 'load' });
+    if (response !== null && !response.ok()) {
+      throw new Error(`Website returned HTTP ${response.status()}.`);
+    }
 
-  return value;
+    await scrollPage(page);
+    await page.waitForTimeout(wait);
+    await mkdir(dirname(output), { recursive: true });
+    await page.screenshot({
+      path: output,
+      type: extension === '.png' ? 'png' : 'jpeg',
+      fullPage: true,
+      animations: 'disabled'
+    });
+    console.log(`Screenshot saved to ${output}`);
+  } finally {
+    await browser.close();
+  }
 }
 
-export async function screenshot(urlArgument: string, options: ScreenshotOptions = {}): Promise<void> {
+function validateOptions(urlArgument: string, options: ScreenshotOptions) {
   const url = new URL(urlArgument);
   if (!['http:', 'https:'].includes(url.protocol)) {
     throw new Error('URL must use http:// or https://.');
@@ -34,45 +53,34 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
     throw new Error('Output must have a .png, .jpg, or .jpeg extension.');
   }
 
-  const browser = await chromium.launch();
-  try {
-    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
-    page.setDefaultTimeout(timeout);
-    page.setDefaultNavigationTimeout(timeout);
-    const response = await page.goto(url.href, { waitUntil: 'load' });
-    if (response !== null && !response.ok()) {
-      throw new Error(`Website returned HTTP ${response.status()}.`);
-    }
+  return { url, width, height, wait, timeout, output, extension };
+}
 
-    // Visit content below the fold so typical lazy-loaded images can load.
-    // Bound the scroll pass so infinite-scroll websites cannot loop forever.
-    let reachedBottom = false;
-    for (let step = 0; step < 100; step++) {
-      await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-      await page.waitForTimeout(150);
-      reachedBottom = await page.evaluate(
-        () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1
-      );
-      if (reachedBottom) {
-        break;
-      }
+async function scrollPage(page: Page): Promise<void> {
+  // Visit lazy-loaded content, bounding the pass for infinite-scroll websites.
+  let reachedBottom = false;
+  for (let step = 0; step < 100; step++) {
+    await page.evaluate(() => window.scrollBy(0, window.innerHeight));
+    await page.waitForTimeout(150);
+    reachedBottom = await page.evaluate(
+      () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1
+    );
+    if (reachedBottom) {
+      break;
     }
-
-    if (!reachedBottom) {
-      console.warn('Scroll limit reached; capturing currently loaded content.');
-    }
-
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.waitForTimeout(wait);
-    await mkdir(dirname(output), { recursive: true });
-    await page.screenshot({
-      path: output,
-      type: extension === '.png' ? 'png' : 'jpeg',
-      fullPage: true,
-      animations: 'disabled'
-    });
-    console.log(`Screenshot saved to ${output}`);
-  } finally {
-    await browser.close();
   }
+
+  if (!reachedBottom) {
+    console.warn('Scroll limit reached; capturing currently loaded content.');
+  }
+
+  await page.evaluate(() => window.scrollTo(0, 0));
+}
+
+function integer(value: number, name: string, minimum: number): number {
+  if (!Number.isSafeInteger(value) || value < minimum) {
+    throw new Error(`${name} must be an integer of at least ${minimum}.`);
+  }
+
+  return value;
 }

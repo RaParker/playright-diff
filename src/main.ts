@@ -26,15 +26,6 @@ const quoteHelp = `Usage: npm run quote-page -- <policyDetailsId> <historyId> [o
   --no-ocr       Compare pixels without extracting text
   -h, --help     Show help`;
 
-function required(environment: Record<string, string | undefined>, name: string): string {
-  const value = environment[name];
-  if (value === undefined || value.trim().length === 0) {
-    throw new Error(`${name} must be configured in .env or the environment.`);
-  }
-
-  return value;
-}
-
 async function main(): Promise<void> {
   const [action, ...args] = process.argv.slice(2);
   if (action === '--help' || action === '-h') {
@@ -43,104 +34,125 @@ async function main(): Promise<void> {
   }
 
   if (action === 'screenshot') {
-    const { values, positionals } = parseArgs({
-      args,
-      allowPositionals: true,
-      options: {
-        output: { type: 'string', short: 'o' },
-        width: { type: 'string' },
-        height: { type: 'string' },
-        wait: { type: 'string' },
-        timeout: { type: 'string' },
-        help: { type: 'boolean', short: 'h' }
-      }
-    });
-    if (values.help === true) {
-      console.log(screenshotHelp);
-      return;
-    }
-
-    const [url] = positionals;
-    if (positionals.length !== 1 || url === undefined) {
-      throw new Error(screenshotHelp);
-    }
-
-    await screenshot(url, {
-      output: values.output,
-      width: values.width === undefined ? undefined : Number(values.width),
-      height: values.height === undefined ? undefined : Number(values.height),
-      wait: values.wait === undefined ? undefined : Number(values.wait),
-      timeout: values.timeout === undefined ? undefined : Number(values.timeout)
-    });
+    await runScreenshot(args);
     return;
   }
 
   if (action === 'compare') {
-    const { values, positionals } = parseArgs({
-      args,
-      allowPositionals: true,
-      options: {
-        output: { type: 'string', short: 'o' },
-        threshold: { type: 'string' },
-        language: { type: 'string' },
-        'no-ocr': { type: 'boolean' },
-        help: { type: 'boolean', short: 'h' }
-      }
-    });
-    if (values.help === true) {
-      console.log(compareHelp);
-      return;
-    }
-
-    const [before, after] = positionals;
-    if (positionals.length !== 2 || before === undefined || after === undefined) {
-      throw new Error(compareHelp);
-    }
-
-    await compare(before, after, {
-      output: values.output,
-      threshold: values.threshold === undefined ? undefined : Number(values.threshold),
-      language: values.language,
-      noOcr: values['no-ocr']
-    });
+    await runCompare(args);
     return;
   }
 
   if (action === 'quote-page') {
-    const { values, positionals } = parseArgs({
-      args,
-      allowPositionals: true,
-      options: {
-        'no-ocr': { type: 'boolean' },
-        help: { type: 'boolean', short: 'h' }
-      }
-    });
-    if (values.help === true) {
-      console.log(quoteHelp);
-      return;
-    }
-
-    const [policyDetailsId, historyArgument] = positionals;
-    if (positionals.length !== 2 || policyDetailsId === undefined || historyArgument === undefined) {
-      throw new Error(quoteHelp);
-    }
-
-    if (!/^\d+$/.test(historyArgument)) {
-      throw new Error('historyId must be a non-negative safe integer.');
-    }
-
-    const environment = await loadEnvironment();
-
-    await quotePage(policyDetailsId, Number(historyArgument), {
-      mrpAndQuoteOutputDir: required(environment, 'MRP_AND_QUOTE_OUTPUT_DIR'),
-      nhiQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE'),
-      tcasQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE'),
-      noOcr: values['no-ocr']
-    });
+    await runQuotePage(args);
     return;
   }
 
   throw new Error(help);
+}
+
+async function runScreenshot(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      output: { type: 'string', short: 'o' },
+      width: { type: 'string' },
+      height: { type: 'string' },
+      wait: { type: 'string' },
+      timeout: { type: 'string' },
+      help: { type: 'boolean', short: 'h' }
+    }
+  });
+  if (values.help === true) {
+    console.log(screenshotHelp);
+    return;
+  }
+
+  const [url] = positionals;
+  if (positionals.length !== 1 || url === undefined) {
+    throw new Error(screenshotHelp);
+  }
+
+  await screenshot(url, {
+    output: values.output,
+    width: values.width === undefined ? undefined : Number(values.width),
+    height: values.height === undefined ? undefined : Number(values.height),
+    wait: values.wait === undefined ? undefined : Number(values.wait),
+    timeout: values.timeout === undefined ? undefined : Number(values.timeout)
+  });
+}
+
+async function runCompare(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      output: { type: 'string', short: 'o' },
+      threshold: { type: 'string' },
+      language: { type: 'string' },
+      'no-ocr': { type: 'boolean' },
+      help: { type: 'boolean', short: 'h' }
+    }
+  });
+  if (values.help === true) {
+    console.log(compareHelp);
+    return;
+  }
+
+  const [before, after] = positionals;
+  if (positionals.length !== 2 || before === undefined || after === undefined) {
+    throw new Error(compareHelp);
+  }
+
+  await compare(before, after, {
+    output: values.output,
+    threshold: values.threshold === undefined ? undefined : Number(values.threshold),
+    language: values.language,
+    useOcr: values['no-ocr'] !== true
+  });
+}
+
+async function runQuotePage(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      'no-ocr': { type: 'boolean' },
+      help: { type: 'boolean', short: 'h' }
+    }
+  });
+  if (values.help === true) {
+    console.log(quoteHelp);
+    return;
+  }
+
+  const [policyDetailsId, historyArgument] = positionals;
+  if (positionals.length !== 2 || policyDetailsId === undefined || historyArgument === undefined) {
+    throw new Error(quoteHelp);
+  }
+
+  if (!/^\d+$/.test(historyArgument)) {
+    throw new Error('historyId must be a non-negative safe integer.');
+  }
+
+  const environment = await loadEnvironment();
+
+  await quotePage(policyDetailsId, Number(historyArgument), {
+    mrpAndQuoteOutputDir: required(environment, 'MRP_AND_QUOTE_OUTPUT_DIR'),
+    nhiQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE'),
+    tcasQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE'),
+    useOcr: values['no-ocr'] !== true
+  });
+}
+
+function required(environment: Record<string, string | undefined>, name: string): string {
+  const value = environment[name];
+  if (value === undefined || value.trim().length === 0) {
+    throw new Error(`${name} must be configured in .env or the environment.`);
+  }
+
+  return value;
 }
 
 main().catch((error: unknown) => {
