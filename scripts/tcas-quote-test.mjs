@@ -27,6 +27,24 @@ const cases = [
   ['missing quote button', cover + contact, /step 3/],
   ['missing welcome heading', journey('<h2>Still processing</h2>'), /step 4/],
   [
+    'errors after contact click',
+    `${cover}${contact}<script>
+      document.querySelector('li').onclick = () => {
+        document.body.innerHTML += '<div class="av-card-error-summary">Missing contact details</div><div class="av-card-error-summary">Please enter your email</div>';
+      };
+    </script>`,
+    /step 2 \(click\) failed: TCAS quote errors: Missing contact details\nPlease enter your email/
+  ],
+  [
+    'errors after quote click',
+    `${cover}${contact}<button>Get your quote</button><script>
+      document.querySelector('button').onclick = () => {
+        document.body.innerHTML = '<div class="av-card-error-summary">Invalid quote details</div>';
+      };
+    </script>`,
+    /step 3 \(click\) failed: TCAS quote errors: Invalid quote details/
+  ],
+  [
     'delayed errors',
     journey('<div class="av-card-error-summary">Please enter your email</div>'),
     /Please enter your email/

@@ -103,6 +103,8 @@ reported with their text and stop capture and comparison. The heading accepts
 any customer name and straight or curly apostrophes. Edit the JSON file to change
 the selectors or steps; failures identify the step that stopped the journey.
 Each successful step is logged in gray with its step number, action, and elapsed milliseconds.
+After each click, the action checks for `div.av-card-error-summary`; if present,
+it reports the summaries' text and stops before running the next step.
 
 If navigation or a Playwright step fails after the page is created, the action captures
 the current page beside the intended output with a `-failed.png` suffix (for example,

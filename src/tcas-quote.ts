@@ -41,6 +41,7 @@ async function runStep(page: Page, step: Step): Promise<void> {
       return;
     case 'click':
       await target.click();
+      await checkQuoteErrors(page, 'div.av-card-error-summary');
       return;
     case 'waitForQuote':
       if (step.textPattern === undefined || step.errorSelector === undefined) {
@@ -71,6 +72,10 @@ async function waitForQuote(page: Page, selector: string, textPattern: string, e
     { selector, textPattern, errorSelector }
   );
 
+  await checkQuoteErrors(page, errorSelector);
+}
+
+async function checkQuoteErrors(page: Page, errorSelector: string): Promise<void> {
   const errors = page.locator(errorSelector);
   if ((await errors.count()) > 0) {
     const text = (await errors.allTextContents()).map((message) => message.trim()).join('\n');
