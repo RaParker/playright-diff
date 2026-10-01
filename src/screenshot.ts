@@ -31,8 +31,8 @@ async function main(): Promise<void> {
       height: { type: 'string', default: '900' },
       wait: { type: 'string', default: '1000' },
       timeout: { type: 'string', default: '30000' },
-      help: { type: 'boolean', short: 'h' },
-    },
+      help: { type: 'boolean', short: 'h' }
+    }
   });
   if (values.help) {
     console.log(help);
@@ -69,8 +69,8 @@ async function main(): Promise<void> {
     for (let step = 0; step < 100; step++) {
       await page.evaluate(() => window.scrollBy(0, window.innerHeight));
       await page.waitForTimeout(150);
-      reachedBottom = await page.evaluate(() =>
-        window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1,
+      reachedBottom = await page.evaluate(
+        () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1
       );
       if (reachedBottom) break;
     }
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
       path: output,
       type: extension === '.png' ? 'png' : 'jpeg',
       fullPage: true,
-      animations: 'disabled',
+      animations: 'disabled'
     });
     console.log(`Screenshot saved to ${output}`);
   } finally {
