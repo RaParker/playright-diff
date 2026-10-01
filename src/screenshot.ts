@@ -19,21 +19,8 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
     page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
     page.setDefaultTimeout(timeout);
     page.setDefaultNavigationTimeout(timeout);
-    const response = await page.goto(url.href, { waitUntil: 'load' });
-    if (response !== null && !response.ok()) {
-      throw new Error(`Website returned HTTP ${response.status()}.`);
-    }
-
-    await options.beforeCapture?.(page);
-    await scrollPage(page);
-    await page.waitForTimeout(wait);
-    await mkdir(dirname(output), { recursive: true });
-    await page.screenshot({
-      path: output,
-      type: extension === '.png' ? 'png' : 'jpeg',
-      fullPage: true,
-      animations: 'disabled'
-    });
+    const { failure } = await watchForOops(page);
+    await Promise.race([capturePage(page, url.href, output, extension, wait, options.beforeCapture), failure]);
     console.log(`Screenshot saved to ${output}`);
   } catch (error) {
     if (page !== undefined) {
@@ -51,6 +38,55 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
   } finally {
     await browser.close();
   }
+}
+
+async function capturePage(
+  page: Page,
+  url: string,
+  output: string,
+  extension: string,
+  wait: number,
+  beforeCapture?: (page: Page) => Promise<void>
+): Promise<void> {
+  const response = await page.goto(url, { waitUntil: 'load' });
+  if (response !== null && !response.ok()) {
+    throw new Error(`Website returned HTTP ${response.status()}.`);
+  }
+
+  await beforeCapture?.(page);
+  await scrollPage(page);
+  await page.waitForTimeout(wait);
+  await mkdir(dirname(output), { recursive: true });
+  await page.screenshot({
+    path: output,
+    type: extension === '.png' ? 'png' : 'jpeg',
+    fullPage: true,
+    animations: 'disabled'
+  });
+}
+
+async function watchForOops(page: Page): Promise<{ failure: Promise<never> }> {
+  let stop: (error: Error) => void = () => undefined;
+  const failure = new Promise<never>((_resolve, reject) => {
+    stop = reject;
+  });
+  await page.exposeFunction('__stopOnOops', () => {
+    stop(new Error('Website displayed <h2>Oops</h2>; stopping the journey.'));
+  });
+  await page.addInitScript(() => {
+    let reported = false;
+
+    const check = () => {
+      if (!reported && [...document.querySelectorAll('h2')].some((heading) => heading.textContent?.trim() === 'Oops')) {
+        reported = true;
+        void (window as unknown as { __stopOnOops: () => Promise<void> }).__stopOnOops();
+      }
+    };
+
+    new MutationObserver(check).observe(document, { childList: true, subtree: true, characterData: true });
+    check();
+  });
+  return { failure };
 }
 
 function validateOptions(urlArgument: string, options: ScreenshotOptions) {

@@ -20,6 +20,8 @@ function journey(outcome) {
 }
 
 const cases = [
+  ['Oops on initial TCAS page', '<h2>Oops</h2>', /Website displayed <h2>Oops<\/h2>/],
+  ['Oops after quote click', journey('<h2>Oops</h2>'), /Website displayed <h2>Oops<\/h2>/],
   ...[
     ['2026-10-02', 'Friday, October 2nd, 2026', false, undefined],
     ['2026-11-11', 'Choose Wednesday, November 11th, 2026', false, undefined],

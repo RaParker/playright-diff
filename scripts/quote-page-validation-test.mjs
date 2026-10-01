@@ -121,6 +121,38 @@ test('quote-page help works without configuration', async () => {
   assert.match(result.output, /Usage:/);
 });
 
+for (const delayed of [false, true]) {
+  test(`quote-page stops on NHI Oops (delayed: ${delayed})`, async () => {
+    const { directory, env } = await fixture();
+    const requests = [];
+    const server = createServer((request, response) => {
+      requests.push(request.url);
+      response.setHeader('Content-Type', 'text/html');
+      response.end(
+        delayed
+          ? '<script>setTimeout(() => { document.body.innerHTML = "<h2>Oops</h2>"; }, 100);</script>'
+          : '<h2>Oops</h2>'
+      );
+    });
+    await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+    try {
+      const base = `http://127.0.0.1:${server.address().port}`;
+      env.QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE = `${base}/nhi/{artemisQuoteGuid}`;
+      env.QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE = `${base}/tcas/{policyDetailsId}/{historyId}`;
+      const result = await run(directory, env);
+      assert.notEqual(result.code, 0);
+      assert.match(result.output, /Website displayed <h2>Oops<\/h2>/);
+      assert.ok(requests.every((path) => !path.startsWith('/tcas/')));
+      assert.deepEqual(await readdir(join(directory, 'screenshots')), [
+        'ABCDEF1234567890ABCDEF1234567890-42-nhi-failed.png'
+      ]);
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+    }
+  });
+}
+
 test('quote-page stops after an HTTP failure and respects environment over .env', async () => {
   const { directory, env } = await fixture();
   const requests = [];

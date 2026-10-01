@@ -112,6 +112,10 @@ YYYY-MM-DD ...", the action opens `svg.av-icon-calendar`, selects the calendar
 `div` whose aria-label ends with that date (such as `October 2nd, 2026`), and
 retries Contact details once. Remaining errors stop the journey as usual.
 
+Both NHI and TCAS are monitored for an `h2` containing exactly `Oops`, from
+navigation through capture. If one appears, the flow stops and saves a failure
+screenshot; subsequent journey steps and comparison are skipped.
+
 If navigation or a Playwright step fails after the page is created, the action captures
 the current page beside the intended output with a `-failed.png` suffix (for example,
 `ABCDEF1234567890ABCDEF1234567890-42-tcas-failed.png`). The original error is still
