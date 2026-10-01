@@ -2,6 +2,7 @@ import { diffWordsWithSpace } from 'diff';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { createWorker, PSM } from 'tesseract.js';
 
@@ -23,8 +24,9 @@ async function load(path: string) {
     .toBuffer({ resolveWithObject: true });
 }
 
-async function main() {
+export async function compare(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
+    args,
     allowPositionals: true,
     options: {
       output: { type: 'string', short: 'o' },
@@ -273,7 +275,9 @@ async function main() {
   );
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  compare(process.argv.slice(2)).catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

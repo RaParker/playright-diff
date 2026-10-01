@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
 const help = `Usage: npm run screenshot -- <url> [options]
@@ -23,8 +24,9 @@ function integer(value: string, name: string, minimum: number): number {
   return number;
 }
 
-async function main(): Promise<void> {
+export async function screenshot(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
+    args,
     allowPositionals: true,
     options: {
       output: { type: 'string', short: 'o', default: 'screenshots/screenshot.png' },
@@ -103,7 +105,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  screenshot(process.argv.slice(2)).catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

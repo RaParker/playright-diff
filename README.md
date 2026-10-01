@@ -59,6 +59,29 @@ Images are not uploaded. OCR can misread small or stylized text: check the crops
 and confidence before treating a reported text change as definitive.
 Large combined canvases above 40 million pixels are rejected.
 
+## Capture and compare quote pages
+
+Copy `.env.example` to `.env` and set the MRP directory and both quote URL templates.
+The policy ID must be a UUID with dashes removed (32 hexadecimal characters).
+Input is case-insensitive and normalized to uppercase for file paths and URLs.
+Existing environment variables take precedence over `.env`. Relative paths resolve
+from the current working directory.
+
+```sh
+npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42
+npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
+```
+
+This reads `MRP_AND_QUOTE_OUTPUT_DIR/ABCDEF1234567890ABCDEF1234567890-42-mrp.json`, using its top-level
+`"//artemisQuotGuid"` string property to replace `{artemisQuotGuid}` in the NHI
+template. The TCAS template uses `{policyDetailsId}` and `{historyId}`.
+Replacement values are URL-encoded.
+
+The action calls `screenshot` for each URL, saving `screenshots/ABCDEF1234567890ABCDEF1234567890-42-nhi.png`
+and `screenshots/ABCDEF1234567890ABCDEF1234567890-42-tcas.png`, then calls `compare` with NHI as before
+and TCAS as after. Screenshots are overwritten on repeat runs; comparison reports
+use a new timestamped directory under `comparisons/`. A failed step stops the action.
+
 ## Build and verify
 
 ```sh
@@ -69,6 +92,11 @@ npm start -- https://example.com --output screenshots/example.png
 ```
 
 Run `npx eslint` (or `npm run lint`) from the project root. Generated output is ignored.
+
+`npm test` (or `npm run test`) builds once and runs all screenshot, comparison,
+and quote-page tests. Chromium must be installed; the OCR comparison test may
+download language data on its first run. To run individual suites, use
+`npm run test:compare` or `npm run test:quote-page`.
 
 Builds and type checks use TypeScript 7 through the `typescript-compiler` package alias.
 TypeScript 6 remains installed as `typescript` for ESLint's parser, which does not yet support the TypeScript 7 compiler API.
