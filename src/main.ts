@@ -1,8 +1,8 @@
-import { loadEnvFile } from 'node:process';
 import { parseArgs } from 'node:util';
 import { compare } from './compare.js';
 import { quotePage } from './quote-page.js';
 import { screenshot } from './screenshot.js';
+import { loadEnvironment } from './environment.js';
 
 const help = `Usage: npm start -- <screenshot|compare|quote-page> [arguments] [options]
 Use npm run <action> -- --help for action options.`;
@@ -26,8 +26,8 @@ const quoteHelp = `Usage: npm run quote-page -- <policyDetailsId> <historyId> [o
   --no-ocr       Compare pixels without extracting text
   -h, --help     Show help`;
 
-function required(name: string): string {
-  const value = process.env[name];
+function required(environment: Record<string, string | undefined>, name: string): string {
+  const value = environment[name];
   if (value === undefined || value.trim().length === 0) {
     throw new Error(`${name} must be configured in .env or the environment.`);
   }
@@ -129,18 +129,12 @@ async function main(): Promise<void> {
       throw new Error('historyId must be a non-negative safe integer.');
     }
 
-    try {
-      loadEnvFile();
-    } catch (error) {
-      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
-        throw error;
-      }
-    }
+    const environment = await loadEnvironment();
 
     await quotePage(policyDetailsId, Number(historyArgument), {
-      mrpAndQuoteOutputDir: required('MRP_AND_QUOTE_OUTPUT_DIR'),
-      nhiQuotePageUrlTemplate: required('QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE'),
-      tcasQuotePageUrlTemplate: required('QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE'),
+      mrpAndQuoteOutputDir: required(environment, 'MRP_AND_QUOTE_OUTPUT_DIR'),
+      nhiQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE'),
+      tcasQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE'),
       noOcr: values['no-ocr']
     });
     return;

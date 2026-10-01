@@ -61,11 +61,25 @@ Large combined canvases above 40 million pixels are rejected.
 
 ## Capture and compare quote pages
 
-Copy `.env.example` to `.env` and set the MRP directory and both quote URL templates.
+Set the MRP directory and both quote URL templates in `.env`.
 The policy ID must be a UUID with dashes removed (32 hexadecimal characters).
 Input is case-insensitive and normalized to uppercase for file paths and URLs.
 Existing environment variables take precedence over `.env`. Relative paths resolve
 from the current working directory.
+
+Use `${VARIABLE_NAME}` to reference another setting in `.env` or an existing
+environment variable. References resolve recursively, including forward references.
+For example, your configuration can use:
+
+```dotenv
+REPO_BASE_PATH=D:/Richard/Projects/github
+MRP_AND_QUOTE_OUTPUT_DIR="${REPO_BASE_PATH}/GoPackages/internal/mrp-and-quote/output"
+```
+
+You can also set `REPO_BASE_PATH` in your environment instead of `.env`.
+Missing references and circular references stop the action with an error.
+Quote URL placeholders such as `{policyDetailsId}` remain unchanged until the
+quote-page action replaces them.
 
 ```sh
 npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42

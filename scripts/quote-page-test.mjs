@@ -23,13 +23,17 @@ try {
   await writeFile(
     join(directory, '.env'),
     [
-      'MRP_AND_QUOTE_OUTPUT_DIR=./mrp',
+      'MRP_AND_QUOTE_OUTPUT_DIR=${QUOTE_TEST_OUTPUT_ROOT}/mrp',
+      'QUOTE_TEST_OUTPUT_ROOT=${QUOTE_TEST_BASE_PATH}',
+      'QUOTE_TEST_BASE_PATH=.',
       `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=${base}/nhi/{artemisQuotGuid}`,
       `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE=${base}/tcas/{policyDetailsId}/{historyId}`
     ].join('\n')
   );
   const env = { ...process.env };
   for (const name of [
+    'QUOTE_TEST_OUTPUT_ROOT',
+    'QUOTE_TEST_BASE_PATH',
     'MRP_AND_QUOTE_OUTPUT_DIR',
     'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE',
     'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE'
