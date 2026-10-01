@@ -87,7 +87,7 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
 ```
 
 This reads `MRP_AND_QUOTE_OUTPUT_DIR/ABCDEF1234567890ABCDEF1234567890-42-mrp.json`, using its top-level
-`"//artemisQuotGuid"` string property to replace `{artemisQuotGuid}` in the NHI
+`"artemisQuoteGuid"` string property to replace `{artemisQuoteGuid}` in the NHI
 template. The TCAS template uses `{policyDetailsId}` and `{historyId}`.
 Replacement values are URL-encoded.
 

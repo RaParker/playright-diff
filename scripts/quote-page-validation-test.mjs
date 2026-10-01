@@ -17,7 +17,7 @@ async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'quote-validation-'));
   await writeFile(
     join(directory, 'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'),
-    JSON.stringify({ '//artemisQuotGuid': 'guid' })
+    JSON.stringify({ artemisQuoteGuid: 'guid' })
   );
   const env = { ...process.env };
   for (const name of settings) {
@@ -26,7 +26,7 @@ async function fixture() {
 
   Object.assign(env, {
     MRP_AND_QUOTE_OUTPUT_DIR: directory,
-    QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE: 'http://127.0.0.1:1/nhi/{artemisQuotGuid}',
+    QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE: 'http://127.0.0.1:1/nhi/{artemisQuoteGuid}',
     QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE: 'http://127.0.0.1:1/tcas/{policyDetailsId}/{historyId}'
   });
   return { directory, env };
@@ -80,9 +80,10 @@ for (const name of settings) {
 for (const [name, content, expected] of [
   ['malformed JSON', '{', /JSON/],
   ['missing GUID', '{}', /must contain/],
+  ['literal XPath key', '{"//artemisQuoteGuid":"guid"}', /must contain the "artemisQuoteGuid" property/],
   ['null MRP', 'null', /must contain/],
-  ['numeric GUID', '{"//artemisQuotGuid":42}', /non-empty string/],
-  ['blank GUID', '{"//artemisQuotGuid":"  "}', /non-empty string/]
+  ['numeric GUID', '{"artemisQuoteGuid":42}', /non-empty string/],
+  ['blank GUID', '{"artemisQuoteGuid":"  "}', /non-empty string/]
 ]) {
   test(`quote-page rejects ${name}`, async () => {
     const { directory, env } = await fixture();
@@ -96,8 +97,8 @@ for (const [name, content, expected] of [
 
 for (const [name, template, expected] of [
   ['absent placeholder', 'https://example.com/quote', /must contain/],
-  ['unsupported protocol', 'file:///quote/{artemisQuotGuid}', /must use http/],
-  ['malformed URL', 'invalid/{artemisQuotGuid}', /Invalid URL/]
+  ['unsupported protocol', 'file:///quote/{artemisQuoteGuid}', /must use http/],
+  ['malformed URL', 'invalid/{artemisQuoteGuid}', /Invalid URL/]
 ]) {
   test(`quote-page rejects ${name} in a template`, async () => {
     const { directory, env } = await fixture();
@@ -131,7 +132,7 @@ test('quote-page stops after an HTTP failure and respects environment over .env'
   await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   try {
     const base = `http://127.0.0.1:${server.address().port}`;
-    env.QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE = `${base}/nhi/{artemisQuotGuid}`;
+    env.QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE = `${base}/nhi/{artemisQuoteGuid}`;
     env.QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE = `${base}/tcas/{policyDetailsId}/{historyId}`;
     await writeFile(join(directory, '.env'), 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=invalid');
     const result = await run(directory, env);

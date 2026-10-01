@@ -17,7 +17,7 @@ try {
   await mkdir(join(directory, 'mrp'));
   await writeFile(
     join(directory, 'mrp', 'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'),
-    JSON.stringify({ '//artemisQuotGuid': 'guid/a b' })
+    JSON.stringify({ artemisQuoteGuid: 'guid/a b' })
   );
   const base = `http://127.0.0.1:${server.address().port}`;
   await writeFile(
@@ -26,7 +26,7 @@ try {
       'MRP_AND_QUOTE_OUTPUT_DIR=${QUOTE_TEST_OUTPUT_ROOT}/mrp',
       'QUOTE_TEST_OUTPUT_ROOT=${QUOTE_TEST_BASE_PATH}',
       'QUOTE_TEST_BASE_PATH=.',
-      `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=${base}/nhi/{artemisQuotGuid}`,
+      `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=${base}/nhi/{artemisQuoteGuid}`,
       `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE=${base}/tcas/{policyDetailsId}/{historyId}`
     ].join('\n')
   );

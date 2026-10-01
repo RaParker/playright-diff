@@ -21,8 +21,8 @@ export async function quotePage(policyArgument: string, historyId: number, optio
   }
 
   const basename = `${policyDetailsId}-${historyId}`;
-  const artemisQuotGuid = await readQuoteGuid(resolve(options.mrpAndQuoteOutputDir, `${basename}-mrp.json`));
-  const nhiUrl = templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuotGuid });
+  const artemisQuoteGuid = await readQuoteGuid(resolve(options.mrpAndQuoteOutputDir, `${basename}-mrp.json`));
+  const nhiUrl = templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid });
   const tcasUrl = templateUrl(options.tcasQuotePageUrlTemplate, {
     policyDetailsId,
     historyId: String(historyId)
@@ -36,16 +36,16 @@ export async function quotePage(policyArgument: string, historyId: number, optio
 
 async function readQuoteGuid(mrpPath: string): Promise<string> {
   const mrp: unknown = JSON.parse(await readFile(mrpPath, 'utf8'));
-  if (mrp === null || typeof mrp !== 'object' || !('//artemisQuotGuid' in mrp)) {
-    throw new Error(`MRP file must contain the "//artemisQuotGuid" property: ${mrpPath}`);
+  if (mrp === null || typeof mrp !== 'object' || !('artemisQuoteGuid' in mrp)) {
+    throw new Error(`MRP file must contain the "artemisQuoteGuid" property: ${mrpPath}`);
   }
 
-  const artemisQuotGuid = mrp['//artemisQuotGuid'];
-  if (typeof artemisQuotGuid !== 'string' || artemisQuotGuid.trim().length === 0) {
-    throw new Error('MRP "//artemisQuotGuid" must be a non-empty string.');
+  const artemisQuoteGuid = mrp['artemisQuoteGuid'];
+  if (typeof artemisQuoteGuid !== 'string' || artemisQuoteGuid.trim().length === 0) {
+    throw new Error('MRP "artemisQuoteGuid" must be a non-empty string.');
   }
 
-  return artemisQuotGuid;
+  return artemisQuoteGuid;
 }
 
 function templateUrl(template: string, replacements: Record<string, string>): string {

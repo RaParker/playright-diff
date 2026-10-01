@@ -29,7 +29,7 @@ test('action modules accept direct arguments and reject invalid input without CL
   await assert.rejects(compare('before.png', 'after.png', { threshold: 256 }), /threshold must/);
   const options = {
     mrpAndQuoteOutputDir: '.',
-    nhiQuotePageUrlTemplate: 'http://example.com/{artemisQuotGuid}',
+    nhiQuotePageUrlTemplate: 'http://example.com/{artemisQuoteGuid}',
     tcasQuotePageUrlTemplate: 'http://example.com/{policyDetailsId}/{historyId}'
   };
   await assert.rejects(quotePage('invalid', 42, options), /policyDetailsId must/);
