@@ -102,6 +102,13 @@ for either an error summary or the welcome quote heading. Error summaries are
 reported with their text and stop capture and comparison. The heading accepts
 any customer name and straight or curly apostrophes. Edit the JSON file to change
 the selectors or steps; failures identify the step that stopped the journey.
+Each successful step is logged in gray with its step number, action, and elapsed milliseconds.
+
+If navigation or a Playwright step fails after the page is created, the action captures
+the current page beside the intended output with a `-failed.png` suffix (for example,
+`ABCDEF1234567890ABCDEF1234567890-42-tcas-failed.png`). The original error is still
+reported and comparison stops. If the failure screenshot cannot be saved, its error
+is logged without replacing the original failure.
 
 ## Build and verify
 

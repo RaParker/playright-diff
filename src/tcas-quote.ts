@@ -1,10 +1,15 @@
 import type { Page } from 'playwright';
+import { color } from './color.js';
 import steps from './tcas-quote.steps.json' with { type: 'json' };
 
 export async function tcasQuote(page: Page): Promise<void> {
   for (const [index, step] of steps.entries()) {
+    const started = performance.now();
     try {
       await runStep(page, step);
+      console.log(
+        color.Gray(`TCAS step ${index + 1} (${step.action}) passed in ${Math.round(performance.now() - started)} ms`)
+      );
     } catch (error) {
       throw new Error(
         `TCAS step ${index + 1} (${step.action}) failed: ${error instanceof Error ? error.message : String(error)}`,

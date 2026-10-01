@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
@@ -58,7 +58,9 @@ for (const [name, html, expectedError] of cases) {
         assert.deepEqual(await readdir(directory), ['quote.png']);
       } else {
         await assert.rejects(capture, expectedError);
-        assert.deepEqual(await readdir(directory), []);
+        assert.deepEqual(await readdir(directory), ['quote-failed.png']);
+        const image = await readFile(join(directory, 'quote-failed.png'));
+        assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
       }
     } finally {
       server.closeAllConnections();

@@ -14,8 +14,9 @@ export interface ScreenshotOptions {
 export async function screenshot(urlArgument: string, options: ScreenshotOptions = {}): Promise<void> {
   const { url, width, height, wait, timeout, output, extension } = validateOptions(urlArgument, options);
   const browser = await chromium.launch();
+  let page: Page | undefined;
   try {
-    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+    page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
     page.setDefaultTimeout(timeout);
     page.setDefaultNavigationTimeout(timeout);
     const response = await page.goto(url.href, { waitUntil: 'load' });
@@ -34,6 +35,19 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
       animations: 'disabled'
     });
     console.log(`Screenshot saved to ${output}`);
+  } catch (error) {
+    if (page !== undefined) {
+      const failedOutput = `${output.slice(0, -extension.length)}-failed.png`;
+      try {
+        await mkdir(dirname(failedOutput), { recursive: true });
+        await page.screenshot({ path: failedOutput, type: 'png', fullPage: true, timeout, animations: 'disabled' });
+        console.error(`Failure screenshot saved to ${failedOutput}`);
+      } catch (captureError) {
+        console.error(`Could not capture failure screenshot: ${String(captureError)}`);
+      }
+    }
+
+    throw error;
   } finally {
     await browser.close();
   }

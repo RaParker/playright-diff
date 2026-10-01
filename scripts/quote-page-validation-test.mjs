@@ -140,7 +140,14 @@ test('quote-page stops after an HTTP failure and respects environment over .env'
     assert.match(result.output, /HTTP 503/);
     assert.ok(requests.includes('/nhi/guid'));
     assert.ok(requests.every((path) => !path.startsWith('/tcas/')));
-    assert.deepEqual((await readdir(directory)).sort(), ['.env', 'ABCDEF1234567890ABCDEF1234567890-42-mrp.json']);
+    assert.deepEqual((await readdir(directory)).sort(), [
+      '.env',
+      'ABCDEF1234567890ABCDEF1234567890-42-mrp.json',
+      'screenshots'
+    ]);
+    assert.deepEqual(await readdir(join(directory, 'screenshots')), [
+      'ABCDEF1234567890ABCDEF1234567890-42-nhi-failed.png'
+    ]);
     assert.equal(await readFile(join(directory, '.env'), 'utf8'), 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=invalid');
   } finally {
     server.closeAllConnections();
