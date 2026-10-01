@@ -1,18 +1,15 @@
 import { diffWordsWithSpace } from 'diff';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { parseArgs } from 'node:util';
-import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { createWorker, PSM } from 'tesseract.js';
 
-const help = `Usage: npm run compare -- <before-image> <after-image> [options]
-  -o, --output <directory>  New report directory (default: comparisons/run-<timestamp>)
-  --threshold <0-255>      Ignore channel differences up to this value (default: 20)
-  --language <code>        Tesseract language (default: eng)
-  --no-ocr                Compare pixels without extracting text
-  -h, --help              Show help
-`;
+export interface CompareOptions {
+  output?: string;
+  threshold?: number;
+  language?: string;
+  noOcr?: boolean;
+}
 
 async function load(path: string) {
   return sharp(path)
@@ -24,29 +21,13 @@ async function load(path: string) {
     .toBuffer({ resolveWithObject: true });
 }
 
-export async function compare(args: string[]): Promise<void> {
-  const { values, positionals } = parseArgs({
-    args,
-    allowPositionals: true,
-    options: {
-      output: { type: 'string', short: 'o' },
-      threshold: { type: 'string', default: '20' },
-      language: { type: 'string', default: 'eng' },
-      'no-ocr': { type: 'boolean' },
-      help: { type: 'boolean', short: 'h' }
-    }
-  });
-  if (values.help === true) {
-    console.log(help);
-    return;
-  }
-
-  const [beforeArgument, afterArgument] = positionals;
-  if (positionals.length !== 2 || beforeArgument === undefined || afterArgument === undefined) {
-    throw new Error(help);
-  }
-
-  const threshold = Number(values.threshold);
+export async function compare(
+  beforeArgument: string,
+  afterArgument: string,
+  options: CompareOptions = {}
+): Promise<void> {
+  const threshold = options.threshold ?? 20;
+  const language = options.language ?? 'eng';
   if (!Number.isInteger(threshold) || threshold < 0 || threshold > 255) {
     throw new Error('threshold must be an integer between 0 and 255.');
   }
@@ -134,8 +115,8 @@ export async function compare(args: string[]): Promise<void> {
   boxes.sort((a, b) => (a.top === b.top ? a.left - b.left : a.top - b.top));
   // A fresh directory prevents overwriting inputs or previous reports.
   const output =
-    values.output !== undefined && values.output.length > 0
-      ? resolve(values.output)
+    options.output !== undefined && options.output.length > 0
+      ? resolve(options.output)
       : resolve('comparisons', `run-${Date.now()}`);
   await mkdir(dirname(output), { recursive: true });
   await mkdir(output, { recursive: false });
@@ -146,10 +127,10 @@ export async function compare(args: string[]): Promise<void> {
   let worker: Awaited<ReturnType<typeof createWorker>> | undefined;
   const regions = [];
   try {
-    if (boxes.length > 0 && values['no-ocr'] !== true) {
+    if (boxes.length > 0 && options.noOcr !== true) {
       await mkdir(cachePath, { recursive: true });
       console.log('Loading local OCR (first use downloads language data)…');
-      worker = await createWorker(values.language, undefined, { cachePath });
+      worker = await createWorker(language, undefined, { cachePath });
       await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
     }
 
@@ -229,8 +210,8 @@ export async function compare(args: string[]): Promise<void> {
     threshold,
     changedPixels,
     changedPercent: (changedPixels / (width * height)) * 100,
-    ocrEnabled: values['no-ocr'] !== true,
-    language: values.language,
+    ocrEnabled: options.noOcr !== true,
+    language: language,
     regions
   };
   await writeFile(join(output, 'report.json'), JSON.stringify(report, null, 2));
@@ -273,11 +254,4 @@ export async function compare(args: string[]): Promise<void> {
   console.log(
     `${changedPixels} changed pixels (${report.changedPercent.toFixed(2)}%). Report: ${join(output, 'report.md')}`
   );
-}
-
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  compare(process.argv.slice(2)).catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
-  });
 }

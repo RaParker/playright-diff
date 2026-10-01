@@ -39,7 +39,7 @@ try {
 
   const child = spawn(
     process.execPath,
-    [resolve('dist/quote-page.js'), 'abcdef1234567890abcdef1234567890', '42', '--no-ocr'],
+    [resolve('dist/main.js'), 'quote-page', 'abcdef1234567890abcdef1234567890', '42', '--no-ocr'],
     {
       cwd: directory,
       env,

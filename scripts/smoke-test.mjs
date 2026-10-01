@@ -14,7 +14,7 @@ try {
   const { port } = server.address();
   const child = spawn(
     process.execPath,
-    ['dist/screenshot.js', `http://127.0.0.1:${port}`, '--output', 'screenshots/smoke-test.png', '--wait', '0'],
+    ['dist/main.js', 'screenshot', `http://127.0.0.1:${port}`, '--output', 'screenshots/smoke-test.png', '--wait', '0'],
     { stdio: 'inherit' }
   );
   const code = await new Promise((resolve, reject) => {

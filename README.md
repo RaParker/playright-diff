@@ -84,11 +84,25 @@ use a new timestamped directory under `comparisons/`. A failed step stops the ac
 
 ## Build and verify
 
+`src/main.ts` is the CLI entry point for `screenshot`, `compare`, and `quote-page`.
+The action files are importable TypeScript modules with typed options. For example:
+
+```ts
+import { screenshot } from './src/screenshot.js';
+import { compare } from './src/compare.js';
+
+await screenshot('https://example.com', { output: 'screenshots/example.png', width: 390 });
+await compare('screenshots/before.png', 'screenshots/example.png', { noOcr: true });
+```
+
+`quotePage(policyDetailsId, historyId, options)` accepts the MRP directory and both
+URL templates in its options. `.env` loading is handled by the CLI.
+
 ```sh
 npm run typecheck
 npm test
 npm run build
-npm start -- https://example.com --output screenshots/example.png
+npm start -- screenshot https://example.com --output screenshots/example.png
 ```
 
 Run `npx eslint` (or `npm run lint`) from the project root. Generated output is ignored.

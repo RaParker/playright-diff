@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 
-const script = resolve('dist/quote-page.js');
+const script = resolve('dist/main.js');
 const settings = [
   'MRP_AND_QUOTE_OUTPUT_DIR',
   'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE',
@@ -33,7 +33,7 @@ async function fixture() {
 }
 
 async function run(directory, env, args = ['ABCDEF1234567890ABCDEF1234567890', '42', '--no-ocr']) {
-  const child = spawn(process.execPath, [script, ...args], { cwd: directory, env });
+  const child = spawn(process.execPath, [script, 'quote-page', ...args], { cwd: directory, env });
   let output = '';
   child.stdout.on('data', (data) => (output += data));
   child.stderr.on('data', (data) => (output += data));

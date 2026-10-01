@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import sharp from 'sharp';
 
 async function run(args) {
-  const child = spawn(process.execPath, [resolve('dist/compare.js'), ...args]);
+  const child = spawn(process.execPath, [resolve('dist/main.js'), 'compare', ...args]);
   let output = '';
   child.stdout.on('data', (data) => (output += data));
   child.stderr.on('data', (data) => (output += data));

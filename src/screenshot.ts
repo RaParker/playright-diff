@@ -1,62 +1,34 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
-import { parseArgs } from 'node:util';
-import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
-const help = `Usage: npm run screenshot -- <url> [options]
+export interface ScreenshotOptions {
+  output?: string;
+  width?: number;
+  height?: number;
+  wait?: number;
+  timeout?: number;
+}
 
-Options:
-  -o, --output <path>     PNG or JPEG output (default: screenshots/screenshot.png)
-  --width <pixels>        Viewport width (default: 1440)
-  --height <pixels>       Viewport height (default: 900)
-  --wait <milliseconds>   Extra delay after scrolling (default: 1000)
-  --timeout <ms>          Navigation/action timeout (default: 30000)
-  -h, --help              Show this help
-`;
-
-function integer(value: string, name: string, minimum: number): number {
-  const number = Number(value);
-  if (!Number.isSafeInteger(number) || number < minimum) {
+function integer(value: number, name: string, minimum: number): number {
+  if (!Number.isSafeInteger(value) || value < minimum) {
     throw new Error(`${name} must be an integer of at least ${minimum}.`);
   }
 
-  return number;
+  return value;
 }
 
-export async function screenshot(args: string[]): Promise<void> {
-  const { values, positionals } = parseArgs({
-    args,
-    allowPositionals: true,
-    options: {
-      output: { type: 'string', short: 'o', default: 'screenshots/screenshot.png' },
-      width: { type: 'string', default: '1440' },
-      height: { type: 'string', default: '900' },
-      wait: { type: 'string', default: '1000' },
-      timeout: { type: 'string', default: '30000' },
-      help: { type: 'boolean', short: 'h' }
-    }
-  });
-  if (values.help === true) {
-    console.log(help);
-    return;
-  }
-
-  const [urlArgument] = positionals;
-  if (positionals.length !== 1 || urlArgument === undefined) {
-    throw new Error(help);
-  }
-
+export async function screenshot(urlArgument: string, options: ScreenshotOptions = {}): Promise<void> {
   const url = new URL(urlArgument);
   if (!['http:', 'https:'].includes(url.protocol)) {
     throw new Error('URL must use http:// or https://.');
   }
 
-  const width = integer(values.width, 'width', 1);
-  const height = integer(values.height, 'height', 1);
-  const wait = integer(values.wait, 'wait', 0);
-  const timeout = integer(values.timeout, 'timeout', 1);
-  const output = resolve(values.output);
+  const width = integer(options.width ?? 1440, 'width', 1);
+  const height = integer(options.height ?? 900, 'height', 1);
+  const wait = integer(options.wait ?? 1000, 'wait', 0);
+  const timeout = integer(options.timeout ?? 30000, 'timeout', 1);
+  const output = resolve(options.output ?? 'screenshots/screenshot.png');
   const extension = extname(output).toLowerCase();
   if (!['.png', '.jpg', '.jpeg'].includes(extension)) {
     throw new Error('Output must have a .png, .jpg, or .jpeg extension.');
@@ -103,11 +75,4 @@ export async function screenshot(args: string[]): Promise<void> {
   } finally {
     await browser.close();
   }
-}
-
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  screenshot(process.argv.slice(2)).catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
-  });
 }
