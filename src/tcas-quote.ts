@@ -78,7 +78,9 @@ async function waitForQuote(page: Page, selector: string, textPattern: string, e
 async function checkQuoteErrors(page: Page, errorSelector: string): Promise<void> {
   const errors = page.locator(errorSelector);
   if ((await errors.count()) > 0) {
-    const text = (await errors.allTextContents()).map((message) => message.trim()).join('\n');
+    const links = errors.locator(':scope > ul > li > a');
+    const messages = await ((await links.count()) > 0 ? links : errors).allTextContents();
+    const text = messages.map((message) => message.trim()).join('\n');
     throw new Error(`TCAS quote errors: ${text.length > 0 ? text : '(empty error summary)'}`);
   }
 }

@@ -30,16 +30,16 @@ const cases = [
     'errors after contact click',
     `${cover}${contact}<script>
       document.querySelector('li').onclick = () => {
-        document.body.innerHTML += '<div class="av-card-error-summary">Missing contact details</div><div class="av-card-error-summary">Please enter your email</div>';
+        document.body.innerHTML += '<div class="av-card-error-summary"><h2>Check your details</h2><ul><li><a href="#contact"> Missing contact details </a></li><li><a href="#email">Please enter your email</a></li></ul></div>';
       };
     </script>`,
-    /step 2 \(click\) failed: TCAS quote errors: Missing contact details\nPlease enter your email/
+    /step 2 \(click\) failed: TCAS quote errors: Missing contact details\nPlease enter your email$/
   ],
   [
     'errors after quote click',
     `${cover}${contact}<button>Get your quote</button><script>
       document.querySelector('button').onclick = () => {
-        document.body.innerHTML = '<div class="av-card-error-summary">Invalid quote details</div>';
+        document.body.innerHTML = '<div class="av-card-error-summary"><ul><li><a href="#quote">Invalid quote details</a></li></ul></div>';
       };
     </script>`,
     /step 3 \(click\) failed: TCAS quote errors: Invalid quote details/
