@@ -94,7 +94,9 @@ Replacement values are URL-encoded.
 The action calls `screenshot` for each URL, saving `screenshots/ABCDEF1234567890ABCDEF1234567890-42-nhi.png`
 and `screenshots/ABCDEF1234567890ABCDEF1234567890-42-tcas.png`, then calls `compare` with NHI as before
 and TCAS as after. Screenshots are overwritten on repeat runs; comparison reports
-use a new timestamped directory under `comparisons/`. A failed step stops the action.
+use a new timestamped directory under `comparisons/`. A failed step stops its flow.
+NHI and TCAS run concurrently, and both finish even if either fails. Failures are
+reported by flow; comparison runs only when both captures succeed.
 
 Before capturing TCAS, the action runs `src/tcas-quote.steps.json` in order:
 wait for Cover details, click Contact details, click Get your quote, then wait

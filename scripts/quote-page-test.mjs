@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const requested = [];
+let finishNhi;
+let tcasRequested = false;
 const server = createServer((request, response) => {
   requested.push(request.url);
   response.setHeader('Content-Type', 'text/html');
@@ -14,7 +16,26 @@ const server = createServer((request, response) => {
     <div class="av-timeline-all-sections"><ul><li title="Contact details"
       onclick="document.querySelector('button').hidden = false">Contact details</li></ul></div>
     <button hidden onclick="document.body.innerHTML = '${quote}'">Get your quote</button>`;
-  response.end(`<!doctype html><html><body>${request.url.startsWith('/tcas/') ? journey : quote}</body></html>`);
+  const html = `<!doctype html><html><body>${request.url.startsWith('/tcas/') ? journey : quote}</body></html>`;
+  if (request.url.startsWith('/nhi/') && !tcasRequested) {
+    // A sequential implementation cannot reach TCAS before this NHI response.
+    const timer = setTimeout(() => {
+      response.writeHead(503);
+      response.end('TCAS did not start concurrently');
+    }, 5000);
+    finishNhi = () => {
+      clearTimeout(timer);
+      response.end(html);
+    };
+    return;
+  }
+
+  if (request.url.startsWith('/tcas/')) {
+    tcasRequested = true;
+    finishNhi?.();
+  }
+
+  response.end(html);
 });
 await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
 try {

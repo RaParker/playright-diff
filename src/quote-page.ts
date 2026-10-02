@@ -30,8 +30,21 @@ export async function quotePage(policyArgument: string, historyId: number, optio
   });
   const nhiPath = resolve('screenshots', `${basename}-nhi.png`);
   const tcasPath = resolve('screenshots', `${basename}-tcas.png`);
-  await screenshot(nhiUrl, { output: nhiPath });
-  await screenshot(tcasUrl, { output: tcasPath, beforeCapture: tcasQuote });
+  const captures = await Promise.allSettled([
+    screenshot(nhiUrl, { output: nhiPath }),
+    screenshot(tcasUrl, { output: tcasPath, beforeCapture: tcasQuote })
+  ]);
+  const failures = captures.flatMap((result, index) =>
+    result.status === 'rejected'
+      ? [
+          `${index === 0 ? 'NHI' : 'TCAS'}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`
+        ]
+      : []
+  );
+  if (failures.length > 0) {
+    throw new Error(`Quote capture failed; comparison skipped.\n${failures.join('\n')}`);
+  }
+
   await compare(nhiPath, tcasPath, { useOcr: options.useOcr });
 }
 

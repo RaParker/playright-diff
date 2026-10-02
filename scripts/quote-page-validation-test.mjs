@@ -130,7 +130,9 @@ for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].ma
       response.setHeader('Content-Type', 'text/html');
       response.end(
         !request.url.startsWith(`/${flow}/`)
-          ? '<h2>Quote ready</h2>'
+          ? request.url.startsWith('/tcas/')
+            ? '<h1>Cover details</h1><div class="av-timeline-all-sections"><ul><li title="Contact details">Contact details</li></ul></div><button onclick="document.body.innerHTML = &quot;<h2>Welcome Alex, here\'s your quote</h2>&quot;">Get your quote</button>'
+            : '<h2>Quote ready</h2>'
           : delayed
             ? '<script>setTimeout(() => { document.body.innerHTML = "<h2>Oops</h2>"; }, 100);</script>'
             : '<h2>Oops</h2>'
@@ -146,14 +148,17 @@ for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].ma
       assert.match(result.output, /Website displayed <h2>Oops<\/h2>/);
       assert.equal(
         requests.some((path) => path.startsWith('/tcas/')),
-        flow === 'tcas'
+        true
       );
       assert.ok(!(await readdir(directory)).includes('comparisons'));
       assert.doesNotMatch(result.output, /Report:/);
-      assert.deepEqual(await readdir(join(directory, 'screenshots')), [
-        ...(flow === 'tcas' ? ['ABCDEF1234567890ABCDEF1234567890-42-nhi.png'] : []),
-        `ABCDEF1234567890ABCDEF1234567890-42-${flow}-failed.png`
-      ]);
+      assert.deepEqual(
+        (await readdir(join(directory, 'screenshots'))).sort(),
+        [
+          `ABCDEF1234567890ABCDEF1234567890-42-${flow === 'nhi' ? 'tcas' : 'nhi'}.png`,
+          `ABCDEF1234567890ABCDEF1234567890-42-${flow}-failed.png`
+        ].sort()
+      );
     } finally {
       server.closeAllConnections();
       await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
@@ -179,14 +184,18 @@ test('quote-page stops after an HTTP failure and respects environment over .env'
     assert.notEqual(result.code, 0);
     assert.match(result.output, /HTTP 503/);
     assert.ok(requests.includes('/nhi/guid'));
-    assert.ok(requests.every((path) => !path.startsWith('/tcas/')));
+    assert.ok(requests.some((path) => path.startsWith('/tcas/')));
+    assert.match(result.output, /NHI: Website returned HTTP 503/);
+    assert.match(result.output, /TCAS: Website returned HTTP 503/);
+    assert.ok(!(await readdir(directory)).includes('comparisons'));
     assert.deepEqual((await readdir(directory)).sort(), [
       '.env',
       'ABCDEF1234567890ABCDEF1234567890-42-mrp.json',
       'screenshots'
     ]);
     assert.deepEqual(await readdir(join(directory, 'screenshots')), [
-      'ABCDEF1234567890ABCDEF1234567890-42-nhi-failed.png'
+      'ABCDEF1234567890ABCDEF1234567890-42-nhi-failed.png',
+      'ABCDEF1234567890ABCDEF1234567890-42-tcas-failed.png'
     ]);
     assert.equal(await readFile(join(directory, '.env'), 'utf8'), 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=invalid');
   } finally {
