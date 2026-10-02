@@ -1,0 +1,880 @@
+[
+  {
+    "path": "/api/address-lookup/:searchTerms",
+    "method": "get",
+    "description": "Searches addresses by postcode or address details (URL-encoded).",
+    "pathArgs": {
+      "searchTerms": {
+        "type": "string",
+        "description": "The PostCode and/or other address details (space separated, e.g. '71 Willow Road KT7 4BX' and encoded!)",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/address-lookup/id/:addressId",
+    "method": "get",
+    "description": "Retrieves an address by its ID (UDPRN).",
+    "pathArgs": {
+      "addressId": {
+        "type": "string",
+        "description": "The Address ID to retrieve",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/answers/:policyDetailsId/:historyId/user/:agentId",
+    "method": "get",
+    "description": "Retrieves answers from Policy API for the given policy and agent.",
+    "pathArgs": {
+      "policyDetailsId": {
+        "type": "string",
+        "description": "The PolicyDetailsId to get a Quote Summary for",
+        "isOptional": false
+      },
+      "historyId": {
+        "type": "number",
+        "description": "The HistoryId to get a Quote Summary for",
+        "isOptional": false
+      },
+      "agentId": {
+        "type": "string",
+        "description": "The Agent that has requested a Quote Summary",
+        "isOptional": false
+      }
+    },
+    "queryArgs": {
+      "quoteType": {
+        "type": "string",
+        "description": "The quoteType; one of 'nb', 'ren', 'mta'. Required if historyId=0",
+        "isOptional": true
+      },
+      "customerDetailsKey": {
+        "type": "string",
+        "description": "The key used for verifying a user is authenticated",
+        "isOptional": true
+      }
+    }
+  },
+  {
+    "path": "/api/answers/:policyDetailsId/:historyId/user/:agentId",
+    "method": "post",
+    "description": "Saves answers to Policy API for the given policy and agent.",
+    "pathArgs": {
+      "policyDetailsId": {
+        "type": "string",
+        "description": "The PolicyDetailsId to get a Quote Summary for",
+        "isOptional": false
+      },
+      "historyId": {
+        "type": "number",
+        "description": "The HistoryId to get a Quote Summary for",
+        "isOptional": false
+      },
+      "agentId": {
+        "type": "string",
+        "description": "The Agent that has requested a Quote Summary",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/answers/:policyDetailsId/:historyId/user/:userName/delta",
+    "method": "post",
+    "description": "Posts answers to Quote Journey Service and returns only the changed answers (delta) instead of the full answer set.",
+    "pathArgs": {
+      "policyDetailsId": {
+        "type": "string",
+        "description": "The PolicyDetailsId for the quote journey",
+        "isOptional": false
+      },
+      "historyId": {
+        "type": "number",
+        "description": "The HistoryId for the quote journey",
+        "isOptional": false
+      },
+      "userName": {
+        "type": "string",
+        "description": "The user name for the quote journey",
+        "isOptional": false
+      }
+    },
+    "nonLiveOnly": true
+  },
+  {
+    "path": "/api/answers/:policyDetailsId/:historyId/user/:userName/validate",
+    "method": "post",
+    "description": "Validates an HpAnswerMap and returns the validation result without posting to Quote Journey Service.",
+    "pathArgs": {
+      "policyDetailsId": {
+        "type": "string",
+        "description": "The PolicyDetailsId for the quote journey",
+        "isOptional": false
+      },
+      "historyId": {
+        "type": "number",
+        "description": "The HistoryId for the quote journey",
+        "isOptional": false
+      },
+      "userName": {
+        "type": "string",
+        "description": "The user name for the quote journey",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/answers/:productId/:answersId",
+    "method": "delete",
+    "description": "Deletes answers for a product and answers ID. Non-live only. Requires authentication.",
+    "nonLiveOnly": true,
+    "authHeaderRequired": true,
+    "pathArgs": {
+      "productId": {
+        "type": "string",
+        "description": "The Product ID associated with these answers",
+        "isOptional": false
+      },
+      "answersId": {
+        "type": "string",
+        "description": "The Answers ID to delete (or Quote GUID, if you prefer)",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "id": "getQuoteAnswers",
+    "path": "/api/answers/:productId/:answersId",
+    "method": "get",
+    "description": "Retrieves quote answers with NHI and data source options (e.g. Policy API).",
+    "pathArgs": {
+      "productId": {
+        "type": "string",
+        "description": "The Product ID associated with these answers",
+        "isOptional": false
+      },
+      "answersId": {
+        "type": "string",
+        "description": "The Answers ID (or Quote GUID, if you prefer)",
+        "isOptional": false
+      }
+    },
+    "queryArgs": {
+      "questionSet": {
+        "type": "boolean",
+        "description": "If true, the answers will be returned as part of the question set, otherwise the answers will be returned on their own",
+        "isOptional": true,
+        "default": true
+      },
+      "autoIncrement": {
+        "type": "boolean",
+        "description": "Should the questionset have its version auto-incremented where possible?",
+        "isOptional": true,
+        "default": true
+      },
+      "optimise": {
+        "type": "boolean",
+        "description": "Should function references be resolved (true) or unchanged (false)",
+        "isOptional": true,
+        "default": true
+      },
+      "validAtDate": {
+        "type": "string",
+        "description": "The date at which matching question sets must be valid (see 'validFrom', 'validTo')",
+        "isOptional": true,
+        "default": null
+      },
+      "experiments": {
+        "type": "boolean",
+        "description": "If true, experiment versions may be returned",
+        "isOptional": true,
+        "default": false
+      },
+      "ignoreUpgradeConfigErrors": {
+        "type": "boolean",
+        "description": "Ignore any upgrade configuration errors and return all valid upgrades",
+        "isOptional": true,
+        "default": true
+      },
+      "nhi": {
+        "type": "boolean",
+        "description": "If true, will attempt to get NHI answers and use these instead of any existing answers",
+        "isOptional": true,
+        "default": false
+      },
+      "productVersion": {
+        "type": "string",
+        "description": "The product version (e.g. evan, florence)",
+        "isOptional": true,
+        "default": null
+      },
+      "source": {
+        "type": "string",
+        "description": "If the data should come from PolicyApi, provide 'tcas'",
+        "isOptional": true,
+        "default": null
+      }
+    }
+  },
+  {
+    "id": "saveQuoteAnswers",
+    "path": "/api/answers/:productId/:answersId",
+    "method": "post",
+    "description": "Saves answers for a product and answers ID.",
+    "pathArgs": {
+      "productId": {
+        "type": "string",
+        "description": "The Product ID associated with these answers",
+        "isOptional": false
+      },
+      "answersId": {
+        "type": "string",
+        "description": "The Answers ID to save (or Quote GUID, if you prefer)",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/answers/upgrade-check",
+    "method": "get",
+    "description": "Checks answer upgrade compatibility for a product and from-version. Non-live only.",
+    "nonLiveOnly": true,
+    "queryArgs": {
+      "productId": {
+        "type": "string",
+        "description": "The Product ID that will have its answers upgraded",
+        "isOptional": false
+      },
+      "fromVersion": {
+        "type": "string",
+        "description": "Any Answers with this QuestionSet ID will be upgraded. Format: \"X.X.X.X\"",
+        "isOptional": false
+      },
+      "validAtDate": {
+        "type": "string",
+        "description": "The date at which matching question sets must be valid (see 'validFrom', 'validTo')",
+        "isOptional": true,
+        "default": null
+      },
+      "experiments": {
+        "type": "boolean",
+        "description": "If true, experiment versions may be returned",
+        "isOptional": true,
+        "default": false
+      },
+      "ignoreUpgradeConfigErrors": {
+        "type": "boolean",
+        "description": "Ignore any upgrade configuration errors and return all valid upgrades",
+        "isOptional": true,
+        "default": true
+      }
+    }
+  },
+  {
+    "path": "/api/authenticated-user",
+    "method": "get",
+    "description": "Retrieves the currently authenticated user."
+  },
+  {
+    "path": "/api/cache-contents",
+    "method": "get",
+    "description": "Retrieves cache contents for debugging. Requires authentication.",
+    "authHeaderRequired": true
+  },
+  {
+    "id": "quoteDocumentation",
+    "path": "/api/documentation",
+    "method": "get",
+    "description": "Retrieves quote API documentation listing all feature constraints. Non-live only.",
+    "nonLiveOnly": true
+  },
+  {
+    "path": "/api/events",
+    "method": "post",
+    "description": "Posts client events (e.g. analytics, logging) to the server."
+  },
+  {
+    "path": "/api/healthcheck",
+    "method": "get",
+    "description": "Verifies the server is running and responsive."
+  },
+  {
+    "id": "liveness",
+    "path": "/api/liveness",
+    "method": "get",
+    "description": "Verifies the server is running, without checking its dependencies."
+  },
+  {
+    "path": "/api/logoff",
+    "method": "post",
+    "description": "Logs off the current user."
+  },
+  {
+    "path": "/api/nhi/all-sections/:quoteGuid",
+    "method": "get",
+    "description": "Retrieves all NHI sections for a quote. Non-live only.",
+    "nonLiveOnly": true,
+    "pathArgs": {
+      "quoteGuid": {
+        "type": "string",
+        "description": "The Quote GUID to get a Quote Summary for",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/nhi/answers/:productId/:quoteGuid",
+    "method": "get",
+    "description": "Retrieves NHI answers for a quote with optional question set and product version.",
+    "pathArgs": {
+      "productId": {
+        "type": "string",
+        "description": "The productId against which these answers are saved",
+        "isOptional": false
+      },
+      "quoteGuid": {
+        "type": "string",
+        "description": "The Quote GUID to get a Quote Summary for",
+        "isOptional": false
+      }
+    },
+    "queryArgs": {
+      "needQuestionSet": {
+        "type": "string",
+        "description": "Whether or not the question set should be returned (true) or answers alone (false)",
+        "isOptional": true,
+        "default": true
+      },
+      "productVersion": {
+        "type": "string",
+        "description": "The product version (e.g. evan, florence)",
+        "isOptional": true,
+        "default": null
+      },
+      "activeSection": {
+        "type": "string",
+        "description": "Specify 'quote-page' if that is where you want to go",
+        "isOptional": true,
+        "default": null
+      }
+    }
+  },
+  {
+    "path": "/api/nhi/assumptions/:quoteGuid",
+    "method": "get",
+    "description": "Retrieves quote assumptions (policy conditions and disclaimers) for a quote.",
+    "pathArgs": {
+      "quoteGuid": {
+        "type": "string",
+        "description": "The Quote GUID to get a Quote Summary for",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "id": "saveContactPreferences",
+    "path": "/api/nhi/contactPreferences",
+    "method": "post",
+    "description": "Saves customer contact preferences (e.g. GDPR consent). Min response time prevents UI flicker.",
+    "minResponseTime": 500
+  },
+  {
+    "id": "saveMortgageDetails",
+    "path": "/api/nhi/mortgageDetails",
+    "method": "post",
+    "description": "Saves mortgage details. Min response time prevents UI flicker.",
+    "minResponseTime": 500
+  },
+  {
+    "id": "paymentCallback",
+    "path": "/api/nhi/payment/clientFileCheck/:quoteGuid",
+    "method": "get",
+    "description": "Checks whether a payment client file exists for a quote.",
+    "pathArgs": {
+      "quoteGuid": {
+        "type": "string",
+        "description": "The quote GUID to check",
+        "isOptional": false
+      }
+    },
+    "queryArgs": {
+      "source": {
+        "type": "string",
+        "description": "The source",
+        "isOptional": true
+      }
+    }
+  },
+  {
+    "id": "paymentCallback",
+    "path": "/api/nhi/paymentCallback",
+    "method": "post",
+    "description": "Handles payment callback notifications from NHI. Min response time prevents UI flicker.",
+    "minResponseTime": 500
+  },
+  {
+    "id": "policyConversionResult",
+    "path": "/api/nhi/postSaleData/:answersId/:artemisQuoteGuid",
+    "method": "get",
+    "description": "Retrieves post-sale data after policy conversion for a given payment type.",
+    "pathArgs": {
+      "answersId": {
+        "type": "string",
+        "description": "The Answers Id to get the Post Sale Data for",
+        "isOptional": false
+      },
+      "artemisQuoteGuid": {
+        "type": "string",
+        "description": "The Artemis Quote Guid to get the Post Sale Data for",
+        "isOptional": false
+      }
+    },
+    "queryArgs": {
+      "paymentType": {
+        "type": "string",
+        "description": "The selected payment type (e.g. annual, monthly)",
+        "isOptional": true
+      }
+    }
+  },
+  {
+    "path": "/api/nhi/quote-guid",
+    "method": "get",
+    "description": "Generate a new Quote GUID",
+    "nonLiveOnly": true,
+    "queryArgs": {
+      "agentId": {
+        "type": "string",
+        "description": "The agent ID",
+        "isOptional": false
+      },
+      "branchCode": {
+        "type": "string",
+        "description": "The branch code",
+        "isOptional": false
+      },
+      "callMediaUser": {
+        "type": "string",
+        "description": "The call media user",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/nhi/quote-result/:quoteGuid",
+    "method": "get",
+    "description": "Retrieves the quote result (premium and coverage details) for a quote.",
+    "pathArgs": {
+      "quoteGuid": {
+        "type": "string",
+        "description": "The Quote GUID to get a result for",
+        "isOptional": false
+      }
+    },
+    "queryArgs": {
+      "agentId": {
+        "type": "string",
+        "description": "If an agentId is associated with the journey, it should be provided",
+        "isOptional": true,
+        "default": null
+      },
+      "source": {
+        "type": "string",
+        "description": "If the data should come from PolicyApi, provide 'tcas'",
+        "isOptional": true,
+        "default": null
+      }
+    }
+  },
+  {
+    "path": "/api/nhi/quote/:productId/:quoteGuid",
+    "method": "post",
+    "description": "Saves a quote page: calculates premium and persists data to NHI.",
+    "pathArgs": {
+      "productId": {
+        "type": "string",
+        "description": "The productId against which these answers are saved",
+        "isOptional": false
+      },
+      "quoteGuid": {
+        "type": "string",
+        "description": "The Quote GUID to get a Quote Summary for",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/nhi/vouchercode/redeem",
+    "method": "post",
+    "description": "Redeems a voucher code."
+  },
+  {
+    "path": "/api/nhi/vouchercode/verify",
+    "method": "post",
+    "description": "Verifies a voucher code."
+  },
+  {
+    "path": "/api/questionset",
+    "method": "post",
+    "description": "Saves a question set. Requires authentication.",
+    "authHeaderRequired": true
+  },
+  {
+    "id": "getQuoteQuestionSet",
+    "path": "/api/questionset/by/:selector(id|productid)/:questionSetOrProductId",
+    "method": "get",
+    "description": "Retrieves a quote question set with NHI GUID generation and branch options.",
+    "pathArgs": {
+      "selector": {
+        "type": "string",
+        "description": "One of 'id', 'productid'",
+        "isOptional": false
+      },
+      "questionSetOrProductId": {
+        "type": "string",
+        "description": "Either a questionSetId or a productId",
+        "isOptional": false
+      }
+    },
+    "queryArgs": {
+      "agentId": {
+        "type": "string",
+        "description": "The id of an agent",
+        "isOptional": true,
+        "default": null
+      },
+      "callMediaUser": {
+        "type": "string",
+        "description": "The name of a call centre agent",
+        "isOptional": true,
+        "default": null
+      },
+      "answers": {
+        "type": "boolean",
+        "description": "If a false value is not explicitly provided, answers will be retrieved or created.",
+        "isOptional": true,
+        "default": true
+      },
+      "summary": {
+        "type": "boolean",
+        "description": "If true, a summary (as oposed to a complete questionset) will be returned",
+        "isOptional": true,
+        "default": false
+      },
+      "validAtDate": {
+        "type": "string",
+        "description": "The date at which a returned questionset must be valid (see 'validFrom', 'validTo')",
+        "isOptional": true,
+        "default": null
+      },
+      "experiments": {
+        "type": "boolean",
+        "description": "If true, experiment versions may be returned",
+        "isOptional": true,
+        "default": false
+      },
+      "bugfix": {
+        "type": "boolean",
+        "description": "If a false value is not explicitly provided, a bugfix increment will be returned if available",
+        "isOptional": true,
+        "default": true
+      },
+      "optimise": {
+        "type": "boolean",
+        "description": "If false, will return non-optimised questionset",
+        "isOptional": true,
+        "default": true
+      },
+      "productVersion": {
+        "type": "string",
+        "description": "When provided with a ProductId and no QuestionSetId, this will filter according to the version rules",
+        "isOptional": true,
+        "default": null
+      },
+      "generateNhiGuid": {
+        "type": "boolean",
+        "description": "Generates a new NHI GUID when true (otherwise generates a new random GUID)",
+        "isOptional": true,
+        "default": false
+      },
+      "branchId": {
+        "type": "string",
+        "description": "The branch code of an affilate",
+        "isOptional": true,
+        "default": null
+      }
+    }
+  },
+  {
+    "path": "/api/questionsets",
+    "method": "get",
+    "description": "Retrieves all question sets with optional filtering by product, date, and summary.",
+    "queryArgs": {
+      "latestOnly": {
+        "type": "boolean",
+        "description": "only return the latest question set for each product",
+        "isOptional": true,
+        "default": true
+      },
+      "productId": {
+        "type": "string",
+        "description": "The product ID to search question sets against",
+        "isOptional": true,
+        "default": null
+      },
+      "excludeProductIds": {
+        "type": "string",
+        "description": "A comma separated list of excluded productIds",
+        "isOptional": true,
+        "default": null
+      },
+      "summary": {
+        "type": "boolean",
+        "description": "Display summaries of the matching question sets",
+        "isOptional": true,
+        "default": false
+      },
+      "validAtDate": {
+        "type": "string",
+        "description": "The date at which matching question sets must be valid (see 'validFrom', 'validTo')",
+        "isOptional": true,
+        "default": null
+      },
+      "optimise": {
+        "type": "boolean",
+        "description": "Should function references be resolved (true) or unchanged (false)",
+        "isOptional": true,
+        "default": true
+      },
+      "experiments": {
+        "type": "boolean",
+        "description": "If true, experiment versions may be returned",
+        "isOptional": true,
+        "default": false
+      }
+    }
+  },
+  {
+    "path": "/api/quote-and-save/:policyDetailsId/:historyId/user/:userName",
+    "method": "post",
+    "description": "Quotes and saves the policy using the provided answer map via Quote Journey Service.",
+    "pathArgs": {
+      "policyDetailsId": {
+        "type": "string",
+        "description": "The PolicyDetailsId for the quote journey",
+        "isOptional": false
+      },
+      "historyId": {
+        "type": "number",
+        "description": "The HistoryId for the quote journey",
+        "isOptional": false
+      },
+      "userName": {
+        "type": "string",
+        "description": "The user name for the quote journey",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/quote-result/:policyDetailsId/:historyId/user/:agentId",
+    "method": "get",
+    "description": "Retrieves the quote result (premium and payment data) from Policy API for the given policy and agent.",
+    "pathArgs": {
+      "policyDetailsId": {
+        "type": "string",
+        "description": "The PolicyDetailsId to get a Quote Summary for",
+        "isOptional": false
+      },
+      "historyId": {
+        "type": "number",
+        "description": "The HistoryId to get a Quote Summary for",
+        "isOptional": false
+      },
+      "agentId": {
+        "type": "string",
+        "description": "The Agent that has requested a Quote Summary",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/quote-summary/:policyDetailsId/:historyId/user/:agentId",
+    "method": "get",
+    "description": "The GET variant is used to get a quote from NHI using details that have been saved prior.",
+    "pathArgs": {
+      "policyDetailsId": {
+        "type": "string",
+        "description": "The PolicyDetailsId to get a Quote Summary for",
+        "isOptional": false
+      },
+      "historyId": {
+        "type": "number",
+        "description": "The HistoryId to get a Quote Summary for",
+        "isOptional": false
+      },
+      "agentId": {
+        "type": "string",
+        "description": "The Agent that has requested a Quote Summary",
+        "isOptional": false
+      }
+    },
+    "queryArgs": {
+      "answers": {
+        "type": "string",
+        "description": "Get answers with this request?",
+        "isOptional": true,
+        "default": false
+      },
+      "branchId": {
+        "type": "string",
+        "description": "The branch code of an affilate",
+        "isOptional": true
+      }
+    }
+  },
+  {
+    "path": "/api/quote-summary/:policyDetailsId/:historyId/user/:agentId",
+    "method": "post",
+    "description": "The POST variant is used to post answers before getting a quote - this should only be called when the browser navigation's back/forward buttons have been used to get to the quote page.",
+    "pathArgs": {
+      "policyDetailsId": {
+        "type": "string",
+        "description": "The PolicyDetailsId to get a Quote Summary for",
+        "isOptional": false
+      },
+      "historyId": {
+        "type": "number",
+        "description": "The HistoryId to get a Quote Summary for",
+        "isOptional": false
+      },
+      "agentId": {
+        "type": "string",
+        "description": "The Agent that has requested a Quote Summary",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/quote-summary/:quoteGuid/user/:agentId",
+    "method": "get",
+    "description": "The GET variant is used to get a quote from NHI using details that have been saved prior.",
+    "pathArgs": {
+      "quoteGuid": {
+        "type": "string",
+        "description": "The Quote GUID to get a Quote Summary for",
+        "isOptional": false
+      },
+      "agentId": {
+        "type": "string",
+        "description": "The Agent that has requested a Quote Summary",
+        "isOptional": false
+      }
+    },
+    "queryArgs": {
+      "answers": {
+        "type": "string",
+        "description": "Get answers with this request?",
+        "isOptional": true,
+        "default": false
+      },
+      "branchId": {
+        "type": "string",
+        "description": "The branch code of an affilate",
+        "isOptional": true
+      },
+      "source": {
+        "type": "string",
+        "description": "If the data should come from PolicyApi, provide 'tcas'",
+        "isOptional": true,
+        "default": null
+      }
+    }
+  },
+  {
+    "path": "/api/quote-summary/:quoteGuid/user/:agentId",
+    "method": "post",
+    "description": "The POST variant is used to post answers before getting a quote - this should only be called when the browser navigation's back/forward buttons have been used to get to the quote page.",
+    "pathArgs": {
+      "quoteGuid": {
+        "type": "string",
+        "description": "The Quote GUID to get a Quote Summary for",
+        "isOptional": false
+      },
+      "agentId": {
+        "type": "string",
+        "description": "The Agent that has requested a Quote Summary",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/save-details",
+    "method": "post",
+    "description": "Saves quote details and optionally calculates price or retrieves quote summary.",
+    "queryArgs": {
+      "getQuoteSummary": {
+        "type": "boolean",
+        "description": "If true, gets the full quote summary. If this is true, 'getQuotPrice' will do nothing.",
+        "isOptional": true,
+        "default": false
+      },
+      "getQuotePrice": {
+        "type": "boolean",
+        "description": "If true, calculates a quote price",
+        "isOptional": true,
+        "default": true
+      },
+      "incrementedSectionId": {
+        "type": "string",
+        "description": "If a section has been incremented and needs to be saved, its ID is provided",
+        "isOptional": true,
+        "default": null
+      }
+    }
+  },
+  {
+    "path": "/api/scriptError",
+    "method": "post",
+    "description": "Logs client-side script errors to the server."
+  },
+  {
+    "path": "/api/version-release-upgrade/:productId/:upgradeId",
+    "method": "delete",
+    "description": "Removes a version release upgrade for a product. Requires authentication.",
+    "authHeaderRequired": true,
+    "pathArgs": {
+      "productId": {
+        "type": "string",
+        "description": "The Product ID to which the Upgrade belongs",
+        "isOptional": false
+      },
+      "upgradeId": {
+        "type": "string",
+        "description": "The Upgrade ID that will be deleted",
+        "isOptional": false
+      }
+    }
+  },
+  {
+    "path": "/api/version-release-upgrades",
+    "method": "post",
+    "description": "Adds version release upgrades. Requires authentication.",
+    "authHeaderRequired": true
+  },
+  {
+    "path": "/api/version-release-upgrades",
+    "method": "get",
+    "description": "Retrieves version release upgrades. Non-live only.",
+    "nonLiveOnly": true,
+    "queryArgs": {
+      "ignoreErrors": {
+        "type": "boolean",
+        "description": "Ignore errors and return all valid upgrades",
+        "isOptional": true,
+        "default": false
+      }
+    }
+  }
+]
