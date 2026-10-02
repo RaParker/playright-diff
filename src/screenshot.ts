@@ -23,7 +23,13 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
     await Promise.race([capturePage(page, url.href, output, extension, wait, options.beforeCapture), failure]);
     console.log(`Screenshot saved to ${output}`);
   } catch (error) {
-    if (page !== undefined) {
+    if (
+      page !== undefined &&
+      (await page
+        .locator('div.hp-loading-widget-screen')
+        .or(page.locator('h2').filter({ hasText: /^Loading your quote$/ }))
+        .count()) === 0
+    ) {
       const failedOutput = `${output.slice(0, -extension.length)}-failed.png`;
       try {
         await mkdir(dirname(failedOutput), { recursive: true });
@@ -53,16 +59,31 @@ async function capturePage(
     throw new Error(`Website returned HTTP ${response.status()}.`);
   }
 
+  await waitForQuoteLoading(page);
   await beforeCapture?.(page);
+  await waitForQuoteLoading(page);
   await scrollPage(page);
   await page.waitForTimeout(wait);
   await mkdir(dirname(output), { recursive: true });
+  await waitForQuoteLoading(page);
   await page.screenshot({
     path: output,
     type: extension === '.png' ? 'png' : 'jpeg',
     fullPage: true,
     animations: 'disabled'
   });
+}
+
+async function waitForQuoteLoading(page: Page): Promise<void> {
+  try {
+    await page.waitForFunction(
+      () =>
+        document.querySelector('div.hp-loading-widget-screen') === null &&
+        [...document.querySelectorAll('h2')].every((heading) => heading.textContent?.trim() !== 'Loading your quote')
+    );
+  } catch (error) {
+    throw new Error('Timed out waiting for quote loading screen to disappear.', { cause: error });
+  }
 }
 
 async function watchForOops(page: Page): Promise<{ failure: Promise<never> }> {

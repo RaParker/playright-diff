@@ -115,6 +115,9 @@ retries Contact details once. Remaining errors stop the journey as usual.
 Both NHI and TCAS are monitored for an `h2` containing exactly `Oops`, from
 navigation through capture. If one appears, the flow stops and saves a failure
 screenshot; subsequent journey steps and comparison are skipped.
+Both flows wait for `<h2>Loading your quote</h2>` and `div.hp-loading-widget-screen` to disappear before continuing
+and check again before capturing. The configured action timeout bounds the wait;
+a persistent loading screen fails without saving a screenshot of that screen.
 
 If navigation or a Playwright step fails after the page is created, the action captures
 the current page beside the intended output with a `-failed.png` suffix (for example,

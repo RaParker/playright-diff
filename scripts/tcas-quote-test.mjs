@@ -20,6 +20,14 @@ function journey(outcome) {
 }
 
 const cases = [
+  ...['<h2>Loading your quote</h2>', '<div class="hp-loading-widget-screen"></div>'].map((loading) => [
+    `TCAS loading before journey: ${loading}`,
+    `${loading}<script>setTimeout(() => {
+      document.body.innerHTML = ${JSON.stringify(cover + contact + '<button>Get your quote</button>')};
+      document.querySelector('button').onclick = () => { document.body.innerHTML = "<h2>Welcome Alex, here's your quote</h2>"; };
+    }, 300);</script>`,
+    undefined
+  ]),
   ['Oops on initial TCAS page', '<h2>Oops</h2>', /Website displayed <h2>Oops<\/h2>/],
   ['Oops after quote click', journey('<h2>Oops</h2>'), /Website displayed <h2>Oops<\/h2>/],
   ...[
@@ -88,6 +96,39 @@ const cases = [
     /Invalid address/
   ]
 ];
+
+for (const loading of ['<h2>Loading your quote</h2>', '<div class="hp-loading-widget-screen"></div>']) {
+  for (const completes of [true, false]) {
+    test(`shared capture loading: ${loading}, completes: ${completes}`, async () => {
+      const server = createServer((_request, response) => {
+        response.setHeader('Content-Type', 'text/html');
+        response.end(
+          `${loading}${completes ? '<script>setTimeout(() => { document.body.innerHTML = \'<div style="height:1800px">Quote ready</div>\'; }, 400);</script>' : ''}`
+        );
+      });
+      await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+      const directory = await mkdtemp(join(tmpdir(), 'loading-quote-'));
+      try {
+        const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {
+          output: join(directory, 'quote.png'),
+          wait: 0,
+          timeout: 1000
+        });
+        if (completes) {
+          await capture;
+          const png = await readFile(join(directory, 'quote.png'));
+          assert.ok(png.readUInt32BE(20) >= 1800);
+        } else {
+          await assert.rejects(capture, /Timed out waiting for quote loading screen/);
+          assert.deepEqual(await readdir(directory), []);
+        }
+      } finally {
+        server.closeAllConnections();
+        await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+      }
+    });
+  }
+}
 
 for (const [name, html, expectedError] of cases) {
   test(`TCAS journey: ${name}`, async () => {
