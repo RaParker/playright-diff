@@ -97,6 +97,43 @@ const cases = [
   ]
 ];
 
+test('Oops appearing during capture cannot produce a normal screenshot', async () => {
+  const server = createServer((_request, response) => {
+    response.setHeader('Content-Type', 'text/html');
+    response.end('<h2>Quote ready</h2>');
+  });
+  await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+  const directory = await mkdtemp(join(tmpdir(), 'oops-capture-'));
+  try {
+    await assert.rejects(
+      screenshot(`http://127.0.0.1:${server.address().port}`, {
+        output: join(directory, 'quote.png'),
+        wait: 0,
+        timeout: 1000,
+        beforeCapture: async (page) => {
+          // Exercise the direct check even if observer notification is unavailable.
+          await page.evaluate(() => {
+            window.__stopOnOops = async () => undefined;
+          });
+          const capture = page.screenshot.bind(page);
+          page.screenshot = async (options) => {
+            const image = await capture(options);
+            await page.evaluate(() => {
+              document.body.innerHTML = '<h2>Oops</h2>';
+            });
+            return image;
+          };
+        }
+      }),
+      /Website displayed <h2>Oops<\/h2>/
+    );
+    assert.deepEqual(await readdir(directory), ['quote-failed.png']);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+  }
+});
+
 for (const loading of ['<h2>Loading your quote</h2>', '<div class="hp-loading-widget-screen"></div>']) {
   for (const completes of [true, false]) {
     test(`shared capture loading: ${loading}, completes: ${completes}`, async () => {

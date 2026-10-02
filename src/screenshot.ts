@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import { chromium, type Page } from 'playwright';
 
@@ -59,19 +59,30 @@ async function capturePage(
     throw new Error(`Website returned HTTP ${response.status()}.`);
   }
 
+  await checkForOops(page);
   await waitForQuoteLoading(page);
   await beforeCapture?.(page);
+  await checkForOops(page);
   await waitForQuoteLoading(page);
   await scrollPage(page);
   await page.waitForTimeout(wait);
   await mkdir(dirname(output), { recursive: true });
   await waitForQuoteLoading(page);
-  await page.screenshot({
-    path: output,
+  await checkForOops(page);
+  const image = await page.screenshot({
     type: extension === '.png' ? 'png' : 'jpeg',
     fullPage: true,
     animations: 'disabled'
   });
+  await checkForOops(page);
+  await writeFile(output, image);
+}
+
+async function checkForOops(page: Page): Promise<void> {
+  const headings = await page.locator('h2').allTextContents();
+  if (headings.some((text) => text.trim() === 'Oops')) {
+    throw new Error('Website displayed <h2>Oops</h2>; stopping the journey.');
+  }
 }
 
 async function waitForQuoteLoading(page: Page): Promise<void> {

@@ -121,17 +121,19 @@ test('quote-page help works without configuration', async () => {
   assert.match(result.output, /Usage:/);
 });
 
-for (const delayed of [false, true]) {
-  test(`quote-page stops on NHI Oops (delayed: ${delayed})`, async () => {
+for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].map((delayed) => [flow, delayed]))) {
+  test(`quote-page skips comparison on ${flow} Oops (delayed: ${delayed})`, async () => {
     const { directory, env } = await fixture();
     const requests = [];
     const server = createServer((request, response) => {
       requests.push(request.url);
       response.setHeader('Content-Type', 'text/html');
       response.end(
-        delayed
-          ? '<script>setTimeout(() => { document.body.innerHTML = "<h2>Oops</h2>"; }, 100);</script>'
-          : '<h2>Oops</h2>'
+        !request.url.startsWith(`/${flow}/`)
+          ? '<h2>Quote ready</h2>'
+          : delayed
+            ? '<script>setTimeout(() => { document.body.innerHTML = "<h2>Oops</h2>"; }, 100);</script>'
+            : '<h2>Oops</h2>'
       );
     });
     await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
@@ -142,9 +144,15 @@ for (const delayed of [false, true]) {
       const result = await run(directory, env);
       assert.notEqual(result.code, 0);
       assert.match(result.output, /Website displayed <h2>Oops<\/h2>/);
-      assert.ok(requests.every((path) => !path.startsWith('/tcas/')));
+      assert.equal(
+        requests.some((path) => path.startsWith('/tcas/')),
+        flow === 'tcas'
+      );
+      assert.ok(!(await readdir(directory)).includes('comparisons'));
+      assert.doesNotMatch(result.output, /Report:/);
       assert.deepEqual(await readdir(join(directory, 'screenshots')), [
-        'ABCDEF1234567890ABCDEF1234567890-42-nhi-failed.png'
+        ...(flow === 'tcas' ? ['ABCDEF1234567890ABCDEF1234567890-42-nhi.png'] : []),
+        `ABCDEF1234567890ABCDEF1234567890-42-${flow}-failed.png`
       ]);
     } finally {
       server.closeAllConnections();
