@@ -104,7 +104,9 @@ async function run(directory, env, args) {
     child.once('error', reject);
     child.once('close', resolveExit);
   });
-  return { code, output };
+  // ANSI colour codes removed, for asserting on the text alone.
+  const plain = output.replace(new RegExp(`${String.fromCharCode(27)}\\[\\d+m`, 'g'), '');
+  return { code, output, plain };
 }
 
 async function readMapping(directory) {
@@ -523,7 +525,7 @@ describe('quote-pages', () => {
 
       // assert
       assert.equal(result.code, 0, result.output);
-      assert.match(result.output, /2 passed \(1 both declined\), 0 failed/);
+      assert.match(result.plain, /2 passed \(1 both declined\), 0 failed/);
     });
   });
 
@@ -538,7 +540,7 @@ describe('quote-pages', () => {
 
       // assert
       assert.equal(result.code, 0, result.output);
-      assert.match(result.output, /1 passed \(0 both declined\), 0 failed/);
+      assert.match(result.plain, /\n\nQuote pages summary\n1 passed \(0 both declined\), 0 failed\.\n/);
       assert.ok(result.output.includes(`\u001b[36m[1/1] ${policyA}-1`), result.output);
       assert.ok(requests.includes(`/tcas/${policyA}/1`));
       assert.ok(!requests.some((path) => path.startsWith('/tcas-replacement/')));
@@ -557,8 +559,12 @@ describe('quote-pages', () => {
 
       // assert
       assert.notEqual(result.code, 0);
-      assert.match(result.output, /1 passed \(0 both declined\), 1 failed/);
-      assert.match(result.output, new RegExp(`${policyA}-1: .*ENOENT`));
+      assert.match(result.plain, /Quote pages summary\n1 passed \(0 both declined\), 1 failed\.\n/);
+      assert.match(result.plain, new RegExp(`\n${policyA}-1\n  .*ENOENT`));
+      assert.match(result.plain, /1 of 2 quote pages failed; see the summary above\./);
+      // Only the issues and the failed count are red, not the whole summary.
+      assert.ok(result.output.includes('\u001b[32m1 passed'), result.output);
+      assert.ok(result.output.includes(`\n${policyA}-1\n`), result.output);
       assert.ok((await readdir(join(directory, 'screenshots'))).includes(`${policyB}-1-nhi.png`));
     });
   });

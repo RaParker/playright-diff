@@ -150,14 +150,15 @@ export async function quotePage(
  * @param policyDetailsIds Policy details IDs to capture and compare.
  * @param historyId History ID used for every policy.
  * @param options Options passed to each {@link quotePage} run.
- * @throws After all runs, listing each policy that failed. Policies where both sides declined are not failures.
+ * After all runs, prints a summary: the counts, then each failed policy with its issues.
+ * @throws After all runs when any policy failed. Policies where both sides declined are not failures.
  */
 export async function quotePages(
   policyDetailsIds: string[],
   historyId: number,
   options: QuotePageOptions
 ): Promise<void> {
-  const failures: string[] = [];
+  const failures: { policy: string; issues: string[] }[] = [];
   let declined = 0;
   for (const [index, policyDetailsId] of policyDetailsIds.entries()) {
     console.log(color.Cyan(`[${index + 1}/${policyDetailsIds.length}] ${policyDetailsId}-${historyId}`));
@@ -168,15 +169,13 @@ export async function quotePages(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(color.Red(message));
-      failures.push(`${policyDetailsId}-${historyId}: ${message.split('\n').join('; ')}`);
+      failures.push({ policy: `${policyDetailsId}-${historyId}`, issues: message.split('\n') });
     }
   }
 
-  const passed = policyDetailsIds.length - failures.length;
-  const summary = `Quote pages: ${passed} passed (${declined} both declined), ${failures.length} failed.`;
-  console.log(failures.length > 0 ? color.Red(summary) : summary);
+  printSummary(policyDetailsIds.length, declined, failures);
   if (failures.length > 0) {
-    throw new Error(`Quote pages failed:\n${failures.join('\n')}`);
+    throw new Error(`${failures.length} of ${policyDetailsIds.length} quote pages failed; see the summary above.`);
   }
 }
 
@@ -274,6 +273,21 @@ async function captureAt(label: string, url: string, options: ScreenshotOptions)
     }
 
     throw new Error(`${error instanceof Error ? error.message : String(error)} (${url})`, { cause: error });
+  }
+}
+
+/** Prints the quote-pages summary: a title, the counts, then each failed policy with its issues indented below it. */
+function printSummary(total: number, declined: number, failures: { policy: string; issues: string[] }[]): void {
+  const failed = `${failures.length} failed`;
+  console.log(`\n${color.Cyan('Quote pages summary')}`);
+  console.log(
+    `${color.Green(`${total - failures.length} passed`)} (${declined} both declined), ${failures.length > 0 ? color.Red(failed) : failed}.`
+  );
+  for (const { policy, issues } of failures) {
+    console.log(policy);
+    for (const issue of issues) {
+      console.log(`  ${color.Red(issue)}`);
+    }
   }
 }
 

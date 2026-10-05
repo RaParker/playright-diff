@@ -138,9 +138,19 @@ npm run quote-pages -- 6819e30c2058490b8d1d9e25d267b002     # one entry (case-in
 npm run quote-pages -- 10 --no-ocr
 ```
 
-Policies run one at a time. A failed policy is reported and the run continues; a summary
-such as `Quote pages: 9 passed (2 both declined), 1 failed.` prints at the end, and the exit
-code is non-zero if any policy failed. A policy where
+Policies run one at a time. A failed policy is reported and the run continues. At the end,
+after a blank line, a summary lists the counts and then each failed policy with its issues
+indented below it (only the issues and the failed count are red):
+
+```text
+Quote pages summary
+9 passed (2 both declined), 1 failed.
+8230224DF66644A1A52173E3757EE8BD-1
+  Quote capture failed; comparison skipped.
+  NHI: Website displayed <h2>Oops</h2>; stopping the journey. (https://…)
+```
+
+The exit code is non-zero if any policy failed. A policy where
 [both sides declined](#declined-quotes) counts as passed.
 
 ## Configuration
