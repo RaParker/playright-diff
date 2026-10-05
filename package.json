@@ -12,11 +12,11 @@
     "compare": "tsx src/main.ts compare",
     "quote-page": "tsx src/main.ts quote-page",
     "quote-pages": "tsx src/main.ts quote-pages",
-    "test:quote-page": "npm run build && node --test scripts/quote-page-validation-test.mjs scripts/unsaved-quote-test.mjs scripts/quote-summary-test.mjs scripts/quote-guid-test.mjs && node scripts/quote-page-test.mjs",
+    "test:quote-page": "npm run build && node --test scripts/quote-page-validation-test.mjs scripts/unsaved-quote-test.mjs scripts/quote-summary-test.mjs scripts/quote-output-test.mjs scripts/quote-guid-test.mjs && node scripts/quote-page-test.mjs",
     "test:compare": "npm run build && node --test scripts/compare-test.mjs",
     "screenshot": "tsx src/main.ts screenshot",
     "build": "node node_modules/typescript-compiler/bin/tsc",
-    "test": "npm run build && node scripts/smoke-test.mjs && node --test scripts/compare-test.mjs scripts/quote-page-validation-test.mjs scripts/modules-test.mjs scripts/environment-test.mjs scripts/tcas-quote-test.mjs scripts/unsaved-quote-test.mjs scripts/quote-summary-test.mjs scripts/quote-guid-test.mjs && node scripts/quote-page-test.mjs",
+    "test": "npm run build && node scripts/smoke-test.mjs && node --test scripts/compare-test.mjs scripts/quote-page-validation-test.mjs scripts/modules-test.mjs scripts/environment-test.mjs scripts/tcas-quote-test.mjs scripts/unsaved-quote-test.mjs scripts/quote-summary-test.mjs scripts/quote-output-test.mjs scripts/quote-guid-test.mjs && node scripts/quote-page-test.mjs",
     "typecheck": "node node_modules/typescript-compiler/bin/tsc --noEmit",
     "start": "node dist/main.js",
     "install:browser": "playwright install chromium"

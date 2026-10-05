@@ -7,6 +7,7 @@ import {
   saveQuoteGuidMapping,
   type QuoteGuidRequestOptions
 } from './quote-guid.js';
+import { removeQuoteOutput } from './quote-output.js';
 import { quoteSummary } from './quote-summary.js';
 import { OopsError, screenshot, type ScreenshotOptions } from './screenshot.js';
 import { tcasQuote } from './tcas-quote.js';
@@ -65,6 +66,8 @@ export async function quotePage(policyArgument: string, historyId: number, optio
   const tcasPath = resolve('screenshots', `${basename}-tcas.png`);
   const mappingPath = resolve(fallback?.mappingPath ?? 'quote-guid-mapping.json');
   const mappedGuid = fallback === undefined ? undefined : (await readQuoteGuidMapping(mappingPath))[artemisQuoteGuid];
+  // Inputs are valid, so clear the previous run's results before writing new ones.
+  await removeQuoteOutput(basename, ['nhi', 'tcas']);
   // A mapped replacement means TCAS must wait for NHI to save it; otherwise the original TCAS policy runs alongside.
   const [nhi, originalTcas] = await Promise.allSettled([
     captureNhi(artemisQuoteGuid, mappedGuid, mappingPath, policyDetailsId, historyId, nhiPath, options),

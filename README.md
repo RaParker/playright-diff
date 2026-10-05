@@ -114,8 +114,11 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
 - **Input:** `MRP_AND_QUOTE_OUTPUT_DIR/<ID>-<historyId>-mrp.json`, whose top-level
   `artemisQuoteGuid` fills `{artemisQuoteGuid}` in the NHI URL template. The TCAS template
   uses `{policyDetailsId}` and `{historyId}`. All values are URL-encoded.
-- **Output:** `screenshots/<ID>-<historyId>-nhi.png` and `-tcas.png` (overwritten on each
-  run), plus a new timestamped report directory under `comparisons/`.
+- **Output:** `screenshots/<ID>-<historyId>-nhi.png` and `-tcas.png`, plus a new timestamped
+  report directory under `comparisons/`. Before capturing (once the inputs are valid), the
+  previous run's output for that policy and history ID is deleted: its `-nhi`/`-tcas`
+  screenshots (including `-failed` and `-declined`) and every `comparisons/` report whose
+  `report.json` compares them. `quote-guid-mapping.json` is kept.
 
 See [How quote-page works](#how-quote-page-works) for the journey, error handling and the
 NHI Oops fallback.

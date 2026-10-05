@@ -47,6 +47,9 @@ try {
     JSON.stringify({ artemisQuoteGuid: 'guid/a b' })
   );
   const base = `http://127.0.0.1:${server.address().port}`;
+  // A previous run's stale output for this policy, removed before the new captures.
+  await mkdir(join(directory, 'screenshots'));
+  await writeFile(join(directory, 'screenshots', 'ABCDEF1234567890ABCDEF1234567890-42-nhi-failed.png'), '');
   await writeFile(
     join(directory, '.env'),
     [
@@ -97,6 +100,10 @@ try {
   assert.ok(requested.includes('/nhi/guid%2Fa%20b'));
   assert.ok(requested.includes('/tcas/ABCDEF1234567890ABCDEF1234567890/42'));
   assert.ok(!requested.some((path) => path.startsWith('/tcas-replacement/')));
+  assert.deepEqual((await readdir(join(directory, 'screenshots'))).sort(), [
+    'ABCDEF1234567890ABCDEF1234567890-42-nhi.png',
+    'ABCDEF1234567890ABCDEF1234567890-42-tcas.png'
+  ]);
   for (const suffix of ['nhi', 'tcas']) {
     const png = await readFile(join(directory, 'screenshots', `ABCDEF1234567890ABCDEF1234567890-42-${suffix}.png`));
     assert.equal(png.readUInt32BE(16), 1440);
