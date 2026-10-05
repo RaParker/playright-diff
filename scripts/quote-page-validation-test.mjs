@@ -10,7 +10,11 @@ const script = resolve('dist/main.js');
 const settings = [
   'MRP_AND_QUOTE_OUTPUT_DIR',
   'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE',
-  'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE'
+  'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE',
+  'QUOTE_JOURNEY_QUOTE_GUID_URL',
+  'QUOTE_JOURNEY_AGENT_ID',
+  'QUOTE_JOURNEY_BRANCH_CODE',
+  'QUOTE_JOURNEY_CALL_MEDIA_USER'
 ];
 
 async function fixture() {
@@ -27,7 +31,11 @@ async function fixture() {
   Object.assign(env, {
     MRP_AND_QUOTE_OUTPUT_DIR: directory,
     QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE: 'http://127.0.0.1:1/nhi/{artemisQuoteGuid}',
-    QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE: 'http://127.0.0.1:1/tcas/{policyDetailsId}/{historyId}'
+    QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE: 'http://127.0.0.1:1/tcas/{policyDetailsId}/{historyId}',
+    QUOTE_JOURNEY_QUOTE_GUID_URL: 'http://127.0.0.1:1/api/nhi/quote-guid',
+    QUOTE_JOURNEY_AGENT_ID: 'agent',
+    QUOTE_JOURNEY_BRANCH_CODE: '1066',
+    QUOTE_JOURNEY_CALL_MEDIA_USER: 'agent'
   });
   return { directory, env };
 }

@@ -127,9 +127,52 @@ the current page beside the intended output with a `-failed.png` suffix (for exa
 reported and comparison stops. If the failure screenshot cannot be saved, its error
 is logged without replacing the original failure.
 
+### NHI Oops fallback
+
+If the NHI page shows `<h2>Oops</h2>`, the action calls `QUOTE_JOURNEY_QUOTE_GUID_URL`
+(`GET /api/nhi/quote-guid`, non-live only) with `agentId`, `branchCode`, `callMediaUser`,
+`policyDetailsId` and `historyId`. The endpoint copies the TCAS policy's answers onto a new
+quote GUID, read from the response's `"guid"` property. The new GUID is saved in
+`quote-guid-mapping.json` (current working directory, git-ignored) against the original
+`artemisQuoteGuid`, and NHI is retried once with it. TCAS is not affected.
+
+Later runs use the mapped GUID straight away. If a mapped GUID also shows Oops, the flow
+fails as normal, with no further request. Delete the entry (or the file) to request a new
+GUID. A replacement is a different NHI quote from the original, so its pricing can differ.
+After a successful retry, the first attempt's `-nhi-failed.png` stays in `screenshots/`.
+
+```dotenv
+QUOTE_JOURNEY_QUOTE_GUID_URL="https://quotes-feature-dev.homeprotect.co.uk/api/nhi/quote-guid"
+QUOTE_JOURNEY_AGENT_ID="${USERNAME}"
+QUOTE_JOURNEY_BRANCH_CODE=1066
+QUOTE_JOURNEY_CALL_MEDIA_USER="${USERNAME}"
+```
+
+All four settings are required by `quote-page` and `quote-pages`.
+
+## Capture and compare quote pages from a GUID list
+
+`quote-pages` reuses the GUID list that drives `mrp-and-quote`'s `fetch`/`compare`/`diff`
+commands (TCAS-format policy IDs, one per line). It runs `quote-page` for each entry with
+`historyId` 1, matching that tool, so the `-1-mrp.json` files must already be fetched.
+
+```dotenv
+QUOTE_GUID_LIST_PATH="${REPO_BASE_PATH}/GoPackages/internal/mrp-and-quote/testdata/quoteGuids.txt"
+```
+
+```sh
+npm run quote-pages                                         # first 250 entries
+npm run quote-pages -- 10                                   # first 10 entries
+npm run quote-pages -- 6819e30c2058490b8d1d9e25d267b002     # one entry (case-insensitive)
+npm run quote-pages -- 10 --no-ocr
+```
+
+Policies run one at a time. A failed policy is reported and the run continues; a summary
+of passes and failures is printed at the end, and the exit code is non-zero if any failed.
+
 ## Build and verify
 
-`src/main.ts` is the CLI entry point for `screenshot`, `compare`, and `quote-page`.
+`src/main.ts` is the CLI entry point for `screenshot`, `compare`, `quote-page`, and `quote-pages`.
 The action files are importable TypeScript modules with typed options. For example:
 
 ```ts
@@ -141,7 +184,9 @@ await compare('screenshots/before.png', 'screenshots/example.png', { useOcr: fal
 ```
 
 `quotePage(policyDetailsId, historyId, options)` accepts the MRP directory and both
-URL templates in its options. `.env` loading is handled by the CLI.
+URL templates in its options, plus an optional `quoteGuidFallback` that enables the NHI Oops
+fallback. `quotePages(policyDetailsIds, historyId, options)` runs it for each ID in turn.
+`.env` loading is handled by the CLI.
 
 ```sh
 npm run typecheck

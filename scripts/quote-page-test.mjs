@@ -53,7 +53,11 @@ try {
       'QUOTE_TEST_OUTPUT_ROOT=${QUOTE_TEST_BASE_PATH}',
       'QUOTE_TEST_BASE_PATH=.',
       `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=${base}/nhi/{artemisQuoteGuid}`,
-      `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE=${base}/tcas/{policyDetailsId}/{historyId}`
+      `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE=${base}/tcas/{policyDetailsId}/{historyId}`,
+      `QUOTE_JOURNEY_QUOTE_GUID_URL=${base}/api/nhi/quote-guid`,
+      'QUOTE_JOURNEY_AGENT_ID=agent',
+      'QUOTE_JOURNEY_BRANCH_CODE=1066',
+      'QUOTE_JOURNEY_CALL_MEDIA_USER=agent'
     ].join('\n')
   );
   const env = { ...process.env };
@@ -62,7 +66,11 @@ try {
     'QUOTE_TEST_BASE_PATH',
     'MRP_AND_QUOTE_OUTPUT_DIR',
     'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE',
-    'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE'
+    'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE',
+    'QUOTE_JOURNEY_QUOTE_GUID_URL',
+    'QUOTE_JOURNEY_AGENT_ID',
+    'QUOTE_JOURNEY_BRANCH_CODE',
+    'QUOTE_JOURNEY_CALL_MEDIA_USER'
   ]) {
     delete env[name];
   }

@@ -11,6 +11,14 @@ export interface ScreenshotOptions {
   beforeCapture?: (page: Page) => Promise<void>;
 }
 
+/** Raised when the page displays an `<h2>Oops</h2>` heading, so callers can tell it apart from other failures. */
+export class OopsError extends Error {
+  constructor() {
+    super('Website displayed <h2>Oops</h2>; stopping the journey.');
+    this.name = 'OopsError';
+  }
+}
+
 export async function screenshot(urlArgument: string, options: ScreenshotOptions = {}): Promise<void> {
   const { url, width, height, wait, timeout, output, extension } = validateOptions(urlArgument, options);
   const browser = await chromium.launch();
@@ -81,7 +89,7 @@ async function capturePage(
 async function checkForOops(page: Page): Promise<void> {
   const headings = await page.locator('h2').allTextContents();
   if (headings.some((text) => text.trim() === 'Oops')) {
-    throw new Error('Website displayed <h2>Oops</h2>; stopping the journey.');
+    throw new OopsError();
   }
 }
 
@@ -103,7 +111,7 @@ async function watchForOops(page: Page): Promise<{ failure: Promise<never> }> {
     stop = reject;
   });
   await page.exposeFunction('__stopOnOops', () => {
-    stop(new Error('Website displayed <h2>Oops</h2>; stopping the journey.'));
+    stop(new OopsError());
   });
   await page.addInitScript(() => {
     let reported = false;
