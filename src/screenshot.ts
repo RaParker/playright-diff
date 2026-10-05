@@ -13,8 +13,9 @@ export interface ScreenshotOptions {
 
 /** Raised when the page displays an `<h2>Oops</h2>` heading, so callers can tell it apart from other failures. */
 export class OopsError extends Error {
-  constructor() {
-    super('Website displayed <h2>Oops</h2>; stopping the journey.');
+  /** @param url Page that displayed Oops, appended to the message when given. */
+  constructor(url?: string) {
+    super(`Website displayed <h2>Oops</h2>; stopping the journey.${url === undefined ? '' : ` (${url})`}`);
     this.name = 'OopsError';
   }
 }

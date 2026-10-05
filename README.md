@@ -145,6 +145,7 @@ The committed `.env` targets the feature-dev environment.
 | -------------------------------------------- | ------------- | ---------------------------------------------------------- |
 | `MRP_AND_QUOTE_OUTPUT_DIR`                   | both          | Folder containing `<ID>-<historyId>-mrp.json` files        |
 | `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE`  | both          | NHI quote URL, with `{artemisQuoteGuid}`                   |
+| `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE`     | both          | Unsaved replacement journey URL (`nhi=false`)              |
 | `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE` | both          | TCAS quote URL, with `{policyDetailsId}` and `{historyId}` |
 | `QUOTE_JOURNEY_QUOTE_GUID_URL`               | both          | [NHI Oops fallback](#nhi-oops-fallback) endpoint           |
 | `QUOTE_JOURNEY_AGENT_ID`                     | both          | Fallback request `agentId`                                 |
@@ -173,7 +174,9 @@ MRP_AND_QUOTE_OUTPUT_DIR="${REPO_BASE_PATH}/GoPackages/internal/mrp-and-quote/ou
 ## How quote-page works
 
 NHI and TCAS run **concurrently**, and both finish even if one fails. Failures are reported
-per flow, and the comparison runs only when both captures succeed.
+per flow, and the comparison runs only when both captures succeed. Each flow logs every URL
+it opens (`NHI: opening <url>`, `TCAS: opening <url>`), and each failure message ends with
+the URL that failed.
 
 ```mermaid
 flowchart LR
@@ -231,17 +234,34 @@ When the NHI page shows `<h2>Oops</h2>`:
 1. The action calls `QUOTE_JOURNEY_QUOTE_GUID_URL` (`GET /api/nhi/quote-guid`, non-live
    only) with `agentId`, `branchCode`, `callMediaUser`, `policyDetailsId` and `historyId`.
 2. The endpoint copies the TCAS policy's answers onto a new quote and returns its GUID in
-   the response's `guid` property.
+   the response's `guid` property. The answers are saved only in the question set store, not
+   NHI or TCAS, so the NHI quote page shows Oops for the new GUID until it is quoted.
 3. The new GUID is saved in `quote-guid-mapping.json` (current working directory,
    git-ignored) against the original `artemisQuoteGuid`.
-4. NHI is retried once with the new GUID. TCAS is unaffected.
+4. NHI opens `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE` (`#guid=<new GUID>,nhi=false`) and
+   drives the journey to its quote, which saves the quote to NHI. TCAS is unaffected.
 
-Later runs use the mapped GUID immediately. If a mapped GUID also shows Oops, the flow fails
-with no further request — delete the entry (or the whole file) to request a fresh GUID.
+The unsaved journey clicks **Continue** through each section (logged in grey) until
+**Get your quote** appears, clicks it, and waits for the welcome quote heading. Before each
+click it waits for the page's `/api/` requests and any "Checking property details" lookup to
+finish.
+
+- If Continue leaves a `div.av-card-error-summary` on a section, the flow fails with the
+  section and summary text, for example `NHI journey validation failed on Property
+circumstances: Enter the cost of rebuilding the property`. The copied answers need changing
+  before that policy can be quoted.
+- If Get your quote returns to a section (for example while the rebuild estimate is still
+  being looked up), the journey is walked again once; a second return fails with the summary.
+- The journey stops after 15 sections without reaching Get your quote.
+
+Later runs try the mapped GUID's NHI quote page first; if it shows Oops (not saved to NHI
+yet), the unsaved journey runs again with no further request. Delete the entry (or the whole
+file) to request a fresh GUID.
 
 > A replacement GUID is a different NHI quote from the original, so its pricing can differ.
 
 ```dotenv
+QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE="https://quotes-feature-dev.homeprotect.co.uk/#guid={artemisQuoteGuid},nhi=false"
 QUOTE_JOURNEY_QUOTE_GUID_URL="https://quotes-feature-dev.homeprotect.co.uk/api/nhi/quote-guid"
 QUOTE_JOURNEY_AGENT_ID="${USERNAME}"
 QUOTE_JOURNEY_BRANCH_CODE=1066
@@ -260,6 +280,9 @@ The Quote Journey API reference is in [docs/api-documentation.json](docs/api-doc
   `--timeout` for slow navigation.
 - **`compare` fails because the output exists** — choose a new `--output` directory; reports
   are never overwritten.
+- **NHI journey validation failed on &lt;section&gt;** — the copied answers fail that
+  section's validation; open the URL in the message to see the error summary and fix the
+  answer, or delete the mapping entry to request a new GUID.
 - **NHI keeps showing Oops** — the mapped GUID in `quote-guid-mapping.json` is bad; delete its
   entry to request a new one. After a successful retry, the first attempt's
   `-nhi-failed.png` stays in `screenshots/` — this is expected.

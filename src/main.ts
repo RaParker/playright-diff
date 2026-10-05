@@ -189,7 +189,8 @@ function quotePageOptions(environment: Record<string, string | undefined>, useOc
       quoteGuidUrl: required(environment, 'QUOTE_JOURNEY_QUOTE_GUID_URL'),
       agentId: required(environment, 'QUOTE_JOURNEY_AGENT_ID'),
       branchCode: required(environment, 'QUOTE_JOURNEY_BRANCH_CODE'),
-      callMediaUser: required(environment, 'QUOTE_JOURNEY_CALL_MEDIA_USER')
+      callMediaUser: required(environment, 'QUOTE_JOURNEY_CALL_MEDIA_USER'),
+      unsavedQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE')
     }
   };
 }

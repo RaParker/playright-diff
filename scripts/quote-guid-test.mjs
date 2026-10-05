@@ -7,11 +7,11 @@ import { join, resolve } from 'node:path';
 import { describe, test } from 'node:test';
 import { defaultQuoteGuidCount, readQuoteGuidList, selectQuoteGuids } from '../dist/quote-guid-list.js';
 import { readQuoteGuidMapping, requestQuoteGuid, saveQuoteGuidMapping } from '../dist/quote-guid.js';
+import { quotePageHtml, unsavedJourneyHtml } from './unsaved-journey-html.mjs';
 
 const script = resolve('dist/main.js');
 const policyA = 'ABCDEF1234567890ABCDEF1234567890';
 const policyB = '11111111111111111111111111111111';
-const quotePageHtml = '<h2>Welcome Alex, here&rsquo;s your quote</h2>';
 const tcasJourneyHtml = `<h1>Cover details</h1>
   <div class="av-timeline-all-sections"><ul><li title="Contact details">Contact details</li></ul></div>
   <button onclick="document.body.innerHTML = '${quotePageHtml}'">Get your quote</button>`;
@@ -38,8 +38,8 @@ function jsonHandler(status, body) {
   };
 }
 
-// Serves NHI pages (Oops for GUIDs in oopsGuids), the TCAS journey, and the quote-guid endpoint.
-function quoteJourneyHandler(oopsGuids, replacementGuid = 'new-guid') {
+// Serves NHI pages (Oops for GUIDs in oopsGuids), the unsaved and TCAS journeys, and the quote-guid endpoint.
+function quoteJourneyHandler(oopsGuids, replacementGuid = 'new-guid', unsavedJourney = {}) {
   return (request, response) => {
     if (request.url.startsWith('/api/nhi/quote-guid')) {
       jsonHandler(200, { guid: replacementGuid, productVersion: 'florence' })(request, response);
@@ -49,6 +49,11 @@ function quoteJourneyHandler(oopsGuids, replacementGuid = 'new-guid') {
     response.setHeader('Content-Type', 'text/html');
     if (request.url.startsWith('/tcas/')) {
       response.end(tcasJourneyHtml);
+      return;
+    }
+
+    if (request.url.startsWith('/unsaved/')) {
+      response.end(unsavedJourneyHtml(unsavedJourney));
       return;
     }
 
@@ -67,6 +72,7 @@ async function fixture(base, mrpFiles = { [`${policyA}-1`]: 'orig-guid' }) {
   Object.assign(env, {
     MRP_AND_QUOTE_OUTPUT_DIR: directory,
     QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE: `${base}/nhi/{artemisQuoteGuid}`,
+    QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE: `${base}/unsaved/{artemisQuoteGuid}`,
     QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE: `${base}/tcas/{policyDetailsId}/{historyId}`,
     QUOTE_JOURNEY_QUOTE_GUID_URL: `${base}/api/nhi/quote-guid`,
     QUOTE_JOURNEY_AGENT_ID: 'agent',
@@ -266,7 +272,7 @@ describe('quote GUID mapping file', () => {
 });
 
 describe('quote-page NHI Oops fallback', () => {
-  test('requests a replacement GUID, saves the mapping, and retries NHI', async () => {
+  test('requests a replacement GUID, saves the mapping, and runs its unsaved journey', async () => {
     await withServer(quoteJourneyHandler(['orig-guid']), async (base, requests) => {
       // arrange
       const { directory, env } = await fixture(base);
@@ -278,11 +284,47 @@ describe('quote-page NHI Oops fallback', () => {
       assert.equal(result.code, 0, result.output);
       assert.deepEqual(await readMapping(directory), { 'orig-guid': 'new-guid' });
       assert.ok(requests.includes('/nhi/orig-guid'));
-      assert.ok(requests.includes('/nhi/new-guid'));
+      assert.ok(requests.includes('/unsaved/new-guid'));
+      assert.ok(!requests.includes('/nhi/new-guid'));
       const quoteGuidRequest = requests.find((path) => path.startsWith('/api/nhi/quote-guid'));
       assert.equal(new URL(quoteGuidRequest, base).searchParams.get('policyDetailsId'), policyA);
       assert.equal(new URL(quoteGuidRequest, base).searchParams.get('callMediaUser'), 'media-user');
       assert.ok((await readdir(directory)).includes('comparisons'));
+    });
+  });
+
+  test('logs each URL it opens', async () => {
+    await withServer(quoteJourneyHandler(['orig-guid']), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base);
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.ok(result.output.includes(`NHI: opening ${base}/nhi/orig-guid`), result.output);
+      assert.ok(result.output.includes(`NHI: opening ${base}/unsaved/new-guid`), result.output);
+      assert.ok(result.output.includes(`TCAS: opening ${base}/tcas/${policyA}/1`), result.output);
+    });
+  });
+
+  test('reports the section, error summary and URL when the unsaved journey fails validation', async () => {
+    await withServer(quoteJourneyHandler(['orig-guid'], 'new-guid', { errorOn: 'Property type' }), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base);
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.notEqual(result.code, 0);
+      assert.ok(
+        result.output.includes(
+          `NHI: NHI journey validation failed on Property type: Enter the year built (${base}/unsaved/new-guid)`
+        ),
+        result.output
+      );
     });
   });
 
@@ -304,7 +346,7 @@ describe('quote-page NHI Oops fallback', () => {
     });
   });
 
-  test('fails without another request when the mapped GUID also shows Oops', async () => {
+  test('runs the unsaved journey without another request when the mapped GUID shows Oops', async () => {
     await withServer(quoteJourneyHandler(['orig-guid', 'mapped-guid']), async (base, requests) => {
       // arrange
       const { directory, env } = await fixture(base);
@@ -314,8 +356,10 @@ describe('quote-page NHI Oops fallback', () => {
       const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
 
       // assert
-      assert.notEqual(result.code, 0);
-      assert.match(result.output, /NHI: Website displayed <h2>Oops<\/h2>/);
+      assert.equal(result.code, 0, result.output);
+      assert.match(result.output, /mapped quote GUID mapped-guid is not saved to NHI yet/);
+      assert.ok(requests.includes('/nhi/mapped-guid'));
+      assert.ok(requests.includes('/unsaved/mapped-guid'));
       assert.ok(!requests.some((path) => path.startsWith('/api/nhi/quote-guid')));
       assert.deepEqual(await readMapping(directory), { 'orig-guid': 'mapped-guid' });
     });
@@ -335,9 +379,11 @@ describe('quote-page NHI Oops fallback', () => {
 
       // assert
       assert.notEqual(result.code, 0);
-      assert.match(
-        result.output,
-        /Oops.*Requesting a replacement quote GUID failed: Quote GUID request returned HTTP 503/
+      assert.ok(
+        result.output.includes(
+          `Oops</h2>; stopping the journey. (${base}/nhi/orig-guid) Requesting a replacement quote GUID failed: Quote GUID request returned HTTP 503`
+        ),
+        result.output
       );
       assert.ok(!(await readdir(directory)).includes('quote-guid-mapping.json'));
     });

@@ -7,8 +7,9 @@ import {
   saveQuoteGuidMapping,
   type QuoteGuidRequestOptions
 } from './quote-guid.js';
-import { OopsError, screenshot } from './screenshot.js';
+import { OopsError, screenshot, type ScreenshotOptions } from './screenshot.js';
 import { tcasQuote } from './tcas-quote.js';
+import { unsavedQuote } from './unsaved-quote.js';
 
 export interface QuotePageOptions {
   mrpAndQuoteOutputDir: string;
@@ -22,6 +23,11 @@ export interface QuotePageOptions {
 export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
   /** Mapping JSON file of original to replacement quote GUIDs (default: quote-guid-mapping.json). */
   mappingPath?: string;
+  /**
+   * Journey URL, with `{artemisQuoteGuid}`, for a replacement quote not yet saved to NHI (`nhi=false`). Driving it
+   * to the quote page saves the quote to NHI.
+   */
+  unsavedQuotePageUrlTemplate: string;
 }
 
 export async function quotePage(policyArgument: string, historyId: number, options: QuotePageOptions): Promise<void> {
@@ -36,8 +42,12 @@ export async function quotePage(policyArgument: string, historyId: number, optio
 
   const basename = `${policyDetailsId}-${historyId}`;
   const artemisQuoteGuid = await readQuoteGuid(resolve(options.mrpAndQuoteOutputDir, `${basename}-mrp.json`));
-  // Validate the NHI template before any capture starts.
+  // Validate the NHI templates before any capture starts.
   templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid });
+  if (options.quoteGuidFallback !== undefined) {
+    templateUrl(options.quoteGuidFallback.unsavedQuotePageUrlTemplate, { artemisQuoteGuid });
+  }
+
   const tcasUrl = templateUrl(options.tcasQuotePageUrlTemplate, {
     policyDetailsId,
     historyId: String(historyId)
@@ -46,7 +56,7 @@ export async function quotePage(policyArgument: string, historyId: number, optio
   const tcasPath = resolve('screenshots', `${basename}-tcas.png`);
   const captures = await Promise.allSettled([
     captureNhi(artemisQuoteGuid, policyDetailsId, historyId, nhiPath, options),
-    screenshot(tcasUrl, { output: tcasPath, beforeCapture: tcasQuote })
+    captureAt('TCAS', tcasUrl, { output: tcasPath, beforeCapture: tcasQuote })
   ]);
   const failures = captures.flatMap((result, index) =>
     result.status === 'rejected'
@@ -115,18 +125,34 @@ async function captureNhi(
   options: QuotePageOptions
 ): Promise<void> {
   const capture = (quoteGuid: string) =>
-    screenshot(templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), { output });
+    captureAt('NHI', templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), { output });
   const fallback = options.quoteGuidFallback;
   if (fallback === undefined) {
     await capture(artemisQuoteGuid);
     return;
   }
 
+  // Replacement quotes exist only in the question set store until the journey's quote button saves them to NHI.
+  const captureUnsaved = (quoteGuid: string) =>
+    captureAt('NHI', templateUrl(fallback.unsavedQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), {
+      output,
+      beforeCapture: unsavedQuote
+    });
   const mappingPath = resolve(fallback.mappingPath ?? 'quote-guid-mapping.json');
   const mappedGuid = (await readQuoteGuidMapping(mappingPath))[artemisQuoteGuid];
   if (mappedGuid !== undefined) {
     console.log(`NHI: using mapped quote GUID ${mappedGuid} for ${artemisQuoteGuid}.`);
-    await capture(mappedGuid);
+    try {
+      await capture(mappedGuid);
+    } catch (error) {
+      if (!(error instanceof OopsError)) {
+        throw error;
+      }
+
+      console.log(`NHI: mapped quote GUID ${mappedGuid} is not saved to NHI yet; running its journey.`);
+      await captureUnsaved(mappedGuid);
+    }
+
     return;
   }
 
@@ -139,8 +165,27 @@ async function captureNhi(
 
     const replacementGuid = await requestReplacementGuid(error, policyDetailsId, historyId, fallback);
     await saveQuoteGuidMapping(mappingPath, artemisQuoteGuid, replacementGuid);
-    console.log(`NHI: mapped ${artemisQuoteGuid} to new quote GUID ${replacementGuid} in ${mappingPath}; retrying.`);
-    await capture(replacementGuid);
+    console.log(
+      `NHI: mapped ${artemisQuoteGuid} to new quote GUID ${replacementGuid} in ${mappingPath}; running its journey.`
+    );
+    await captureUnsaved(replacementGuid);
+  }
+}
+
+/**
+ * Logs the URL a flow opens, captures it, and adds the URL to any failure.
+ * @throws The capture's error with the URL appended; an {@link OopsError} stays an `OopsError`.
+ */
+async function captureAt(label: string, url: string, options: ScreenshotOptions): Promise<void> {
+  console.log(`${label}: opening ${url}`);
+  try {
+    await screenshot(url, options);
+  } catch (error) {
+    if (error instanceof OopsError) {
+      throw new OopsError(url);
+    }
+
+    throw new Error(`${error instanceof Error ? error.message : String(error)} (${url})`, { cause: error });
   }
 }
 

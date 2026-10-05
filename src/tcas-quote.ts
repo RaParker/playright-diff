@@ -19,6 +19,25 @@ export async function tcasQuote(page: Page): Promise<void> {
   }
 }
 
+/**
+ * Reads the page's error summary, if one is shown.
+ * @param page Page to check.
+ * @param errorSelector Error summary selector.
+ * @returns Each `ul > li > a` link's text on its own line (or the whole summary's text when it has no links),
+ * `(empty error summary)` when the summary has no text, or `undefined` when no summary is shown.
+ */
+export async function readErrorSummary(page: Page, errorSelector: string): Promise<string | undefined> {
+  const errors = page.locator(errorSelector);
+  if ((await errors.count()) === 0) {
+    return undefined;
+  }
+
+  const links = errors.locator(':scope > ul > li > a');
+  const messages = await ((await links.count()) > 0 ? links : errors).allTextContents();
+  const text = messages.map((message) => message.trim()).join('\n');
+  return text.length > 0 ? text : '(empty error summary)';
+}
+
 interface Step {
   action: string;
   selector: string;
@@ -93,12 +112,9 @@ async function waitForQuote(page: Page, selector: string, textPattern: string, e
 }
 
 async function checkQuoteErrors(page: Page, errorSelector: string): Promise<void> {
-  const errors = page.locator(errorSelector);
-  if ((await errors.count()) > 0) {
-    const links = errors.locator(':scope > ul > li > a');
-    const messages = await ((await links.count()) > 0 ? links : errors).allTextContents();
-    const text = messages.map((message) => message.trim()).join('\n');
-    throw new Error(`TCAS quote errors: ${text.length > 0 ? text : '(empty error summary)'}`);
+  const errors = await readErrorSummary(page, errorSelector);
+  if (errors !== undefined) {
+    throw new Error(`TCAS quote errors: ${errors}`);
   }
 }
 
