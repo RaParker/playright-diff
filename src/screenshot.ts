@@ -189,35 +189,34 @@ async function watchForStops(page: Page): Promise<{ failure: Promise<never> }> {
   await page.exposeFunction('__stopOnPage', (reason: string) => {
     stop(reason === 'declined' ? new DeclinedError() : new OopsError());
   });
-  await page.addInitScript(
-    ({ declinedHeadingPattern, declinedTextPattern }) => {
+  // A string, not a function: tsx (used by the npm scripts) wraps named functions in __name(), which does not exist
+  // in the browser, so a function here would throw on load and silently stop watching.
+  await page.addInitScript({
+    content: `(() => {
+      const declinedHeading = new RegExp(${JSON.stringify(declinedHeadingPattern)}, 'i');
+      const declinedText = new RegExp(${JSON.stringify(declinedTextPattern)}, 'i');
       let reported = false;
-
       const check = () => {
         if (reported) {
           return;
         }
 
-        const headings = [...document.querySelectorAll('h1, h2, h3')].map(
-          (heading) => heading.textContent?.trim() ?? ''
-        );
+        const headings = [...document.querySelectorAll('h1, h2, h3')].map((heading) => heading.textContent.trim());
         const reason = headings.some((text) => text === 'Oops')
           ? 'oops'
-          : headings.some((text) => new RegExp(declinedHeadingPattern, 'i').test(text)) &&
-              new RegExp(declinedTextPattern, 'i').test(document.body?.textContent ?? '')
+          : headings.some((text) => declinedHeading.test(text)) && declinedText.test(document.body?.textContent ?? '')
             ? 'declined'
             : undefined;
         if (reason !== undefined) {
           reported = true;
-          void (window as unknown as { __stopOnPage: (reason: string) => Promise<void> }).__stopOnPage(reason);
+          void window.__stopOnPage(reason);
         }
       };
 
       new MutationObserver(check).observe(document, { childList: true, subtree: true, characterData: true });
       check();
-    },
-    { declinedHeadingPattern, declinedTextPattern }
-  );
+    })();`
+  });
   return { failure };
 }
 

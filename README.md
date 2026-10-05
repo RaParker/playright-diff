@@ -386,7 +386,9 @@ Before calling work done, run `./VerifyProject.ps1` and check it prints `Done` w
 `FAILED at:` line. It chains the type check, tests and lint.
 
 **Tests:** `npm test` covers screenshot, comparison, quote-page, the quote summary and
-assumptions pages, output clean-up, declined quotes, the quote GUID fallback and `quote-pages`. Chromium must be installed, and the
+assumptions pages, output clean-up, declined quotes, the quote GUID fallback and `quote-pages`.
+`scripts/tsx-watcher-test.mjs` runs the source through `tsx` (as the npm scripts do) to check
+that Oops and declines appearing mid-journey still stop a capture at once. Chromium must be installed, and the
 OCR test may download language data on its first run. Run a subset with `npm run test:compare` or `npm run test:quote-page` (the
 latter includes `scripts/quote-summary-test.mjs` and `scripts/quote-guid-test.mjs`).
 
