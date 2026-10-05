@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import type { Page } from 'playwright';
 import { color } from './color.js';
 import { compare } from './compare.js';
 import {
@@ -8,6 +9,7 @@ import {
   saveQuoteGuidMapping,
   type QuoteGuidRequestOptions
 } from './quote-guid.js';
+import { selectAnnualPayment } from './payment.js';
 import { removeQuoteOutput } from './quote-output.js';
 import { quoteSummary } from './quote-summary.js';
 import { DeclinedError, OopsError, screenshot, type ScreenshotOptions } from './screenshot.js';
@@ -97,7 +99,7 @@ export async function quotePage(
   const [nhi, originalTcas] = await Promise.allSettled([
     captureNhi(artemisQuoteGuid, mappedGuid, mappingPath, policyDetailsId, historyId, nhiPath, options),
     mappedGuid === undefined
-      ? captureAt('TCAS', tcasUrl, { output: tcasPath, beforeCapture: tcasQuote })
+      ? captureAt('TCAS', tcasUrl, { output: tcasPath, beforeCapture: withAnnualPayment('TCAS', tcasQuote) })
       : Promise.resolve(undefined)
   ]);
   let tcas = originalTcas;
@@ -106,7 +108,10 @@ export async function quotePage(
     console.log(`TCAS: using replacement quote GUID ${replacementGuid} to match NHI.`);
     const replacementUrl = templateUrl(fallback.tcasReplacementUrlTemplate, { artemisQuoteGuid: replacementGuid });
     [tcas] = await Promise.allSettled([
-      captureAt('TCAS', replacementUrl, { output: tcasPath, beforeCapture: quoteSummary('TCAS') })
+      captureAt('TCAS', replacementUrl, {
+        output: tcasPath,
+        beforeCapture: withAnnualPayment('TCAS', quoteSummary('TCAS'))
+      })
     ]);
   }
 
@@ -205,7 +210,7 @@ async function captureNhi(
   const capture = (quoteGuid: string) =>
     captureAt('NHI', templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), {
       output,
-      beforeCapture: quoteSummary('NHI')
+      beforeCapture: withAnnualPayment('NHI', quoteSummary('NHI'))
     });
   const fallback = options.quoteGuidFallback;
   if (fallback === undefined) {
@@ -216,7 +221,7 @@ async function captureNhi(
   const captureUnsaved = (quoteGuid: string) =>
     captureAt('NHI', templateUrl(fallback.unsavedQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), {
       output,
-      beforeCapture: unsavedQuote
+      beforeCapture: withAnnualPayment('NHI', unsavedQuote)
     });
   if (mappedGuid !== undefined) {
     console.log(`NHI: using mapped quote GUID ${mappedGuid} for ${artemisQuoteGuid}.`);
@@ -270,6 +275,14 @@ async function captureAt(label: string, url: string, options: ScreenshotOptions)
 
     throw new Error(`${error instanceof Error ? error.message : String(error)} (${url})`, { cause: error });
   }
+}
+
+/** Follows a journey to the quote page, then selects annual payments so both flows capture the same price. */
+function withAnnualPayment(label: string, journey: (page: Page) => Promise<void>): (page: Page) => Promise<void> {
+  return async (page) => {
+    await journey(page);
+    await selectAnnualPayment(page, label);
+  };
 }
 
 async function requestReplacementGuid(

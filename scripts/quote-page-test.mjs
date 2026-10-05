@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { quoteSummaryHtml } from './unsaved-journey-html.mjs';
+import { monthlyQuotePageHtml, nhiPagesHtml, quoteSummaryHtml } from './unsaved-journey-html.mjs';
 
 const requested = [];
 let finishNhi;
@@ -12,11 +12,14 @@ let tcasRequested = false;
 const server = createServer((request, response) => {
   requested.push(request.url);
   response.setHeader('Content-Type', 'text/html');
-  const quote = '<h2>Welcome Alex, here&rsquo;s your quote</h2>';
-  const journey = `<h1>Cover details</h1>
+  // Ends on the same monthly quote page as the NHI summary, so both flows select annual and match.
+  const journey = nhiPagesHtml(
+    `<h1>Cover details</h1>
     <div class="av-timeline-all-sections"><ul><li title="Contact details"
       onclick="document.querySelector('button').hidden = false">Contact details</li></ul></div>
-    <button hidden onclick="document.body.innerHTML = '${quote}'">Get your quote</button>`;
+    <button id="get-quote" hidden>Get your quote</button>`,
+    { 'get-quote': monthlyQuotePageHtml }
+  );
   const html = `<!doctype html><html><body>${request.url.startsWith('/tcas/') ? journey : quoteSummaryHtml}</body></html>`;
   if (request.url.startsWith('/nhi/') && !tcasRequested) {
     // A sequential implementation cannot reach TCAS before this NHI response.

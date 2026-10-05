@@ -242,6 +242,16 @@ page:
   the comparison is skipped.
 - The flow stops after 5 clicks without reaching the quote.
 
+### Annual payments
+
+Once any flow reaches the quote page, and before the screenshot, the action makes sure
+**Pay annually** is selected, so NHI and TCAS are compared at the same price. If Pay monthly
+is selected, it clicks `button[name="paymentSelector"][id$="~Kannually"]` (logged in grey as
+`NHI: selecting Pay annually.`) and waits for `.hp-selected-box` to appear inside it; the loading
+wait before capture then covers any price refresh. A quote page with no payment selector is
+captured as shown, with a grey log line. If Pay annually does not become selected, the flow
+fails.
+
 ### Loading screens and Oops pages
 
 - Both flows wait for `<h2>Loading your quote</h2>` and `div.hp-loading-widget-screen` to

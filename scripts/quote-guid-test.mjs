@@ -325,6 +325,7 @@ describe('quote-page NHI Oops fallback', () => {
       assert.ok(result.output.includes(`TCAS: opening ${base}/tcas/${policyA}/1`), result.output);
       assert.ok(result.output.includes('TCAS: using replacement quote GUID new-guid to match NHI.'), result.output);
       assert.ok(result.output.includes(`TCAS: opening ${base}/tcas-replacement/new-guid`), result.output);
+      assert.ok(result.output.includes('TCAS: selecting Pay annually.'), result.output);
     });
   });
 

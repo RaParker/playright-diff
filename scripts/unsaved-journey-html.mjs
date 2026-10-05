@@ -1,5 +1,23 @@
 export const quotePageHtml = '<h2>Welcome Alex, here&rsquo;s your quote</h2>';
 
+/**
+ * Builds the quote page's payment selector (markup trimmed from the live page).
+ * @param {'monthly' | 'annually'} selected Option shown as selected.
+ * @returns {string} Selector HTML.
+ */
+export function paymentSelectorHtml(selected) {
+  const option = (period, heading) => `<div class="hp-btn-wrapper"><button
+    id="Q405c8717-ea39-4864-9d77-c5fa904c57e2~K${period}" name="paymentSelector" type="button"
+    class="btn ${period === selected ? 'btn-primary' : 'btn-outline-primary'}"><div class="hp-content">
+    <div class="hp-heading">${heading}</div><div class="hp-select-box"><div
+    class="${period === selected ? 'hp-selected-box' : 'hp-unselected-box'}"></div><span>Select</span></div>
+    </div></button></div>`;
+  return `<div class="hp-radio-button-list"><div class="btn-toolbar" role="group">${option('monthly', 'Pay monthly')}${option('annually', 'Pay annually')}</div></div>`;
+}
+
+/** Quote page with Pay monthly selected; nhiPagesHtml pages switch it to annual when Pay annually is clicked. */
+export const monthlyQuotePageHtml = quotePageHtml + paymentSelectorHtml('monthly');
+
 /** Declined quote page, as shown when the site cannot offer a quote. */
 export const declinedPageHtml = `<h2>Welcome Mr. Alex, we&rsquo;re sorry...</h2><h3>We're sorry...</h3>
   <h4>But we're unable to offer you a quote based on your details</h4><button>Edit quote</button>`;
@@ -23,6 +41,11 @@ export const assumptionsPageHtml = `<h1>Assumptions</h1><div class="hp-button-gr
 export function nhiPagesHtml(start, routes) {
   return `${start}<script>
     document.addEventListener('click', (event) => {
+      if (event.target.closest('[id$="~Kannually"]') !== null) {
+        document.querySelector('.hp-radio-button-list').outerHTML = ${JSON.stringify(paymentSelectorHtml('annually'))};
+        return;
+      }
+
       const next = ${JSON.stringify(routes)}[event.target.id];
       if (next !== undefined) setTimeout(() => { document.body.innerHTML = next; }, 100);
     });
@@ -32,7 +55,7 @@ export function nhiPagesHtml(start, routes) {
 /** NHI quote summary page: Continue with quote shows the assumptions page, whose Yes button shows the quote. */
 export const quoteSummaryHtml = nhiPagesHtml(summaryPageHtml, {
   'hp-summary-continue-button': assumptionsPageHtml,
-  'hp-assumptions-quote-button': quotePageHtml,
+  'hp-assumptions-quote-button': monthlyQuotePageHtml,
   'hp-edit-questions-button': '<h1>Cover details</h1>'
 });
 
