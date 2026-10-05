@@ -42,12 +42,16 @@ test('comparison detects pixel, dimension, and OCR changes', { timeout: 180000 }
     let report = JSON.parse(await readFile(join(same, 'report.json'), 'utf8'));
     assert.equal(report.changedPixels, 0);
     assert.deepEqual(report.regions, []);
+    // Identical images are summarised in green.
+    assert.ok(result.output.includes('\u001b[32m0 changed pixels'), result.output);
 
     const output = join(dir, 'text');
     result = await run([before, after, '--output', output]);
     assert.equal(result.code, 0, result.output);
     report = JSON.parse(await readFile(join(output, 'report.json'), 'utf8'));
     assert.ok(report.changedPixels > 0);
+    // Differences are summarised in yellow.
+    assert.ok(result.output.includes(`\u001b[33m${report.changedPixels} changed pixels`), result.output);
     assert.ok(report.regions.some((r) => r.textChanges.some((c) => c.type === 'removed' && c.text.includes('100'))));
     assert.ok(report.regions.some((r) => r.textChanges.some((c) => c.type === 'added' && c.text.includes('200'))));
     assert.ok((await sharp(join(output, 'diff.png')).metadata()).width === 700);

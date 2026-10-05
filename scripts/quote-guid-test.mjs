@@ -539,6 +539,7 @@ describe('quote-pages', () => {
       // assert
       assert.equal(result.code, 0, result.output);
       assert.match(result.output, /1 passed \(0 both declined\), 0 failed/);
+      assert.ok(result.output.includes(`\u001b[36m[1/1] ${policyA}-1`), result.output);
       assert.ok(requests.includes(`/tcas/${policyA}/1`));
       assert.ok(!requests.some((path) => path.startsWith('/tcas-replacement/')));
       assert.ok(!requests.some((path) => path.includes(policyB) || path.includes('guid-b')));

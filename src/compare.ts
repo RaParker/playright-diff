@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import sharp from 'sharp';
 import { createWorker, PSM } from 'tesseract.js';
+import { color } from './color.js';
 
 export interface CompareOptions {
   output?: string;
@@ -44,9 +45,9 @@ export async function compare(
     regions
   };
   await writeReport(output, report);
-  console.log(
-    `${changedPixels} changed pixels (${report.changedPercent.toFixed(2)}%). Report: ${join(output, 'report.md')}`
-  );
+  const summary = `${changedPixels} changed pixels (${report.changedPercent.toFixed(2)}%). Report: ${join(output, 'report.md')}`;
+  // Green for identical images, yellow when there are differences to review.
+  console.log(changedPixels === 0 ? color.Green(summary) : color.Yellow(summary));
 }
 
 async function load(path: string) {

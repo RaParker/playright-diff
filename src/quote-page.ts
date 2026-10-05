@@ -160,7 +160,7 @@ export async function quotePages(
   const failures: string[] = [];
   let declined = 0;
   for (const [index, policyDetailsId] of policyDetailsIds.entries()) {
-    console.log(`[${index + 1}/${policyDetailsIds.length}] ${policyDetailsId}-${historyId}`);
+    console.log(color.Cyan(`[${index + 1}/${policyDetailsIds.length}] ${policyDetailsId}-${historyId}`));
     try {
       if ((await quotePage(policyDetailsId, historyId, options)) === 'declined') {
         declined++;
