@@ -1,5 +1,6 @@
 import type { Page } from 'playwright';
 import { color } from './color.js';
+import { extendWhileLoading } from './screenshot.js';
 import { readErrorSummary } from './tcas-quote.js';
 
 /** Heading shown on the quote page, for any customer name and apostrophe style. */
@@ -65,29 +66,31 @@ export function quoteSummary(label: string): (page: Page) => Promise<void> {
  * @returns `'quote'`, `'error'`, or the name of the step whose button is shown.
  */
 async function waitForPage(page: Page, clickedSelector: string | undefined): Promise<string> {
-  const handle = await page.waitForFunction(
-    ({ clickedSelector, quoteHeadingPattern, quoteSteps, errorSelector }) => {
-      if (
-        [...document.querySelectorAll('h2')].some(
-          (element) =>
-            new RegExp(quoteHeadingPattern, 'i').test(element.textContent?.trim() ?? '') &&
-            element.getClientRects().length > 0
-        )
-      ) {
-        return 'quote';
-      }
+  const handle = await extendWhileLoading(page, () =>
+    page.waitForFunction(
+      ({ clickedSelector, quoteHeadingPattern, quoteSteps, errorSelector }) => {
+        if (
+          [...document.querySelectorAll('h2')].some(
+            (element) =>
+              new RegExp(quoteHeadingPattern, 'i').test(element.textContent?.trim() ?? '') &&
+              element.getClientRects().length > 0
+          )
+        ) {
+          return 'quote';
+        }
 
-      if (clickedSelector !== undefined && document.querySelector(errorSelector) !== null) {
-        return 'error';
-      }
+        if (clickedSelector !== undefined && document.querySelector(errorSelector) !== null) {
+          return 'error';
+        }
 
-      const shown = quoteSteps.find(({ selector }) => {
-        const button = document.querySelector(selector);
-        return selector !== clickedSelector && button !== null && button.getClientRects().length > 0;
-      });
-      return shown?.name ?? false;
-    },
-    { clickedSelector, quoteHeadingPattern, quoteSteps, errorSelector }
+        const shown = quoteSteps.find(({ selector }) => {
+          const button = document.querySelector(selector);
+          return selector !== clickedSelector && button !== null && button.getClientRects().length > 0;
+        });
+        return shown?.name ?? false;
+      },
+      { clickedSelector, quoteHeadingPattern, quoteSteps, errorSelector }
+    )
   );
   return String(await handle.jsonValue());
 }

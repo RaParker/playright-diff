@@ -1,5 +1,6 @@
 import type { Page } from 'playwright';
 import { color } from './color.js';
+import { extendWhileLoading } from './screenshot.js';
 import steps from './tcas-quote.steps.json' with { type: 'json' };
 
 export async function tcasQuote(page: Page): Promise<void> {
@@ -94,18 +95,20 @@ async function runStep(page: Page, step: Step): Promise<void> {
 async function waitForQuote(page: Page, selector: string, textPattern: string, errorSelector: string): Promise<void> {
   // Submission may render errors asynchronously. Wait for either outcome,
   // giving errors priority if the page contains both.
-  await page.waitForFunction(
-    ({ selector, textPattern, errorSelector }) => {
-      if (document.querySelector(errorSelector) !== null) {
-        return true;
-      }
+  await extendWhileLoading(page, () =>
+    page.waitForFunction(
+      ({ selector, textPattern, errorSelector }) => {
+        if (document.querySelector(errorSelector) !== null) {
+          return true;
+        }
 
-      return [...document.querySelectorAll(selector)].some(
-        (heading) =>
-          new RegExp(textPattern, 'i').test(heading.textContent?.trim() ?? '') && heading.getClientRects().length > 0
-      );
-    },
-    { selector, textPattern, errorSelector }
+        return [...document.querySelectorAll(selector)].some(
+          (heading) =>
+            new RegExp(textPattern, 'i').test(heading.textContent?.trim() ?? '') && heading.getClientRects().length > 0
+        );
+      },
+      { selector, textPattern, errorSelector }
+    )
   );
 
   await checkQuoteErrors(page, errorSelector);

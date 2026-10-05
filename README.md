@@ -245,8 +245,13 @@ page:
 ### Loading screens and Oops pages
 
 - Both flows wait for `<h2>Loading your quote</h2>` and `div.hp-loading-widget-screen` to
-  disappear, and check again just before capture. The action timeout bounds the wait; a
-  loading screen that never clears fails without saving a screenshot of it.
+  disappear, and check again just before capture. Loading screens get twice the step timeout
+  (60 seconds by default, against 30 for every other step); a loading screen that never clears
+  fails without saving a screenshot of it.
+- If a wait for the quote page times out while a loading screen is still shown, the flow logs
+  `Loading screen still shown; allowing up to 30 s more.`, waits for the loading screen to
+  clear within that time, and then waits for the quote page once more. A timeout with no
+  loading screen fails at 30 seconds as before.
 - Both flows watch for an `h2` containing exactly `Oops` from navigation through capture.
   If one appears, the flow stops, saves a failure screenshot, and skips remaining steps and
   the comparison. NHI first tries the [fallback](#nhi-oops-fallback).

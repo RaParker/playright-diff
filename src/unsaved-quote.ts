@@ -1,6 +1,7 @@
 import type { Page, Request } from 'playwright';
 import { color } from './color.js';
 import { quoteHeadingPattern } from './quote-summary.js';
+import { extendWhileLoading } from './screenshot.js';
 import { readErrorSummary } from './tcas-quote.js';
 
 const errorSelector = 'div.av-card-error-summary';
@@ -77,26 +78,28 @@ async function waitForLookups(page: Page, apiRequests: { settled: () => Promise<
  * @returns `true` when the quote is shown, `false` when the journey returned to a section.
  */
 async function waitForQuote(page: Page, section: string): Promise<boolean> {
-  const quoteHeading = await page.waitForFunction(
-    ({ section, errorSelector, quoteHeadingPattern }) => {
-      // No named helper functions here: tsx wraps them in __name(), which does not exist in the browser.
-      if (
-        [...document.querySelectorAll('h2')].some(
-          (element) =>
-            new RegExp(quoteHeadingPattern, 'i').test(element.textContent?.trim() ?? '') &&
-            element.getClientRects().length > 0
-        )
-      ) {
-        return 'quote';
-      }
+  const quoteHeading = await extendWhileLoading(page, () =>
+    page.waitForFunction(
+      ({ section, errorSelector, quoteHeadingPattern }) => {
+        // No named helper functions here: tsx wraps them in __name(), which does not exist in the browser.
+        if (
+          [...document.querySelectorAll('h2')].some(
+            (element) =>
+              new RegExp(quoteHeadingPattern, 'i').test(element.textContent?.trim() ?? '') &&
+              element.getClientRects().length > 0
+          )
+        ) {
+          return 'quote';
+        }
 
-      const heading = document.querySelector('h1');
-      const returned =
-        document.querySelector(errorSelector) !== null ||
-        (heading !== null && heading.getClientRects().length > 0 && heading.textContent?.trim() !== section);
-      return returned ? 'returned' : false;
-    },
-    { section, errorSelector, quoteHeadingPattern }
+        const heading = document.querySelector('h1');
+        const returned =
+          document.querySelector(errorSelector) !== null ||
+          (heading !== null && heading.getClientRects().length > 0 && heading.textContent?.trim() !== section);
+        return returned ? 'returned' : false;
+      },
+      { section, errorSelector, quoteHeadingPattern }
+    )
   );
   return (await quoteHeading.jsonValue()) === 'quote';
 }

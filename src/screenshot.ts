@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
-import { chromium, type Page } from 'playwright';
+import { chromium, errors, type Page } from 'playwright';
 import { color } from './color.js';
 
 export interface ScreenshotOptions {
@@ -37,6 +37,36 @@ export class DeclinedError extends Error {
   }
 }
 
+/** Quote loading screens may take longer than other steps, so they get this many times the step timeout. */
+const loadingTimeoutMultiplier = 2;
+/** Longest wait for each page's quote loading screen to clear. */
+const loadingTimeouts = new WeakMap<Page, number>();
+
+/**
+ * Runs a wait, and if it times out while a quote loading screen is still shown, waits for the loading screen to clear
+ * (up to the rest of the loading allowance, twice the step timeout in all) and runs the wait once more. A timeout
+ * with no loading screen is rethrown at once.
+ * @param page Page opened by {@link screenshot}.
+ * @param wait Wait to run, which should use the page's default timeout.
+ * @returns The wait's result.
+ * @throws The wait's error, or a loading-screen timeout when the screen does not clear.
+ */
+export async function extendWhileLoading<T>(page: Page, wait: () => Promise<T>): Promise<T> {
+  try {
+    return await wait();
+  } catch (error) {
+    const loadingTimeout = loadingTimeouts.get(page);
+    if (!(error instanceof errors.TimeoutError) || loadingTimeout === undefined || !(await isQuoteLoading(page))) {
+      throw error;
+    }
+
+    const extra = loadingTimeout - loadingTimeout / loadingTimeoutMultiplier;
+    console.log(color.Gray(`Loading screen still shown; allowing up to ${Math.round(extra / 1000)} s more.`));
+    await waitForQuoteLoading(page, extra);
+    return await wait();
+  }
+}
+
 export async function screenshot(urlArgument: string, options: ScreenshotOptions = {}): Promise<void> {
   const { url, width, height, wait, timeout, output, extension } = validateOptions(urlArgument, options);
   const browser = await chromium.launch();
@@ -45,17 +75,12 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
     page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
     page.setDefaultTimeout(timeout);
     page.setDefaultNavigationTimeout(timeout);
+    loadingTimeouts.set(page, timeout * loadingTimeoutMultiplier);
     const { failure } = await watchForStops(page);
     await Promise.race([capturePage(page, url.href, output, extension, wait, options.beforeCapture), failure]);
     console.log(`Screenshot saved to ${output}`);
   } catch (error) {
-    if (
-      page !== undefined &&
-      (await page
-        .locator('div.hp-loading-widget-screen')
-        .or(page.locator('h2').filter({ hasText: /^Loading your quote$/ }))
-        .count()) === 0
-    ) {
+    if (page !== undefined && !(await isQuoteLoading(page))) {
       const declined = error instanceof DeclinedError;
       const failedOutput = `${output.slice(0, -extension.length)}-${declined ? 'declined' : 'failed'}`;
       try {
@@ -132,12 +157,23 @@ async function checkForStops(page: Page): Promise<void> {
   }
 }
 
-async function waitForQuoteLoading(page: Page): Promise<void> {
+async function isQuoteLoading(page: Page): Promise<boolean> {
+  return (
+    (await page
+      .locator('div.hp-loading-widget-screen')
+      .or(page.locator('h2').filter({ hasText: /^Loading your quote$/ }))
+      .count()) > 0
+  );
+}
+
+async function waitForQuoteLoading(page: Page, timeout = loadingTimeouts.get(page)): Promise<void> {
   try {
     await page.waitForFunction(
       () =>
         document.querySelector('div.hp-loading-widget-screen') === null &&
-        [...document.querySelectorAll('h2')].every((heading) => heading.textContent?.trim() !== 'Loading your quote')
+        [...document.querySelectorAll('h2')].every((heading) => heading.textContent?.trim() !== 'Loading your quote'),
+      undefined,
+      { timeout }
     );
   } catch (error) {
     throw new Error('Timed out waiting for quote loading screen to disappear.', { cause: error });
