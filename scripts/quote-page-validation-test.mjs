@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
+import { quoteSummaryHtml } from './unsaved-journey-html.mjs';
 
 const script = resolve('dist/main.js');
 const settings = [
@@ -142,7 +143,7 @@ for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].ma
         !request.url.startsWith(`/${flow}/`)
           ? request.url.startsWith('/tcas/')
             ? '<h1>Cover details</h1><div class="av-timeline-all-sections"><ul><li title="Contact details">Contact details</li></ul></div><button onclick="document.body.innerHTML = &quot;<h2>Welcome Alex, here\'s your quote</h2>&quot;">Get your quote</button>'
-            : '<h2>Quote ready</h2>'
+            : quoteSummaryHtml
           : delayed
             ? '<script>setTimeout(() => { document.body.innerHTML = "<h2>Oops</h2>"; }, 100);</script>'
             : '<h2>Oops</h2>'

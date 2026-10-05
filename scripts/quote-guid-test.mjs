@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { describe, test } from 'node:test';
 import { defaultQuoteGuidCount, readQuoteGuidList, selectQuoteGuids } from '../dist/quote-guid-list.js';
 import { readQuoteGuidMapping, requestQuoteGuid, saveQuoteGuidMapping } from '../dist/quote-guid.js';
-import { quotePageHtml, unsavedJourneyHtml } from './unsaved-journey-html.mjs';
+import { quotePageHtml, quoteSummaryHtml, unsavedJourneyHtml } from './unsaved-journey-html.mjs';
 
 const script = resolve('dist/main.js');
 const policyA = 'ABCDEF1234567890ABCDEF1234567890';
@@ -38,7 +38,7 @@ function jsonHandler(status, body) {
   };
 }
 
-// Serves NHI pages (Oops for GUIDs in oopsGuids), the unsaved and TCAS journeys, and the quote-guid endpoint.
+// Serves NHI quote summary pages (Oops for GUIDs in oopsGuids), the unsaved and TCAS journeys, and the quote-guid endpoint.
 function quoteJourneyHandler(oopsGuids, replacementGuid = 'new-guid', unsavedJourney = {}) {
   return (request, response) => {
     if (request.url.startsWith('/api/nhi/quote-guid')) {
@@ -58,7 +58,7 @@ function quoteJourneyHandler(oopsGuids, replacementGuid = 'new-guid', unsavedJou
     }
 
     const guid = decodeURIComponent(request.url.split('/').pop());
-    response.end(oopsGuids.includes(guid) ? '<h2>Oops</h2>' : quotePageHtml);
+    response.end(oopsGuids.includes(guid) ? '<h2>Oops</h2>' : quoteSummaryHtml);
   };
 }
 

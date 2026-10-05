@@ -210,6 +210,15 @@ be between YYYY-MM-DD ...", the action opens `svg.av-icon-calendar`, picks the c
 `div` whose aria-label ends with that date (for example `October 2nd, 2026`), and retries
 Contact details once. Any remaining errors stop the journey as usual.
 
+### NHI quote summary
+
+The NHI quote URL opens the quote **summary** page ("Welcome …, thank you for choosing
+Homeprotect"), which already shows a price. Before capturing, the action clicks
+**Continue with quote** (matched case-insensitively on a button or link) and waits for the
+welcome quote heading, so the NHI screenshot shows the quote page. A page already showing the
+quote is captured as it is. If an error summary appears after the click, its text is reported
+and the comparison is skipped.
+
 ### Loading screens and Oops pages
 
 - Both flows wait for `<h2>Loading your quote</h2>` and `div.hp-loading-widget-screen` to
@@ -300,10 +309,10 @@ npm start -- screenshot https://example.com --output screenshots/example.png
 Before calling work done, run `./VerifyProject.ps1` and check it prints `Done` with no
 `FAILED at:` line. It chains the type check, tests and lint.
 
-**Tests:** `npm test` covers screenshot, comparison, quote-page, quote GUID fallback and
-`quote-pages`. Chromium must be installed, and the OCR test may download language data on
+**Tests:** `npm test` covers screenshot, comparison, quote-page, the NHI quote summary, the
+quote GUID fallback and `quote-pages`. Chromium must be installed, and the OCR test may download language data on
 its first run. Run a subset with `npm run test:compare` or `npm run test:quote-page` (the
-latter includes `scripts/quote-guid-test.mjs`).
+latter includes `scripts/nhi-quote-test.mjs` and `scripts/quote-guid-test.mjs`).
 
 **TypeScript versions:** builds and type checks use TypeScript 7 through the
 `typescript-compiler` package alias. TypeScript 6 stays installed as `typescript` for

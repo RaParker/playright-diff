@@ -7,6 +7,7 @@ import {
   saveQuoteGuidMapping,
   type QuoteGuidRequestOptions
 } from './quote-guid.js';
+import { nhiQuote } from './nhi-quote.js';
 import { OopsError, screenshot, type ScreenshotOptions } from './screenshot.js';
 import { tcasQuote } from './tcas-quote.js';
 import { unsavedQuote } from './unsaved-quote.js';
@@ -125,7 +126,10 @@ async function captureNhi(
   options: QuotePageOptions
 ): Promise<void> {
   const capture = (quoteGuid: string) =>
-    captureAt('NHI', templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), { output });
+    captureAt('NHI', templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), {
+      output,
+      beforeCapture: nhiQuote
+    });
   const fallback = options.quoteGuidFallback;
   if (fallback === undefined) {
     await capture(artemisQuoteGuid);

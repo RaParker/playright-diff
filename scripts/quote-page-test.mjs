@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { quoteSummaryHtml } from './unsaved-journey-html.mjs';
 
 const requested = [];
 let finishNhi;
@@ -16,7 +17,7 @@ const server = createServer((request, response) => {
     <div class="av-timeline-all-sections"><ul><li title="Contact details"
       onclick="document.querySelector('button').hidden = false">Contact details</li></ul></div>
     <button hidden onclick="document.body.innerHTML = '${quote}'">Get your quote</button>`;
-  const html = `<!doctype html><html><body>${request.url.startsWith('/tcas/') ? journey : quote}</body></html>`;
+  const html = `<!doctype html><html><body>${request.url.startsWith('/tcas/') ? journey : quoteSummaryHtml}</body></html>`;
   if (request.url.startsWith('/nhi/') && !tcasRequested) {
     // A sequential implementation cannot reach TCAS before this NHI response.
     const timer = setTimeout(() => {

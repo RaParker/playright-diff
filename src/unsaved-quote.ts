@@ -1,9 +1,9 @@
 import type { Page, Request } from 'playwright';
 import { color } from './color.js';
+import { quoteHeadingPattern } from './nhi-quote.js';
 import { readErrorSummary } from './tcas-quote.js';
 
 const errorSelector = 'div.av-card-error-summary';
-const quoteHeadingPattern = "^Welcome\\s+.*?,\\s*here['’‘ʼ]s\\s+your\\s+quote\\s*$";
 /** Upper bound on sections walked, so a journey that never offers Get your quote cannot loop forever. */
 const maxSections = 15;
 /**
