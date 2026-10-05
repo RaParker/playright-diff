@@ -5,33 +5,65 @@ import { readErrorSummary } from './tcas-quote.js';
 /** Heading shown on the quote page, for any customer name and apostrophe style. */
 export const quoteHeadingPattern = "^Welcome\\s+.*?,\\s*here['’‘ʼ]s\\s+your\\s+quote\\s*$";
 const errorSelector = 'div.av-card-error-summary';
-const continueSelector = 'button#hp-summary-continue-button';
+
+interface QuoteStep {
+  /** Page name used in logs and errors. */
+  name: string;
+  /** Button that moves the page on towards the quote. */
+  selector: string;
+  /** Button text, for logs. */
+  button: string;
+}
+
+/** Pages NHI can show before the quote, in any order; each is clicked through when it appears. */
+const quoteSteps: QuoteStep[] = [
+  { name: 'quote summary', selector: 'button#hp-summary-continue-button', button: 'Continue with quote' },
+  { name: 'assumptions', selector: 'button#hp-assumptions-quote-button', button: 'Yes, take me to my quote' }
+];
+/** Upper bound on clicks, so pages that keep leading to each other cannot loop until the timeout. */
+const maxClicks = 5;
 
 /**
- * Moves an NHI quote summary page on to its quote page. The summary already shows a price, but the quote page only
- * appears after clicking Continue with quote. A page already showing the quote is left as it is.
+ * Moves an NHI page on to its quote page. The quote summary already shows a price and the assumptions page asks the
+ * customer to confirm them, but the quote page only appears after clicking through them (see {@link quoteSteps}).
+ * A page already showing the quote is left as it is.
  * @param page Page opened on the NHI quote summary.
- * @throws When Continue with quote leads to an error summary, or the quote page does not appear before the timeout.
+ * @throws When a click leads to an error summary, the quote is not reached within {@link maxClicks} clicks, or the
+ * quote page does not appear before the timeout.
  */
 export async function nhiQuote(page: Page): Promise<void> {
-  if ((await waitForPage(page, false)) === 'quote') {
-    return;
-  }
+  let clicked: QuoteStep | undefined;
+  for (let clicks = 0; ; clicks++) {
+    const outcome = await waitForPage(page, clicked?.selector);
+    if (outcome === 'quote') {
+      return;
+    }
 
-  console.log(color.Gray('NHI: quote summary: clicking Continue with quote.'));
-  await page.locator(continueSelector).click();
-  if ((await waitForPage(page, true)) === 'error') {
-    throw new Error(`NHI quote summary errors: ${await readErrorSummary(page, errorSelector)}`);
+    const step = quoteSteps.find(({ name }) => name === outcome);
+    if (step === undefined) {
+      throw new Error(`NHI ${clicked?.name ?? 'quote'} errors: ${await readErrorSummary(page, errorSelector)}`);
+    }
+
+    if (clicks === maxClicks) {
+      throw new Error(`NHI quote did not appear within ${maxClicks} clicks; last shown: ${step.name}.`);
+    }
+
+    console.log(color.Gray(`NHI: ${step.name}: clicking ${step.button}.`));
+    await page.locator(step.selector).click();
+    clicked = step;
   }
 }
 
 /**
- * Waits for the quote heading, or (before the click) the Continue with quote button, or (after it) an error summary.
- * @returns `'quote'`, `'summary'` or `'error'`.
+ * Waits for the quote heading, a visible {@link quoteSteps} button other than the one just clicked, or (after a
+ * click) an error summary.
+ * @param page Page to watch.
+ * @param clickedSelector Button just clicked, which is ignored so a page that has not moved on yet is not re-clicked.
+ * @returns `'quote'`, `'error'`, or the name of the step whose button is shown.
  */
-async function waitForPage(page: Page, clicked: boolean): Promise<string> {
+async function waitForPage(page: Page, clickedSelector: string | undefined): Promise<string> {
   const handle = await page.waitForFunction(
-    ({ clicked, quoteHeadingPattern, continueSelector, errorSelector }) => {
+    ({ clickedSelector, quoteHeadingPattern, quoteSteps, errorSelector }) => {
       if (
         [...document.querySelectorAll('h2')].some(
           (element) =>
@@ -42,14 +74,17 @@ async function waitForPage(page: Page, clicked: boolean): Promise<string> {
         return 'quote';
       }
 
-      if (clicked) {
-        return document.querySelector(errorSelector) !== null ? 'error' : false;
+      if (clickedSelector !== undefined && document.querySelector(errorSelector) !== null) {
+        return 'error';
       }
 
-      const button = document.querySelector(continueSelector);
-      return button !== null && button.getClientRects().length > 0 ? 'summary' : false;
+      const shown = quoteSteps.find(({ selector }) => {
+        const button = document.querySelector(selector);
+        return selector !== clickedSelector && button !== null && button.getClientRects().length > 0;
+      });
+      return shown?.name ?? false;
     },
-    { clicked, quoteHeadingPattern, continueSelector, errorSelector }
+    { clickedSelector, quoteHeadingPattern, quoteSteps, errorSelector }
   );
   return String(await handle.jsonValue());
 }

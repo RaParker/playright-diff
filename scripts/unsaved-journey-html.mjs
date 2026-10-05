@@ -1,9 +1,36 @@
 export const quotePageHtml = '<h2>Welcome Alex, here&rsquo;s your quote</h2>';
 
-/** NHI quote summary page: its Continue with quote button shows the quote page. */
-export const quoteSummaryHtml = `<h1>Welcome Alex, thank you for choosing Homeprotect</h1>
+/** NHI quote summary page markup, without behaviour. */
+export const summaryPageHtml = `<h1>Welcome Alex, thank you for choosing Homeprotect</h1>
   <div class="text-center"><button id="hp-summary-continue-button" type="button" class="hp-continue btn btn-primary"
-    onclick="document.body.innerHTML = '${quotePageHtml}'">Continue with quote</button></div>`;
+    >Continue with quote</button></div>`;
+
+/** NHI assumptions page markup, without behaviour. */
+export const assumptionsPageHtml = `<h1>Assumptions</h1><div class="hp-button-group"><button id="hp-edit-questions-button"
+  type="button" class="hp-previous-section btn btn-primary">No, I need to make changes</button><button
+  id="hp-assumptions-quote-button" type="button" class="hp-continue btn btn-primary">Yes, take me to my quote</button></div>`;
+
+/**
+ * Builds NHI pages that move on when their buttons are clicked.
+ * @param {string} start Markup shown first.
+ * @param {Record<string, string>} routes Markup shown 100 ms after clicking the button with each id.
+ * @returns {string} Page HTML.
+ */
+export function nhiPagesHtml(start, routes) {
+  return `${start}<script>
+    document.addEventListener('click', (event) => {
+      const next = ${JSON.stringify(routes)}[event.target.id];
+      if (next !== undefined) setTimeout(() => { document.body.innerHTML = next; }, 100);
+    });
+  </script>`;
+}
+
+/** NHI quote summary page: Continue with quote shows the assumptions page, whose Yes button shows the quote. */
+export const quoteSummaryHtml = nhiPagesHtml(summaryPageHtml, {
+  'hp-summary-continue-button': assumptionsPageHtml,
+  'hp-assumptions-quote-button': quotePageHtml,
+  'hp-edit-questions-button': '<h1>Cover details</h1>'
+});
 
 /**
  * Builds an `nhi=false` style journey: Continue moves through the sections, and Get your quote on the last

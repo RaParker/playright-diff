@@ -6,32 +6,63 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { nhiQuote } from '../dist/nhi-quote.js';
 import { screenshot } from '../dist/screenshot.js';
-import { quotePageHtml, quoteSummaryHtml } from './unsaved-journey-html.mjs';
+import {
+  assumptionsPageHtml,
+  nhiPagesHtml,
+  quotePageHtml,
+  quoteSummaryHtml,
+  summaryPageHtml
+} from './unsaved-journey-html.mjs';
 
-function summaryLeadingTo(outcome) {
-  return `<h1>Welcome Alex, thank you for choosing Homeprotect</h1>
-    <button id="hp-summary-continue-button" type="button">Continue with quote</button><script>
-    document.querySelector('button').onclick = () => {
-      setTimeout(() => { document.body.innerHTML = ${JSON.stringify(outcome)}; }, 100);
-    };
-  </script>`;
-}
+const summaryButton = 'hp-summary-continue-button';
+const assumptionsButton = 'hp-assumptions-quote-button';
+const errorSummaryHtml = '<div class="av-card-error-summary"><ul><li><a>Quote unavailable</a></li></ul></div>';
 
 for (const [name, html, expectedError] of [
-  ['clicks Continue with quote on the summary page and captures the quote', quoteSummaryHtml, undefined],
-  ['waits for the quote page to appear after Continue with quote', summaryLeadingTo(quotePageHtml), undefined],
+  ['clicks through the summary and assumptions pages and captures the quote', quoteSummaryHtml, undefined],
+  [
+    'clicks Continue with quote when the summary leads straight to the quote',
+    nhiPagesHtml(summaryPageHtml, { [summaryButton]: quotePageHtml }),
+    undefined
+  ],
+  [
+    'clicks Yes, take me to my quote when the assumptions page is shown first',
+    nhiPagesHtml(assumptionsPageHtml, { [assumptionsButton]: quotePageHtml }),
+    undefined
+  ],
+  ['captures a page already showing the quote without clicking', quotePageHtml, undefined],
   [
     'ignores a Continue with quote button without the summary id',
     '<button type="button">Continue with quote</button>',
     /Timeout/
   ],
-  ['captures a page already showing the quote without clicking', quotePageHtml, undefined],
+  [
+    'never clicks No, I need to make changes',
+    nhiPagesHtml('<button id="hp-edit-questions-button" type="button">No, I need to make changes</button>', {
+      'hp-edit-questions-button': quotePageHtml
+    }),
+    /Timeout/
+  ],
   [
     'reports the error summary shown after Continue with quote',
-    summaryLeadingTo('<div class="av-card-error-summary"><ul><li><a>Quote unavailable</a></li></ul></div>'),
+    nhiPagesHtml(summaryPageHtml, { [summaryButton]: errorSummaryHtml }),
     /NHI quote summary errors: Quote unavailable/
   ],
-  ['times out when Continue with quote never shows the quote', summaryLeadingTo('<h1>Still waiting</h1>'), /Timeout/],
+  [
+    'reports the error summary shown after Yes, take me to my quote',
+    nhiPagesHtml(assumptionsPageHtml, { [assumptionsButton]: errorSummaryHtml }),
+    /NHI assumptions errors: Quote unavailable/
+  ],
+  [
+    'stops when the pages keep leading to each other',
+    nhiPagesHtml(summaryPageHtml, { [summaryButton]: assumptionsPageHtml, [assumptionsButton]: summaryPageHtml }),
+    /NHI quote did not appear within 5 clicks; last shown: assumptions/
+  ],
+  [
+    'times out when Continue with quote never shows the quote',
+    nhiPagesHtml(summaryPageHtml, { [summaryButton]: '<h1>Still waiting</h1>' }),
+    /Timeout/
+  ],
   ['times out when the page is neither the summary nor the quote', '<h1>Something else</h1>', /Timeout/]
 ]) {
   test(`NHI quote ${name}`, async () => {

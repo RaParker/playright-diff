@@ -210,14 +210,22 @@ be between YYYY-MM-DD ...", the action opens `svg.av-icon-calendar`, picks the c
 `div` whose aria-label ends with that date (for example `October 2nd, 2026`), and retries
 Contact details once. Any remaining errors stop the journey as usual.
 
-### NHI quote summary
+### NHI quote summary and assumptions
 
-The NHI quote URL opens the quote **summary** page ("Welcome …, thank you for choosing
-Homeprotect"), which already shows a price. Before capturing, the action clicks
-**Continue with quote** (`button#hp-summary-continue-button`) and waits for the
-welcome quote heading, so the NHI screenshot shows the quote page. A page already showing the
-quote is captured as it is. If an error summary appears after the click, its text is reported
-and the comparison is skipped.
+NHI can show these pages before its quote page, in either order, and either can be missing.
+Before capturing, the action clicks through whichever appears (each click is logged in grey)
+until the welcome quote heading appears, so the NHI screenshot shows the quote page:
+
+| Page                                                                        | Button clicked                                                |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Quote summary ("Welcome …, thank you for choosing Homeprotect", with price) | **Continue with quote** (`#hp-summary-continue-button`)       |
+| Assumptions ("Are you happy with these assumptions?")                       | **Yes, take me to my quote** (`#hp-assumptions-quote-button`) |
+
+- A page already showing the quote is captured as it is. **No, I need to make changes** is
+  never clicked.
+- An error summary after a click is reported (for example `NHI assumptions errors: …`) and
+  the comparison is skipped.
+- The flow stops after 5 clicks without reaching the quote.
 
 ### Loading screens and Oops pages
 
@@ -309,9 +317,9 @@ npm start -- screenshot https://example.com --output screenshots/example.png
 Before calling work done, run `./VerifyProject.ps1` and check it prints `Done` with no
 `FAILED at:` line. It chains the type check, tests and lint.
 
-**Tests:** `npm test` covers screenshot, comparison, quote-page, the NHI quote summary, the
-quote GUID fallback and `quote-pages`. Chromium must be installed, and the OCR test may download language data on
-its first run. Run a subset with `npm run test:compare` or `npm run test:quote-page` (the
+**Tests:** `npm test` covers screenshot, comparison, quote-page, the NHI quote summary and
+assumptions pages, the quote GUID fallback and `quote-pages`. Chromium must be installed, and the
+OCR test may download language data on its first run. Run a subset with `npm run test:compare` or `npm run test:quote-page` (the
 latter includes `scripts/nhi-quote-test.mjs` and `scripts/quote-guid-test.mjs`).
 
 **TypeScript versions:** builds and type checks use TypeScript 7 through the
