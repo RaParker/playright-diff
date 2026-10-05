@@ -79,7 +79,10 @@ npm run compare -- before.png after.png --output comparisons/my-comparison
 | `--language`     | `eng`                         | OCR language                                               |
 | `--no-ocr`       | —                             | Skip text extraction                                       |
 
-The command prints removed and added text for each changed region and writes:
+The command prints the removed and added text only for regions whose recognised text
+changed, then a grey count such as `115 changed regions, 12 with text changes.` Regions that
+differ only visually appear in the report, not the console. Tesseract's own diagnostics (for
+example `Estimating resolution as …`) are suppressed. It writes:
 
 | File                                        | Contents                                                 |
 | ------------------------------------------- | -------------------------------------------------------- |

@@ -55,6 +55,10 @@ test('comparison detects pixel, dimension, and OCR changes', { timeout: 180000 }
     assert.ok(report.regions.some((r) => r.textChanges.some((c) => c.type === 'removed' && c.text.includes('100'))));
     assert.ok(report.regions.some((r) => r.textChanges.some((c) => c.type === 'added' && c.text.includes('200'))));
     assert.ok((await sharp(join(output, 'diff.png')).metadata()).width === 700);
+    // Tesseract's own diagnostics are not echoed for each crop.
+    assert.doesNotMatch(result.output, /Estimating resolution|Invalid resolution/, result.output);
+    assert.ok(result.output.includes('Region 1: Recognized text differs'), result.output);
+    assert.ok(result.output.includes('1 changed region, 1 with text changes.'), result.output);
 
     const taller = join(dir, 'taller.png');
     await sharp(before).extend({ bottom: 50, background: 'white' }).png().toFile(taller);
@@ -80,6 +84,40 @@ test('comparison detects pixel, dimension, and OCR changes', { timeout: 180000 }
     assert.notEqual(result.code, 0);
     result = await run([before, join(dir, 'missing.png')]);
     assert.notEqual(result.code, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('comparison lists only regions whose recognised text changed', { timeout: 180000 }, async () => {
+  // arrange
+  const dir = await mkdtemp(join(tmpdir(), 'image-compare-test-'));
+  try {
+    const before = join(dir, 'before.png'),
+      after = join(dir, 'after.png');
+    for (const [path, fill] of [
+      [before, 'black'],
+      [after, '#666']
+    ]) {
+      await sharp(
+        Buffer.from(
+          `<svg width="700" height="160"><rect width="700" height="160" fill="white"/><text x="30" y="100" font-size="48" font-family="Arial" fill="${fill}">Price 100 dollars</text></svg>`
+        )
+      )
+        .png()
+        .toFile(path);
+    }
+
+    // act
+    const result = await run([before, after, '--output', join(dir, 'colour')]);
+
+    // assert
+    assert.equal(result.code, 0, result.output);
+    const report = JSON.parse(await readFile(join(dir, 'colour', 'report.json'), 'utf8'));
+    assert.equal(report.regions.length, 1);
+    assert.equal(report.regions[0].assessment, 'Recognized text unchanged; visual appearance differs');
+    assert.doesNotMatch(result.output, /Region 1:/, result.output);
+    assert.ok(result.output.includes('1 changed region, 0 with text changes.'), result.output);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
