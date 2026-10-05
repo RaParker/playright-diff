@@ -4,6 +4,15 @@ import { readFile } from 'node:fs/promises';
 export const defaultQuoteGuidCount = 250;
 
 /**
+ * Checks whether a value is a TCAS-format GUID (32 hexadecimal characters, no dashes).
+ * @param value Value to check, such as a quote-pages selector.
+ * @returns `true` for a TCAS-format GUID, in either case.
+ */
+export function isQuoteGuid(value: string): boolean {
+  return /^[0-9a-f]{32}$/i.test(value);
+}
+
+/**
  * Reads a GUID list (TCAS format, one per line), as used by mrp-and-quote's testdata/quoteGuids.txt.
  * @param path List file path.
  * @returns Uppercase policy details IDs in file order; blank lines are skipped.
@@ -17,7 +26,7 @@ export async function readQuoteGuidList(path: string): Promise<string[]> {
       return [];
     }
 
-    if (!/^[0-9a-f]{32}$/i.test(guid)) {
+    if (!isQuoteGuid(guid)) {
       throw new Error(`${path} line ${index + 1}: "${guid}" is not a UUID with dashes removed.`);
     }
 
@@ -37,7 +46,7 @@ export function selectQuoteGuids(guids: string[], selector?: string): string[] {
     return guids.slice(0, defaultQuoteGuidCount);
   }
 
-  if (/^[0-9a-f]{32}$/i.test(selector)) {
+  if (isQuoteGuid(selector)) {
     const matches = guids.filter((guid) => guid === selector.toUpperCase());
     if (matches.length === 0) {
       throw new Error(`No entry in the GUID list matches ${selector}.`);

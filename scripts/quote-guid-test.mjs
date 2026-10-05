@@ -12,6 +12,7 @@ import { declinedPageHtml, quotePageHtml, quoteSummaryHtml, unsavedJourneyHtml }
 const script = resolve('dist/main.js');
 const policyA = 'ABCDEF1234567890ABCDEF1234567890';
 const policyB = '11111111111111111111111111111111';
+const policyC = '22222222222222222222222222222222';
 const tcasJourneyHtml = `<h1>Cover details</h1>
   <div class="av-timeline-all-sections"><ul><li title="Contact details">Contact details</li></ul></div>
   <button onclick="document.body.innerHTML = '${quotePageHtml}'">Get your quote</button>`;
@@ -107,6 +108,10 @@ async function run(directory, env, args) {
   // ANSI colour codes removed, for asserting on the text alone.
   const plain = output.replace(new RegExp(`${String.fromCharCode(27)}\\[\\d+m`, 'g'), '');
   return { code, output, plain };
+}
+
+async function readFailed(directory) {
+  return JSON.parse(await readFile(join(directory, 'quote-pages-failed.json'), 'utf8'));
 }
 
 async function readMapping(directory) {
@@ -526,6 +531,8 @@ describe('quote-pages', () => {
       // assert
       assert.equal(result.code, 0, result.output);
       assert.match(result.plain, /2 passed \(1 both declined\), 0 failed/);
+      // A clean list run leaves no saved failures file behind.
+      await assert.rejects(readFailed(directory), { code: 'ENOENT' });
     });
   });
 
@@ -566,6 +573,104 @@ describe('quote-pages', () => {
       assert.ok(result.output.includes('\u001b[32m1 passed'), result.output);
       assert.ok(result.output.includes(`\n${policyA}-1\n`), result.output);
       assert.ok((await readdir(join(directory, 'screenshots'))).includes(`${policyB}-1-nhi.png`));
+      const saved = await readFailed(directory);
+      assert.deepEqual(
+        saved.failed.map(({ policyDetailsId }) => policyDetailsId),
+        [policyA]
+      );
+      assert.match(saved.failed[0].issues.join('\n'), /ENOENT/);
+      assert.match(
+        result.plain,
+        /Failed policies saved to quote-pages-failed\.json; retry them with npm run quote-pages -- retry-failed/
+      );
+    });
+  });
+
+  test('retry-failed reruns only the saved failures and keeps those still failing', async () => {
+    await withServer(quoteJourneyHandler([]), async (base, requests) => {
+      // arrange
+      const { directory, env } = await fixture(base, { [`${policyB}-1`]: 'guid-b', [`${policyC}-1`]: 'guid-c' });
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n${policyC}\n`);
+      await writeFile(
+        join(directory, 'quote-pages-failed.json'),
+        JSON.stringify({
+          historyId: 1,
+          failed: [
+            { policyDetailsId: policyA, issues: ['earlier'] },
+            { policyDetailsId: policyB, issues: ['earlier'] }
+          ]
+        })
+      );
+
+      // act
+      const result = await run(directory, env, ['quote-pages', 'retry-failed', '--no-ocr']);
+
+      // assert
+      assert.notEqual(result.code, 0);
+      assert.match(result.plain, /Retrying 2 failed policies from quote-pages-failed\.json/);
+      assert.match(result.plain, /Quote pages summary\n1 passed \(0 both declined\), 1 failed\.\n/);
+      assert.ok(requests.includes(`/tcas/${policyB}/1`));
+      assert.ok(!requests.some((path) => path.includes(policyC) || path.includes('guid-c')));
+      const saved = await readFailed(directory);
+      assert.deepEqual(
+        saved.failed.map(({ policyDetailsId }) => policyDetailsId),
+        [policyA]
+      );
+    });
+  });
+
+  test('retry-failed reports when there is nothing to retry', async () => {
+    // arrange
+    const { directory, env } = await fixture('http://127.0.0.1:1');
+    delete env.QUOTE_GUID_LIST_PATH;
+
+    // act
+    const result = await run(directory, env, ['quote-pages', 'retry-failed']);
+
+    // assert
+    assert.equal(result.code, 0, result.output);
+    assert.match(result.plain, /No failed quote pages to retry \(quote-pages-failed\.json\)\./);
+  });
+
+  for (const [name, selector] of [
+    ['a GUID', policyA],
+    ['a maxCount of 1', '1']
+  ]) {
+    test(`a one-off run selecting ${name} leaves the saved failures untouched`, async () => {
+      await withServer(quoteJourneyHandler([]), async (base) => {
+        // arrange
+        const { directory, env } = await fixture(base, { [`${policyB}-1`]: 'guid-b' });
+        await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n`);
+        const saved = `${JSON.stringify({ historyId: 1, failed: [{ policyDetailsId: policyB, issues: ['earlier'] }] })}\n`;
+        await writeFile(join(directory, 'quote-pages-failed.json'), saved);
+
+        // act
+        const result = await run(directory, env, ['quote-pages', selector, '--no-ocr']);
+
+        // assert
+        assert.notEqual(result.code, 0);
+        assert.equal(await readFile(join(directory, 'quote-pages-failed.json'), 'utf8'), saved);
+        assert.doesNotMatch(result.plain, /Failed policies saved to/);
+      });
+    });
+  }
+
+  test('a clean run with a maxCount above 1 deletes the saved failures', async () => {
+    await withServer(quoteJourneyHandler([]), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base, { [`${policyA}-1`]: 'guid-a', [`${policyB}-1`]: 'guid-b' });
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n`);
+      await writeFile(
+        join(directory, 'quote-pages-failed.json'),
+        JSON.stringify({ historyId: 1, failed: [{ policyDetailsId: policyC, issues: ['earlier'] }] })
+      );
+
+      // act
+      const result = await run(directory, env, ['quote-pages', '2', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      await assert.rejects(readFailed(directory), { code: 'ENOENT' });
     });
   });
 

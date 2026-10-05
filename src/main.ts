@@ -2,7 +2,8 @@ import { parseArgs } from 'node:util';
 import { color } from './color.js';
 import { compare } from './compare.js';
 import { quotePage, quotePages, type QuotePageOptions } from './quote-page.js';
-import { readQuoteGuidList, selectQuoteGuids } from './quote-guid-list.js';
+import { failedQuotePagesPath, readFailedQuotePages } from './failed-quote-pages.js';
+import { isQuoteGuid, readQuoteGuidList, selectQuoteGuids } from './quote-guid-list.js';
 import { screenshot } from './screenshot.js';
 import { loadEnvironment } from './environment.js';
 
@@ -28,9 +29,11 @@ const quoteHelp = `Usage: npm run quote-page -- <policyDetailsId> <historyId> [o
   --no-ocr       Compare pixels without extracting text
   -h, --help     Show help`;
 
-const quotePagesHelp = `Usage: npm run quote-pages -- [maxCount|guid] [options]
+const quotePagesHelp = `Usage: npm run quote-pages -- [maxCount|guid|retry-failed] [options]
 Runs quote-page with historyId 1 for each GUID in QUOTE_GUID_LIST_PATH
 (default: the first 250; maxCount limits the count; guid selects one entry).
+Runs save their failed policies to ${failedQuotePagesPath} (except one-off runs: a guid or
+a maxCount of 1); retry-failed reruns only those.
   --no-ocr       Compare pixels without extracting text
   -h, --help     Show help`;
 
@@ -174,10 +177,38 @@ async function runQuotePages(args: string[]): Promise<void> {
 
   const environment = await loadEnvironment();
   const options = quotePageOptions(environment, values['no-ocr'] !== true);
+  if (positionals[0] === 'retry-failed') {
+    await retryFailedQuotePages(options);
+    return;
+  }
+
   const listPath = required(environment, 'QUOTE_GUID_LIST_PATH');
   const policyDetailsIds = selectQuoteGuids(await readQuoteGuidList(listPath), positionals[0]);
   console.log(`Running quote-page for ${policyDetailsIds.length} policies from ${listPath}`);
-  await quotePages(policyDetailsIds, 1, options);
+  await quotePages(policyDetailsIds, 1, options, isOneOffSelector(positionals[0]) ? undefined : failedQuotePagesPath);
+}
+
+/**
+ * A one-off run (one GUID, or a maxCount of 1 or less) leaves the saved failures of the last list run untouched.
+ */
+function isOneOffSelector(selector: string | undefined): boolean {
+  return selector !== undefined && (isQuoteGuid(selector) || (/^\d+$/.test(selector) && Number(selector) <= 1));
+}
+
+async function retryFailedQuotePages(options: QuotePageOptions): Promise<void> {
+  const saved = await readFailedQuotePages(failedQuotePagesPath);
+  if (saved === undefined || saved.failed.length === 0) {
+    console.log(`No failed quote pages to retry (${failedQuotePagesPath}).`);
+    return;
+  }
+
+  console.log(`Retrying ${saved.failed.length} failed policies from ${failedQuotePagesPath}`);
+  await quotePages(
+    saved.failed.map(({ policyDetailsId }) => policyDetailsId),
+    saved.historyId,
+    options,
+    failedQuotePagesPath
+  );
 }
 
 function quotePageOptions(environment: Record<string, string | undefined>, useOcr: boolean): QuotePageOptions {

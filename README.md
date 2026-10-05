@@ -139,6 +139,7 @@ npm run quote-pages                                         # first 250 entries
 npm run quote-pages -- 10                                   # first 10 entries
 npm run quote-pages -- 6819e30c2058490b8d1d9e25d267b002     # one entry (case-insensitive)
 npm run quote-pages -- 10 --no-ocr
+npm run quote-pages -- retry-failed                         # only the last run's failures
 ```
 
 Policies run one at a time. A failed policy is reported and the run continues. At the end,
@@ -155,6 +156,19 @@ Quote pages summary
 
 The exit code is non-zero if any policy failed. A policy where
 [both sides declined](#declined-quotes) counts as passed.
+
+#### Retrying failures
+
+A list run replaces `quote-pages-failed.json` in the current directory with that run's failed
+policy IDs, history ID and issues; a run where nothing failed deletes the file. It is
+git-ignored. `npm run quote-pages -- retry-failed` reruns only those policies — passed
+policies and their output are left alone — then replaces the file with the ones still
+failing (or deletes it when all pass), so repeated retries shrink the list. Replacement GUIDs
+already in `quote-guid-mapping.json` are reused. With no file it prints
+`No failed quote pages to retry` and exits successfully.
+
+One-off runs — a single `<guid>` or a `maxCount` of 1 — leave the file untouched, as does a run
+stopped with Ctrl+C.
 
 ## Configuration
 

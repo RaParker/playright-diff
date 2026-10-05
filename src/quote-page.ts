@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import type { Page } from 'playwright';
 import { color } from './color.js';
 import { compare } from './compare.js';
+import { writeFailedQuotePages, type FailedQuotePage } from './failed-quote-pages.js';
 import {
   readQuoteGuidMapping,
   requestQuoteGuid,
@@ -150,15 +151,18 @@ export async function quotePage(
  * @param policyDetailsIds Policy details IDs to capture and compare.
  * @param historyId History ID used for every policy.
  * @param options Options passed to each {@link quotePage} run.
- * After all runs, prints a summary: the counts, then each failed policy with its issues.
+ * @param failedPath File that the run's failed policies replace, for `quote-pages -- retry-failed`; not written when omitted.
+ * After all runs, saves the failed policies (an empty list when none failed), then prints a summary: the counts,
+ * then each failed policy with its issues.
  * @throws After all runs when any policy failed. Policies where both sides declined are not failures.
  */
 export async function quotePages(
   policyDetailsIds: string[],
   historyId: number,
-  options: QuotePageOptions
+  options: QuotePageOptions,
+  failedPath?: string
 ): Promise<void> {
-  const failures: { policy: string; issues: string[] }[] = [];
+  const failures: FailedQuotePage[] = [];
   let declined = 0;
   for (const [index, policyDetailsId] of policyDetailsIds.entries()) {
     console.log(color.Cyan(`[${index + 1}/${policyDetailsIds.length}] ${policyDetailsId}-${historyId}`));
@@ -169,11 +173,21 @@ export async function quotePages(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(color.Red(message));
-      failures.push({ policy: `${policyDetailsId}-${historyId}`, issues: message.split('\n') });
+      failures.push({ policyDetailsId, issues: message.split('\n') });
     }
   }
 
-  printSummary(policyDetailsIds.length, declined, failures);
+  if (failedPath !== undefined) {
+    await writeFailedQuotePages(failedPath, { historyId, failed: failures });
+  }
+
+  printSummary(policyDetailsIds.length, historyId, declined, failures);
+  if (failures.length > 0 && failedPath !== undefined) {
+    console.log(
+      color.Gray(`Failed policies saved to ${failedPath}; retry them with npm run quote-pages -- retry-failed`)
+    );
+  }
+
   if (failures.length > 0) {
     throw new Error(`${failures.length} of ${policyDetailsIds.length} quote pages failed; see the summary above.`);
   }
@@ -277,14 +291,14 @@ async function captureAt(label: string, url: string, options: ScreenshotOptions)
 }
 
 /** Prints the quote-pages summary: a title, the counts, then each failed policy with its issues indented below it. */
-function printSummary(total: number, declined: number, failures: { policy: string; issues: string[] }[]): void {
+function printSummary(total: number, historyId: number, declined: number, failures: FailedQuotePage[]): void {
   const failed = `${failures.length} failed`;
   console.log(`\n${color.Cyan('Quote pages summary')}`);
   console.log(
     `${color.Green(`${total - failures.length} passed`)} (${declined} both declined), ${failures.length > 0 ? color.Red(failed) : failed}.`
   );
-  for (const { policy, issues } of failures) {
-    console.log(policy);
+  for (const { policyDetailsId, issues } of failures) {
+    console.log(`${policyDetailsId}-${historyId}`);
     for (const issue of issues) {
       console.log(`  ${color.Red(issue)}`);
     }
