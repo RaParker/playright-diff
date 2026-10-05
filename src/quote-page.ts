@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { color } from './color.js';
 import { compare } from './compare.js';
 import {
   readQuoteGuidMapping,
@@ -161,13 +162,14 @@ export async function quotePages(
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(message);
+      console.error(color.Red(message));
       failures.push(`${policyDetailsId}-${historyId}: ${message.split('\n').join('; ')}`);
     }
   }
 
   const passed = policyDetailsIds.length - failures.length;
-  console.log(`Quote pages: ${passed} passed (${declined} both declined), ${failures.length} failed.`);
+  const summary = `Quote pages: ${passed} passed (${declined} both declined), ${failures.length} failed.`;
+  console.log(failures.length > 0 ? color.Red(summary) : summary);
   if (failures.length > 0) {
     throw new Error(`Quote pages failed:\n${failures.join('\n')}`);
   }

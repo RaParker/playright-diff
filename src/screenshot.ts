@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import { chromium, type Page } from 'playwright';
+import { color } from './color.js';
 
 export interface ScreenshotOptions {
   output?: string;
@@ -68,9 +69,10 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
         });
         // The rendered DOM (React builds the page in the browser), saved for turning into test fixtures.
         await writeFile(`${failedOutput}.html`, await page.evaluate(() => document.documentElement.outerHTML));
-        console.error(`${declined ? 'Declined' : 'Failure'} screenshot and HTML saved to ${failedOutput}.png/.html`);
+        const saved = `${declined ? 'Declined' : 'Failure'} screenshot and HTML saved to ${failedOutput}.png/.html`;
+        console.error(declined ? saved : color.Red(saved));
       } catch (captureError) {
-        console.error(`Could not capture failure screenshot: ${String(captureError)}`);
+        console.error(color.Red(`Could not capture failure screenshot: ${String(captureError)}`));
       }
     }
 

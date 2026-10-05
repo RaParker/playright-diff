@@ -480,6 +480,8 @@ describe('quote-page declined quotes', () => {
         // assert
         assert.equal(result.code === 0, expectedSuccess, result.output);
         assert.match(result.output, expectedOutput);
+        // Failures are shown in red; a both-declined success is not.
+        assert.equal(result.output.includes('\u001b[31m'), !expectedSuccess, result.output);
         assert.ok(!(await readdir(directory)).includes('comparisons'));
         assert.deepEqual(
           (await readdir(join(directory, 'screenshots'))).sort(),

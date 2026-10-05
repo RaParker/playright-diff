@@ -35,7 +35,8 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 | `npm run quote-page`  | Capture NHI and TCAS versions of one quote and compare them |
 | `npm run quote-pages` | Run `quote-page` for every policy in a GUID list            |
 
-Add `-- --help` to any command for its options (for example `npm run compare -- --help`).
+Add `-- --help` to any command for its options (for example `npm run compare -- --help`). Failures are
+shown in red, and progress steps in grey.
 
 ### screenshot
 

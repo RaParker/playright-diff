@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import { color } from './color.js';
 import { compare } from './compare.js';
 import { quotePage, quotePages, type QuotePageOptions } from './quote-page.js';
 import { readQuoteGuidList, selectQuoteGuids } from './quote-guid-list.js';
@@ -206,6 +207,6 @@ function required(environment: Record<string, string | undefined>, name: string)
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(color.Red(error instanceof Error ? error.message : String(error)));
   process.exitCode = 1;
 });
