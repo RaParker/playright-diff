@@ -55,6 +55,7 @@ try {
       'QUOTE_TEST_BASE_PATH=.',
       `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=${base}/nhi/{artemisQuoteGuid}`,
       `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE=${base}/unsaved/{artemisQuoteGuid}`,
+      `QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE=${base}/tcas-replacement/{artemisQuoteGuid}`,
       `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE=${base}/tcas/{policyDetailsId}/{historyId}`,
       `QUOTE_JOURNEY_QUOTE_GUID_URL=${base}/api/nhi/quote-guid`,
       'QUOTE_JOURNEY_AGENT_ID=agent',
@@ -69,6 +70,7 @@ try {
     'MRP_AND_QUOTE_OUTPUT_DIR',
     'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE',
     'QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE',
+    'QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE',
     'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE',
     'QUOTE_JOURNEY_QUOTE_GUID_URL',
     'QUOTE_JOURNEY_AGENT_ID',
@@ -94,6 +96,7 @@ try {
   assert.equal(code, 0);
   assert.ok(requested.includes('/nhi/guid%2Fa%20b'));
   assert.ok(requested.includes('/tcas/ABCDEF1234567890ABCDEF1234567890/42'));
+  assert.ok(!requested.some((path) => path.startsWith('/tcas-replacement/')));
   for (const suffix of ['nhi', 'tcas']) {
     const png = await readFile(join(directory, 'screenshots', `ABCDEF1234567890ABCDEF1234567890-42-${suffix}.png`));
     assert.equal(png.readUInt32BE(16), 1440);

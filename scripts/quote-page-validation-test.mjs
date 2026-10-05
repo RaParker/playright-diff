@@ -12,6 +12,7 @@ const settings = [
   'MRP_AND_QUOTE_OUTPUT_DIR',
   'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE',
   'QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE',
+  'QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE',
   'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE',
   'QUOTE_JOURNEY_QUOTE_GUID_URL',
   'QUOTE_JOURNEY_AGENT_ID',
@@ -34,6 +35,7 @@ async function fixture() {
     MRP_AND_QUOTE_OUTPUT_DIR: directory,
     QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE: 'http://127.0.0.1:1/nhi/{artemisQuoteGuid}',
     QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE: 'http://127.0.0.1:1/unsaved/{artemisQuoteGuid}',
+    QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE: 'http://127.0.0.1:1/tcas-replacement/{artemisQuoteGuid}',
     QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE: 'http://127.0.0.1:1/tcas/{policyDetailsId}/{historyId}',
     QUOTE_JOURNEY_QUOTE_GUID_URL: 'http://127.0.0.1:1/api/nhi/quote-guid',
     QUOTE_JOURNEY_AGENT_ID: 'agent',
@@ -106,14 +108,20 @@ for (const [name, content, expected] of [
   });
 }
 
-for (const [name, template, expected] of [
+for (const [name, template, expected, setting = 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE'] of [
   ['absent placeholder', 'https://example.com/quote', /must contain/],
   ['unsupported protocol', 'file:///quote/{artemisQuoteGuid}', /must use http/],
-  ['malformed URL', 'invalid/{artemisQuoteGuid}', /Invalid URL/]
+  ['malformed URL', 'invalid/{artemisQuoteGuid}', /Invalid URL/],
+  [
+    'absent placeholder',
+    'https://example.com/tcas-replacement',
+    /must contain \{artemisQuoteGuid\}/,
+    'QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE'
+  ]
 ]) {
-  test(`quote-page rejects ${name} in a template`, async () => {
+  test(`quote-page rejects ${name} in ${setting}`, async () => {
     const { directory, env } = await fixture();
-    env.QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE = template;
+    env[setting] = template;
     const result = await run(directory, env);
     assert.notEqual(result.code, 0);
     assert.match(result.output, expected);

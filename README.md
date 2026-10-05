@@ -141,17 +141,18 @@ summary prints at the end, and the exit code is non-zero if any policy failed.
 `quote-page` and `quote-pages` read settings from `.env` in the current working directory.
 The committed `.env` targets the feature-dev environment.
 
-| Variable                                     | Used by       | Purpose                                                    |
-| -------------------------------------------- | ------------- | ---------------------------------------------------------- |
-| `MRP_AND_QUOTE_OUTPUT_DIR`                   | both          | Folder containing `<ID>-<historyId>-mrp.json` files        |
-| `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE`  | both          | NHI quote URL, with `{artemisQuoteGuid}`                   |
-| `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE`     | both          | Unsaved replacement journey URL (`nhi=false`)              |
-| `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE` | both          | TCAS quote URL, with `{policyDetailsId}` and `{historyId}` |
-| `QUOTE_JOURNEY_QUOTE_GUID_URL`               | both          | [NHI Oops fallback](#nhi-oops-fallback) endpoint           |
-| `QUOTE_JOURNEY_AGENT_ID`                     | both          | Fallback request `agentId`                                 |
-| `QUOTE_JOURNEY_BRANCH_CODE`                  | both          | Fallback request `branchCode`                              |
-| `QUOTE_JOURNEY_CALL_MEDIA_USER`              | both          | Fallback request `callMediaUser`                           |
-| `QUOTE_GUID_LIST_PATH`                       | `quote-pages` | GUID list file, one policy ID per line                     |
+| Variable                                      | Used by       | Purpose                                                                  |
+| --------------------------------------------- | ------------- | ------------------------------------------------------------------------ |
+| `MRP_AND_QUOTE_OUTPUT_DIR`                    | both          | Folder containing `<ID>-<historyId>-mrp.json` files                      |
+| `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE`   | both          | NHI quote URL, with `{artemisQuoteGuid}`                                 |
+| `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE`      | both          | Unsaved replacement journey URL (`nhi=false`)                            |
+| `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE`  | both          | TCAS quote URL, with `{policyDetailsId}` and `{historyId}`               |
+| `QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE` | both          | TCAS quote summary URL for a replacement GUID, with `{artemisQuoteGuid}` |
+| `QUOTE_JOURNEY_QUOTE_GUID_URL`                | both          | [NHI Oops fallback](#nhi-oops-fallback) endpoint                         |
+| `QUOTE_JOURNEY_AGENT_ID`                      | both          | Fallback request `agentId`                                               |
+| `QUOTE_JOURNEY_BRANCH_CODE`                   | both          | Fallback request `branchCode`                                            |
+| `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both          | Fallback request `callMediaUser`                                         |
+| `QUOTE_GUID_LIST_PATH`                        | `quote-pages` | GUID list file, one policy ID per line                                   |
 
 All variables listed for a command are required.
 
@@ -163,6 +164,9 @@ Rules:
   the command with an error.
 - URL placeholders such as `{policyDetailsId}` are left alone until `quote-page` fills them.
 - Relative paths resolve from the current working directory.
+- URL shapes come from Quote Journey's `/api/developer/links` (for example
+  `https://quotes-feature-dev.homeprotect.co.uk/api/developer/links`), which lists every entry
+  point for a quote GUID or policy. Check it when adding or changing a template.
 
 `REPO_BASE_PATH` is usually set in your environment, but you can also set it in `.env`:
 
@@ -173,7 +177,9 @@ MRP_AND_QUOTE_OUTPUT_DIR="${REPO_BASE_PATH}/GoPackages/internal/mrp-and-quote/ou
 
 ## How quote-page works
 
-NHI and TCAS run **concurrently**, and both finish even if one fails. Failures are reported
+NHI and TCAS run **concurrently**, and both finish even if one fails. When NHI uses a
+replacement quote GUID, TCAS is captured from that GUID instead (see
+[TCAS for a replacement GUID](#tcas-for-a-replacement-guid)). Failures are reported
 per flow, and the comparison runs only when both captures succeed. Each flow logs every URL
 it opens (`NHI: opening <url>`, `TCAS: opening <url>`), and each failure message ends with
 the URL that failed.
@@ -210,11 +216,13 @@ be between YYYY-MM-DD ...", the action opens `svg.av-icon-calendar`, picks the c
 `div` whose aria-label ends with that date (for example `October 2nd, 2026`), and retries
 Contact details once. Any remaining errors stop the journey as usual.
 
-### NHI quote summary and assumptions
+### Quote summary and assumptions
 
-NHI can show these pages before its quote page, in either order, and either can be missing.
-Before capturing, the action clicks through whichever appears (each click is logged in grey)
-until the welcome quote heading appears, so the NHI screenshot shows the quote page:
+The NHI quote URL and the [replacement TCAS](#tcas-for-a-replacement-guid) URL open a quote
+summary, which can show these pages before its quote page, in either order, and either can
+be missing. Before capturing, the action clicks through whichever appears (each click is
+logged in grey) until the welcome quote heading appears, so the screenshot shows the quote
+page:
 
 | Page                                                                        | Button clicked                                                |
 | --------------------------------------------------------------------------- | ------------------------------------------------------------- |
@@ -223,7 +231,8 @@ until the welcome quote heading appears, so the NHI screenshot shows the quote p
 
 - A page already showing the quote is captured as it is. **No, I need to make changes** is
   never clicked.
-- An error summary after a click is reported (for example `NHI assumptions errors: …`) and
+- An error summary after a click is reported (for example `NHI assumptions errors: …` or
+  `TCAS quote summary errors: …`) and
   the comparison is skipped.
 - The flow stops after 5 clicks without reaching the quote.
 
@@ -256,7 +265,9 @@ When the NHI page shows `<h2>Oops</h2>`:
 3. The new GUID is saved in `quote-guid-mapping.json` (current working directory,
    git-ignored) against the original `artemisQuoteGuid`.
 4. NHI opens `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE` (`#guid=<new GUID>,nhi=false`) and
-   drives the journey to its quote, which saves the quote to NHI. TCAS is unaffected.
+   drives the journey to its quote, which saves the quote to NHI.
+5. TCAS is captured again from the new GUID, so both sides show the same answers (see
+   [TCAS for a replacement GUID](#tcas-for-a-replacement-guid)).
 
 The unsaved journey clicks **Continue** through each section (logged in grey) until
 **Get your quote** appears, clicks it, and waits for the welcome quote heading. Before each
@@ -275,17 +286,34 @@ Later runs try the mapped GUID's NHI quote page first; if it shows Oops (not sav
 yet), the unsaved journey runs again with no further request. Delete the entry (or the whole
 file) to request a fresh GUID.
 
-> A replacement GUID is a different NHI quote from the original, so its pricing can differ.
-
 ```dotenv
 QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE="https://quotes-feature-dev.homeprotect.co.uk/#guid={artemisQuoteGuid},nhi=false"
+QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE="https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid={artemisQuoteGuid}&source=tcas&callmediauser=${USERNAME}&bid=1066"
 QUOTE_JOURNEY_QUOTE_GUID_URL="https://quotes-feature-dev.homeprotect.co.uk/api/nhi/quote-guid"
 QUOTE_JOURNEY_AGENT_ID="${USERNAME}"
 QUOTE_JOURNEY_BRANCH_CODE=1066
 QUOTE_JOURNEY_CALL_MEDIA_USER="${USERNAME}"
 ```
 
-The Quote Journey API reference is in [docs/api-documentation.json](docs/api-documentation.json).
+### TCAS for a replacement GUID
+
+A replacement quote carries the TCAS policy's answers but is a different quote, so comparing
+it with the original TCAS policy would show differences. Whenever NHI captures a replacement
+GUID, TCAS is captured from `QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE` instead — the
+"TCAS Quote Summary (GUID)" entry point from `/api/developer/links`
+(`quotesummary#guid=<GUID>&source=tcas`) — and clicks through its
+[summary and assumptions](#quote-summary-and-assumptions) to the quote. The GUID is used
+exactly as the endpoint returned it. Logs show
+`TCAS: using replacement quote GUID <GUID> to match NHI.`
+
+- **New replacement:** TCAS first runs concurrently for the original policy (the replacement
+  isn't known yet), then runs again for the replacement once NHI has saved it. The second
+  capture overwrites `-tcas.png`, and only its result counts.
+- **Mapped replacement:** TCAS waits for NHI, then runs only for the replacement.
+- Screenshot and report names keep the original policy ID and history ID.
+
+The Quote Journey API reference is in [docs/api-documentation.json](docs/api-documentation.json)
+(`/api/developer/links` is not listed there).
 
 ## Troubleshooting
 
@@ -320,7 +348,7 @@ Before calling work done, run `./VerifyProject.ps1` and check it prints `Done` w
 **Tests:** `npm test` covers screenshot, comparison, quote-page, the NHI quote summary and
 assumptions pages, the quote GUID fallback and `quote-pages`. Chromium must be installed, and the
 OCR test may download language data on its first run. Run a subset with `npm run test:compare` or `npm run test:quote-page` (the
-latter includes `scripts/nhi-quote-test.mjs` and `scripts/quote-guid-test.mjs`).
+latter includes `scripts/quote-summary-test.mjs` and `scripts/quote-guid-test.mjs`).
 
 **TypeScript versions:** builds and type checks use TypeScript 7 through the
 `typescript-compiler` package alias. TypeScript 6 stays installed as `typescript` for

@@ -1,6 +1,6 @@
 import type { Page, Request } from 'playwright';
 import { color } from './color.js';
-import { quoteHeadingPattern } from './nhi-quote.js';
+import { quoteHeadingPattern } from './quote-summary.js';
 import { readErrorSummary } from './tcas-quote.js';
 
 const errorSelector = 'div.av-card-error-summary';

@@ -38,8 +38,14 @@ function jsonHandler(status, body) {
   };
 }
 
-// Serves NHI quote summary pages (Oops for GUIDs in oopsGuids), the unsaved and TCAS journeys, and the quote-guid endpoint.
-function quoteJourneyHandler(oopsGuids, replacementGuid = 'new-guid', unsavedJourney = {}) {
+// Serves NHI quote summary pages (Oops for GUIDs in oopsGuids), the unsaved and TCAS journeys, the replacement TCAS
+// quote summary, and the quote-guid endpoint.
+function quoteJourneyHandler(
+  oopsGuids,
+  replacementGuid = 'new-guid',
+  unsavedJourney = {},
+  tcasReplacementHtml = quoteSummaryHtml
+) {
   return (request, response) => {
     if (request.url.startsWith('/api/nhi/quote-guid')) {
       jsonHandler(200, { guid: replacementGuid, productVersion: 'florence' })(request, response);
@@ -49,6 +55,11 @@ function quoteJourneyHandler(oopsGuids, replacementGuid = 'new-guid', unsavedJou
     response.setHeader('Content-Type', 'text/html');
     if (request.url.startsWith('/tcas/')) {
       response.end(tcasJourneyHtml);
+      return;
+    }
+
+    if (request.url.startsWith('/tcas-replacement/')) {
+      response.end(tcasReplacementHtml);
       return;
     }
 
@@ -73,6 +84,7 @@ async function fixture(base, mrpFiles = { [`${policyA}-1`]: 'orig-guid' }) {
     MRP_AND_QUOTE_OUTPUT_DIR: directory,
     QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE: `${base}/nhi/{artemisQuoteGuid}`,
     QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE: `${base}/unsaved/{artemisQuoteGuid}`,
+    QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE: `${base}/tcas-replacement/{artemisQuoteGuid}`,
     QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE: `${base}/tcas/{policyDetailsId}/{historyId}`,
     QUOTE_JOURNEY_QUOTE_GUID_URL: `${base}/api/nhi/quote-guid`,
     QUOTE_JOURNEY_AGENT_ID: 'agent',
@@ -286,6 +298,11 @@ describe('quote-page NHI Oops fallback', () => {
       assert.ok(requests.includes('/nhi/orig-guid'));
       assert.ok(requests.includes('/unsaved/new-guid'));
       assert.ok(!requests.includes('/nhi/new-guid'));
+      assert.ok(requests.includes(`/tcas/${policyA}/1`));
+      assert.ok(
+        requests.indexOf('/tcas-replacement/new-guid') > requests.indexOf('/unsaved/new-guid'),
+        requests.join('\n')
+      );
       const quoteGuidRequest = requests.find((path) => path.startsWith('/api/nhi/quote-guid'));
       assert.equal(new URL(quoteGuidRequest, base).searchParams.get('policyDetailsId'), policyA);
       assert.equal(new URL(quoteGuidRequest, base).searchParams.get('callMediaUser'), 'media-user');
@@ -306,6 +323,28 @@ describe('quote-page NHI Oops fallback', () => {
       assert.ok(result.output.includes(`NHI: opening ${base}/nhi/orig-guid`), result.output);
       assert.ok(result.output.includes(`NHI: opening ${base}/unsaved/new-guid`), result.output);
       assert.ok(result.output.includes(`TCAS: opening ${base}/tcas/${policyA}/1`), result.output);
+      assert.ok(result.output.includes('TCAS: using replacement quote GUID new-guid to match NHI.'), result.output);
+      assert.ok(result.output.includes(`TCAS: opening ${base}/tcas-replacement/new-guid`), result.output);
+    });
+  });
+
+  test('reports a replacement TCAS failure even though the original TCAS capture succeeded', async () => {
+    await withServer(quoteJourneyHandler(['orig-guid'], 'new-guid', {}, '<h2>Oops</h2>'), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base);
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.notEqual(result.code, 0);
+      assert.ok(
+        result.output.includes(
+          `TCAS: Website displayed <h2>Oops</h2>; stopping the journey. (${base}/tcas-replacement/new-guid)`
+        ),
+        result.output
+      );
+      assert.ok(!(await readdir(directory)).includes('comparisons'));
     });
   });
 
@@ -343,6 +382,8 @@ describe('quote-page NHI Oops fallback', () => {
       assert.ok(requests.includes('/nhi/mapped-guid'));
       assert.ok(!requests.includes('/nhi/orig-guid'));
       assert.ok(!requests.some((path) => path.startsWith('/api/nhi/quote-guid')));
+      assert.ok(!requests.includes(`/tcas/${policyA}/1`));
+      assert.ok(requests.indexOf('/tcas-replacement/mapped-guid') > requests.indexOf('/nhi/mapped-guid'));
     });
   });
 
@@ -360,6 +401,7 @@ describe('quote-page NHI Oops fallback', () => {
       assert.match(result.output, /mapped quote GUID mapped-guid is not saved to NHI yet/);
       assert.ok(requests.includes('/nhi/mapped-guid'));
       assert.ok(requests.includes('/unsaved/mapped-guid'));
+      assert.ok(requests.indexOf('/tcas-replacement/mapped-guid') > requests.indexOf('/unsaved/mapped-guid'));
       assert.ok(!requests.some((path) => path.startsWith('/api/nhi/quote-guid')));
       assert.deepEqual(await readMapping(directory), { 'orig-guid': 'mapped-guid' });
     });
@@ -404,6 +446,7 @@ describe('quote-pages', () => {
       assert.equal(result.code, 0, result.output);
       assert.match(result.output, /1 passed, 0 failed/);
       assert.ok(requests.includes(`/tcas/${policyA}/1`));
+      assert.ok(!requests.some((path) => path.startsWith('/tcas-replacement/')));
       assert.ok(!requests.some((path) => path.includes(policyB) || path.includes('guid-b')));
     });
   });

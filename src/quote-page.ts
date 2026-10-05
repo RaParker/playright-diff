@@ -7,7 +7,7 @@ import {
   saveQuoteGuidMapping,
   type QuoteGuidRequestOptions
 } from './quote-guid.js';
-import { nhiQuote } from './nhi-quote.js';
+import { quoteSummary } from './quote-summary.js';
 import { OopsError, screenshot, type ScreenshotOptions } from './screenshot.js';
 import { tcasQuote } from './tcas-quote.js';
 import { unsavedQuote } from './unsaved-quote.js';
@@ -29,6 +29,12 @@ export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
    * to the quote page saves the quote to NHI.
    */
   unsavedQuotePageUrlTemplate: string;
+  /**
+   * TCAS quote summary URL, with `{artemisQuoteGuid}`, captured instead of the original TCAS policy whenever NHI uses
+   * a replacement quote, so both sides show the same answers (the "TCAS Quote Summary (GUID)" shape listed by
+   * Quote Journey's `/api/developer/links`).
+   */
+  tcasReplacementUrlTemplate: string;
 }
 
 export async function quotePage(policyArgument: string, historyId: number, options: QuotePageOptions): Promise<void> {
@@ -43,10 +49,12 @@ export async function quotePage(policyArgument: string, historyId: number, optio
 
   const basename = `${policyDetailsId}-${historyId}`;
   const artemisQuoteGuid = await readQuoteGuid(resolve(options.mrpAndQuoteOutputDir, `${basename}-mrp.json`));
-  // Validate the NHI templates before any capture starts.
+  const fallback = options.quoteGuidFallback;
+  // Validate the GUID templates before any capture starts.
   templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid });
-  if (options.quoteGuidFallback !== undefined) {
-    templateUrl(options.quoteGuidFallback.unsavedQuotePageUrlTemplate, { artemisQuoteGuid });
+  if (fallback !== undefined) {
+    templateUrl(fallback.unsavedQuotePageUrlTemplate, { artemisQuoteGuid });
+    templateUrl(fallback.tcasReplacementUrlTemplate, { artemisQuoteGuid });
   }
 
   const tcasUrl = templateUrl(options.tcasQuotePageUrlTemplate, {
@@ -55,10 +63,25 @@ export async function quotePage(policyArgument: string, historyId: number, optio
   });
   const nhiPath = resolve('screenshots', `${basename}-nhi.png`);
   const tcasPath = resolve('screenshots', `${basename}-tcas.png`);
-  const captures = await Promise.allSettled([
-    captureNhi(artemisQuoteGuid, policyDetailsId, historyId, nhiPath, options),
-    captureAt('TCAS', tcasUrl, { output: tcasPath, beforeCapture: tcasQuote })
+  const mappingPath = resolve(fallback?.mappingPath ?? 'quote-guid-mapping.json');
+  const mappedGuid = fallback === undefined ? undefined : (await readQuoteGuidMapping(mappingPath))[artemisQuoteGuid];
+  // A mapped replacement means TCAS must wait for NHI to save it; otherwise the original TCAS policy runs alongside.
+  const [nhi, originalTcas] = await Promise.allSettled([
+    captureNhi(artemisQuoteGuid, mappedGuid, mappingPath, policyDetailsId, historyId, nhiPath, options),
+    mappedGuid === undefined
+      ? captureAt('TCAS', tcasUrl, { output: tcasPath, beforeCapture: tcasQuote })
+      : Promise.resolve()
   ]);
+  let tcas = originalTcas;
+  if (nhi.status === 'fulfilled' && nhi.value !== undefined && fallback !== undefined) {
+    console.log(`TCAS: using replacement quote GUID ${nhi.value} to match NHI.`);
+    const replacementUrl = templateUrl(fallback.tcasReplacementUrlTemplate, { artemisQuoteGuid: nhi.value });
+    [tcas] = await Promise.allSettled([
+      captureAt('TCAS', replacementUrl, { output: tcasPath, beforeCapture: quoteSummary('TCAS') })
+    ]);
+  }
+
+  const captures = [nhi, tcas];
   const failures = captures.flatMap((result, index) =>
     result.status === 'rejected'
       ? [
@@ -118,22 +141,28 @@ async function readQuoteGuid(mrpPath: string): Promise<string> {
   return artemisQuoteGuid;
 }
 
+/**
+ * Captures the NHI quote page, falling back to a replacement quote GUID when the original shows Oops.
+ * @returns The replacement quote GUID captured, or `undefined` when the original was captured.
+ */
 async function captureNhi(
   artemisQuoteGuid: string,
+  mappedGuid: string | undefined,
+  mappingPath: string,
   policyDetailsId: string,
   historyId: number,
   output: string,
   options: QuotePageOptions
-): Promise<void> {
+): Promise<string | undefined> {
   const capture = (quoteGuid: string) =>
     captureAt('NHI', templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), {
       output,
-      beforeCapture: nhiQuote
+      beforeCapture: quoteSummary('NHI')
     });
   const fallback = options.quoteGuidFallback;
   if (fallback === undefined) {
     await capture(artemisQuoteGuid);
-    return;
+    return undefined;
   }
 
   // Replacement quotes exist only in the question set store until the journey's quote button saves them to NHI.
@@ -142,8 +171,6 @@ async function captureNhi(
       output,
       beforeCapture: unsavedQuote
     });
-  const mappingPath = resolve(fallback.mappingPath ?? 'quote-guid-mapping.json');
-  const mappedGuid = (await readQuoteGuidMapping(mappingPath))[artemisQuoteGuid];
   if (mappedGuid !== undefined) {
     console.log(`NHI: using mapped quote GUID ${mappedGuid} for ${artemisQuoteGuid}.`);
     try {
@@ -157,11 +184,12 @@ async function captureNhi(
       await captureUnsaved(mappedGuid);
     }
 
-    return;
+    return mappedGuid;
   }
 
   try {
     await capture(artemisQuoteGuid);
+    return undefined;
   } catch (error) {
     if (!(error instanceof OopsError)) {
       throw error;
@@ -173,6 +201,7 @@ async function captureNhi(
       `NHI: mapped ${artemisQuoteGuid} to new quote GUID ${replacementGuid} in ${mappingPath}; running its journey.`
     );
     await captureUnsaved(replacementGuid);
+    return replacementGuid;
   }
 }
 

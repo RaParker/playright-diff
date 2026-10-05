@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { nhiQuote } from '../dist/nhi-quote.js';
+import { quoteSummary } from '../dist/quote-summary.js';
 import { screenshot } from '../dist/screenshot.js';
 import {
   assumptionsPageHtml,
@@ -18,7 +18,7 @@ const summaryButton = 'hp-summary-continue-button';
 const assumptionsButton = 'hp-assumptions-quote-button';
 const errorSummaryHtml = '<div class="av-card-error-summary"><ul><li><a>Quote unavailable</a></li></ul></div>';
 
-for (const [name, html, expectedError] of [
+for (const [name, html, expectedError, label = 'NHI'] of [
   ['clicks through the summary and assumptions pages and captures the quote', quoteSummaryHtml, undefined],
   [
     'clicks Continue with quote when the summary leads straight to the quote',
@@ -59,27 +59,33 @@ for (const [name, html, expectedError] of [
     /NHI quote did not appear within 5 clicks; last shown: assumptions/
   ],
   [
+    'prefixes errors with the flow label',
+    nhiPagesHtml(assumptionsPageHtml, { [assumptionsButton]: errorSummaryHtml }),
+    /TCAS assumptions errors: Quote unavailable/,
+    'TCAS'
+  ],
+  [
     'times out when Continue with quote never shows the quote',
     nhiPagesHtml(summaryPageHtml, { [summaryButton]: '<h1>Still waiting</h1>' }),
     /Timeout/
   ],
   ['times out when the page is neither the summary nor the quote', '<h1>Something else</h1>', /Timeout/]
 ]) {
-  test(`NHI quote ${name}`, async () => {
+  test(`${label} quote summary ${name}`, async () => {
     // arrange
     const server = createServer((_request, response) => {
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
       response.end(html);
     });
     await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
-    const directory = await mkdtemp(join(tmpdir(), 'nhi-quote-'));
+    const directory = await mkdtemp(join(tmpdir(), 'quote-summary-'));
     try {
       // act
       const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {
         output: join(directory, 'quote.png'),
         wait: 0,
         timeout: 2000,
-        beforeCapture: nhiQuote
+        beforeCapture: quoteSummary(label)
       });
 
       // assert

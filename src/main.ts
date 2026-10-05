@@ -190,7 +190,8 @@ function quotePageOptions(environment: Record<string, string | undefined>, useOc
       agentId: required(environment, 'QUOTE_JOURNEY_AGENT_ID'),
       branchCode: required(environment, 'QUOTE_JOURNEY_BRANCH_CODE'),
       callMediaUser: required(environment, 'QUOTE_JOURNEY_CALL_MEDIA_USER'),
-      unsavedQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE')
+      unsavedQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE'),
+      tcasReplacementUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE')
     }
   };
 }

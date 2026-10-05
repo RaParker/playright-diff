@@ -15,7 +15,7 @@ interface QuoteStep {
   button: string;
 }
 
-/** Pages NHI can show before the quote, in any order; each is clicked through when it appears. */
+/** Pages a quote summary can show before the quote, in any order; each is clicked through when it appears. */
 const quoteSteps: QuoteStep[] = [
   { name: 'quote summary', selector: 'button#hp-summary-continue-button', button: 'Continue with quote' },
   { name: 'assumptions', selector: 'button#hp-assumptions-quote-button', button: 'Yes, take me to my quote' }
@@ -24,34 +24,37 @@ const quoteSteps: QuoteStep[] = [
 const maxClicks = 5;
 
 /**
- * Moves an NHI page on to its quote page. The quote summary already shows a price and the assumptions page asks the
- * customer to confirm them, but the quote page only appears after clicking through them (see {@link quoteSteps}).
- * A page already showing the quote is left as it is.
- * @param page Page opened on the NHI quote summary.
- * @throws When a click leads to an error summary, the quote is not reached within {@link maxClicks} clicks, or the
- * quote page does not appear before the timeout.
+ * Builds a capture step that moves a quote summary on to its quote page. The quote summary already shows a price and
+ * the assumptions page asks the customer to confirm them, but the quote page only appears after clicking through them
+ * (see {@link quoteSteps}). A page already showing the quote is left as it is.
+ * @param label Flow name (e.g. `NHI` or `TCAS`) that prefixes logs and errors.
+ * @returns A `beforeCapture` step for a page opened on a quote summary.
+ * The step throws when a click leads to an error summary, the quote is not reached within {@link maxClicks} clicks,
+ * or the quote page does not appear before the timeout.
  */
-export async function nhiQuote(page: Page): Promise<void> {
-  let clicked: QuoteStep | undefined;
-  for (let clicks = 0; ; clicks++) {
-    const outcome = await waitForPage(page, clicked?.selector);
-    if (outcome === 'quote') {
-      return;
-    }
+export function quoteSummary(label: string): (page: Page) => Promise<void> {
+  return async (page) => {
+    let clicked: QuoteStep | undefined;
+    for (let clicks = 0; ; clicks++) {
+      const outcome = await waitForPage(page, clicked?.selector);
+      if (outcome === 'quote') {
+        return;
+      }
 
-    const step = quoteSteps.find(({ name }) => name === outcome);
-    if (step === undefined) {
-      throw new Error(`NHI ${clicked?.name ?? 'quote'} errors: ${await readErrorSummary(page, errorSelector)}`);
-    }
+      const step = quoteSteps.find(({ name }) => name === outcome);
+      if (step === undefined) {
+        throw new Error(`${label} ${clicked?.name ?? 'quote'} errors: ${await readErrorSummary(page, errorSelector)}`);
+      }
 
-    if (clicks === maxClicks) {
-      throw new Error(`NHI quote did not appear within ${maxClicks} clicks; last shown: ${step.name}.`);
-    }
+      if (clicks === maxClicks) {
+        throw new Error(`${label} quote did not appear within ${maxClicks} clicks; last shown: ${step.name}.`);
+      }
 
-    console.log(color.Gray(`NHI: ${step.name}: clicking ${step.button}.`));
-    await page.locator(step.selector).click();
-    clicked = step;
-  }
+      console.log(color.Gray(`${label}: ${step.name}: clicking ${step.button}.`));
+      await page.locator(step.selector).click();
+      clicked = step;
+    }
+  };
 }
 
 /**
