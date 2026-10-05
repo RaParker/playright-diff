@@ -61,7 +61,8 @@ Large combined canvases above 40 million pixels are rejected.
 
 ## Capture and compare quote pages
 
-Set the MRP directory and both quote URL templates in `.env`.
+Set the MRP directory, both quote URL templates, and the four
+[NHI Oops fallback](#nhi-oops-fallback) settings in `.env`.
 The policy ID must be a UUID with dashes removed (32 hexadecimal characters).
 Input is case-insensitive and normalized to uppercase for file paths and URLs.
 Existing environment variables take precedence over `.env`. Relative paths resolve
@@ -116,7 +117,8 @@ retries Contact details once. Remaining errors stop the journey as usual.
 
 Both NHI and TCAS are monitored for an `h2` containing exactly `Oops`, from
 navigation through capture. If one appears, the flow stops and saves a failure
-screenshot; subsequent journey steps and comparison are skipped.
+screenshot; subsequent journey steps and comparison are skipped. For NHI, the
+action first tries a replacement quote GUID (see [NHI Oops fallback](#nhi-oops-fallback)).
 Both flows wait for `<h2>Loading your quote</h2>` and `div.hp-loading-widget-screen` to disappear before continuing
 and check again before capturing. The configured action timeout bounds the wait;
 a persistent loading screen fails without saving a screenshot of that screen.
@@ -198,9 +200,10 @@ npm start -- screenshot https://example.com --output screenshots/example.png
 Run `npx eslint` (or `npm run lint`) from the project root. Generated output is ignored.
 
 `npm test` (or `npm run test`) builds once and runs all screenshot, comparison,
-and quote-page tests. Chromium must be installed; the OCR comparison test may
-download language data on its first run. To run individual suites, use
-`npm run test:compare` or `npm run test:quote-page`.
+quote-page, quote GUID fallback, and `quote-pages` tests. Chromium must be installed;
+the OCR comparison test may download language data on its first run. To run individual
+suites, use `npm run test:compare` or `npm run test:quote-page` (which includes
+`scripts/quote-guid-test.mjs`).
 
 Builds and type checks use TypeScript 7 through the `typescript-compiler` package alias.
 TypeScript 6 remains installed as `typescript` for ESLint's parser, which does not yet support the TypeScript 7 compiler API.
