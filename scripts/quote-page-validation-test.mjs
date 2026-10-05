@@ -175,6 +175,7 @@ for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].ma
         (await readdir(join(directory, 'screenshots'))).sort(),
         [
           `ABCDEF1234567890ABCDEF1234567890-42-${flow === 'nhi' ? 'tcas' : 'nhi'}.png`,
+          `ABCDEF1234567890ABCDEF1234567890-42-${flow}-failed.html`,
           `ABCDEF1234567890ABCDEF1234567890-42-${flow}-failed.png`
         ].sort()
       );
@@ -212,8 +213,10 @@ test('quote-page stops after an HTTP failure and respects environment over .env'
       'ABCDEF1234567890ABCDEF1234567890-42-mrp.json',
       'screenshots'
     ]);
-    assert.deepEqual(await readdir(join(directory, 'screenshots')), [
+    assert.deepEqual((await readdir(join(directory, 'screenshots'))).sort(), [
+      'ABCDEF1234567890ABCDEF1234567890-42-nhi-failed.html',
       'ABCDEF1234567890ABCDEF1234567890-42-nhi-failed.png',
+      'ABCDEF1234567890ABCDEF1234567890-42-tcas-failed.html',
       'ABCDEF1234567890ABCDEF1234567890-42-tcas-failed.png'
     ]);
     assert.equal(await readFile(join(directory, '.env'), 'utf8'), 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=invalid');

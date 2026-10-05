@@ -94,7 +94,7 @@ for (const [name, html, expectedError, label = 'NHI'] of [
         assert.deepEqual(await readdir(directory), ['quote.png']);
       } else {
         await assert.rejects(capture, expectedError);
-        assert.deepEqual(await readdir(directory), ['quote-failed.png']);
+        assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
       }
     } finally {
       server.closeAllConnections();

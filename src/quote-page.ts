@@ -9,7 +9,7 @@ import {
 } from './quote-guid.js';
 import { removeQuoteOutput } from './quote-output.js';
 import { quoteSummary } from './quote-summary.js';
-import { OopsError, screenshot, type ScreenshotOptions } from './screenshot.js';
+import { DeclinedError, OopsError, screenshot, type ScreenshotOptions } from './screenshot.js';
 import { tcasQuote } from './tcas-quote.js';
 import { unsavedQuote } from './unsaved-quote.js';
 
@@ -20,6 +20,18 @@ export interface QuotePageOptions {
   useOcr?: boolean;
   /** When set, an NHI Oops requests a replacement quote GUID, records it, and retries NHI once. */
   quoteGuidFallback?: QuoteGuidFallbackOptions;
+}
+
+/** How one quote-page run ended: both sides quoted and were compared, or both declined (nothing to compare). */
+export type QuotePageResult = 'compared' | 'declined';
+
+/** How one capture ended: the quote page was captured, or the site declined to quote. */
+type CaptureOutcome = 'captured' | 'declined';
+
+interface NhiCapture {
+  /** Replacement quote GUID captured, or `undefined` when the original was captured. */
+  replacementGuid?: string;
+  outcome: CaptureOutcome;
 }
 
 export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
@@ -38,7 +50,19 @@ export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
   tcasReplacementUrlTemplate: string;
 }
 
-export async function quotePage(policyArgument: string, historyId: number, options: QuotePageOptions): Promise<void> {
+/**
+ * Captures the NHI and TCAS versions of one quote and compares them.
+ * @param policyArgument TCAS policy details ID (32 hexadecimal characters).
+ * @param historyId TCAS history ID.
+ * @param options Input folder, URL templates and the optional NHI Oops fallback.
+ * @returns `'compared'`, or `'declined'` when both sides declined to quote (the comparison is skipped).
+ * @throws When the inputs are invalid, a capture fails, or only one side declined to quote.
+ */
+export async function quotePage(
+  policyArgument: string,
+  historyId: number,
+  options: QuotePageOptions
+): Promise<QuotePageResult> {
   if (!/^[0-9a-f]{32}$/i.test(policyArgument)) {
     throw new Error('policyDetailsId must be a UUID with dashes removed (32 hexadecimal characters).');
   }
@@ -73,12 +97,13 @@ export async function quotePage(policyArgument: string, historyId: number, optio
     captureNhi(artemisQuoteGuid, mappedGuid, mappingPath, policyDetailsId, historyId, nhiPath, options),
     mappedGuid === undefined
       ? captureAt('TCAS', tcasUrl, { output: tcasPath, beforeCapture: tcasQuote })
-      : Promise.resolve()
+      : Promise.resolve(undefined)
   ]);
   let tcas = originalTcas;
-  if (nhi.status === 'fulfilled' && nhi.value !== undefined && fallback !== undefined) {
-    console.log(`TCAS: using replacement quote GUID ${nhi.value} to match NHI.`);
-    const replacementUrl = templateUrl(fallback.tcasReplacementUrlTemplate, { artemisQuoteGuid: nhi.value });
+  const replacementGuid = nhi.status === 'fulfilled' ? nhi.value.replacementGuid : undefined;
+  if (replacementGuid !== undefined && fallback !== undefined) {
+    console.log(`TCAS: using replacement quote GUID ${replacementGuid} to match NHI.`);
+    const replacementUrl = templateUrl(fallback.tcasReplacementUrlTemplate, { artemisQuoteGuid: replacementGuid });
     [tcas] = await Promise.allSettled([
       captureAt('TCAS', replacementUrl, { output: tcasPath, beforeCapture: quoteSummary('TCAS') })
     ]);
@@ -96,7 +121,22 @@ export async function quotePage(policyArgument: string, historyId: number, optio
     throw new Error(`Quote capture failed; comparison skipped.\n${failures.join('\n')}`);
   }
 
+  const nhiOutcome = nhi.status === 'fulfilled' ? nhi.value.outcome : undefined;
+  const tcasOutcome = tcas.status === 'fulfilled' ? tcas.value : undefined;
+  if (nhiOutcome === 'declined' && tcasOutcome === 'declined') {
+    console.log('NHI and TCAS both declined the quote; comparison skipped.');
+    return 'declined';
+  }
+
+  if (nhiOutcome === 'declined' || tcasOutcome === 'declined') {
+    const describe = (outcome: CaptureOutcome | undefined) => (outcome === 'declined' ? 'declined' : 'quoted');
+    throw new Error(
+      `Quote outcomes differ: NHI ${describe(nhiOutcome)}, TCAS ${describe(tcasOutcome)}; comparison skipped.`
+    );
+  }
+
   await compare(nhiPath, tcasPath, { useOcr: options.useOcr });
+  return 'compared';
 }
 
 /**
@@ -104,7 +144,7 @@ export async function quotePage(policyArgument: string, historyId: number, optio
  * @param policyDetailsIds Policy details IDs to capture and compare.
  * @param historyId History ID used for every policy.
  * @param options Options passed to each {@link quotePage} run.
- * @throws After all runs, listing each policy that failed.
+ * @throws After all runs, listing each policy that failed. Policies where both sides declined are not failures.
  */
 export async function quotePages(
   policyDetailsIds: string[],
@@ -112,10 +152,13 @@ export async function quotePages(
   options: QuotePageOptions
 ): Promise<void> {
   const failures: string[] = [];
+  let declined = 0;
   for (const [index, policyDetailsId] of policyDetailsIds.entries()) {
     console.log(`[${index + 1}/${policyDetailsIds.length}] ${policyDetailsId}-${historyId}`);
     try {
-      await quotePage(policyDetailsId, historyId, options);
+      if ((await quotePage(policyDetailsId, historyId, options)) === 'declined') {
+        declined++;
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(message);
@@ -124,7 +167,7 @@ export async function quotePages(
   }
 
   const passed = policyDetailsIds.length - failures.length;
-  console.log(`Quote pages: ${passed} passed, ${failures.length} failed.`);
+  console.log(`Quote pages: ${passed} passed (${declined} both declined), ${failures.length} failed.`);
   if (failures.length > 0) {
     throw new Error(`Quote pages failed:\n${failures.join('\n')}`);
   }
@@ -146,7 +189,7 @@ async function readQuoteGuid(mrpPath: string): Promise<string> {
 
 /**
  * Captures the NHI quote page, falling back to a replacement quote GUID when the original shows Oops.
- * @returns The replacement quote GUID captured, or `undefined` when the original was captured.
+ * @returns The capture's outcome, with the replacement quote GUID when one was used.
  */
 async function captureNhi(
   artemisQuoteGuid: string,
@@ -156,7 +199,7 @@ async function captureNhi(
   historyId: number,
   output: string,
   options: QuotePageOptions
-): Promise<string | undefined> {
+): Promise<NhiCapture> {
   const capture = (quoteGuid: string) =>
     captureAt('NHI', templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), {
       output,
@@ -164,8 +207,7 @@ async function captureNhi(
     });
   const fallback = options.quoteGuidFallback;
   if (fallback === undefined) {
-    await capture(artemisQuoteGuid);
-    return undefined;
+    return { outcome: await capture(artemisQuoteGuid) };
   }
 
   // Replacement quotes exist only in the question set store until the journey's quote button saves them to NHI.
@@ -177,22 +219,19 @@ async function captureNhi(
   if (mappedGuid !== undefined) {
     console.log(`NHI: using mapped quote GUID ${mappedGuid} for ${artemisQuoteGuid}.`);
     try {
-      await capture(mappedGuid);
+      return { replacementGuid: mappedGuid, outcome: await capture(mappedGuid) };
     } catch (error) {
       if (!(error instanceof OopsError)) {
         throw error;
       }
 
       console.log(`NHI: mapped quote GUID ${mappedGuid} is not saved to NHI yet; running its journey.`);
-      await captureUnsaved(mappedGuid);
+      return { replacementGuid: mappedGuid, outcome: await captureUnsaved(mappedGuid) };
     }
-
-    return mappedGuid;
   }
 
   try {
-    await capture(artemisQuoteGuid);
-    return undefined;
+    return { outcome: await capture(artemisQuoteGuid) };
   } catch (error) {
     if (!(error instanceof OopsError)) {
       throw error;
@@ -203,20 +242,26 @@ async function captureNhi(
     console.log(
       `NHI: mapped ${artemisQuoteGuid} to new quote GUID ${replacementGuid} in ${mappingPath}; running its journey.`
     );
-    await captureUnsaved(replacementGuid);
-    return replacementGuid;
+    return { replacementGuid, outcome: await captureUnsaved(replacementGuid) };
   }
 }
 
 /**
  * Logs the URL a flow opens, captures it, and adds the URL to any failure.
+ * @returns `'declined'` when the site declined to quote (its `-declined.png` is saved), otherwise `'captured'`.
  * @throws The capture's error with the URL appended; an {@link OopsError} stays an `OopsError`.
  */
-async function captureAt(label: string, url: string, options: ScreenshotOptions): Promise<void> {
+async function captureAt(label: string, url: string, options: ScreenshotOptions): Promise<CaptureOutcome> {
   console.log(`${label}: opening ${url}`);
   try {
     await screenshot(url, options);
+    return 'captured';
   } catch (error) {
+    if (error instanceof DeclinedError) {
+      console.log(`${label}: quote declined (${url}).`);
+      return 'declined';
+    }
+
     if (error instanceof OopsError) {
       throw new OopsError(url);
     }

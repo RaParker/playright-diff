@@ -2,22 +2,22 @@ import { readdir, readFile, rm, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { color } from './color.js';
 
-/** Screenshot suffixes a quote-page run can write for each flow. */
-const screenshotSuffixes = ['', '-failed', '-declined'];
+/** Files a quote-page run can write for each flow: the screenshot, and on failure or decline its HTML too. */
+const outputSuffixes = ['.png', '-failed.png', '-failed.html', '-declined.png', '-declined.html'];
 
 /**
- * Deletes the screenshots and comparison reports a previous quote-page run wrote for one policy, so a new run
+ * Deletes the screenshots, failure HTML and comparison reports a previous quote-page run wrote for one policy, so a new run
  * cannot leave stale results (for example an old `-failed.png` beside a new screenshot).
  * @param basename Output basename, `<policyDetailsId>-<historyId>`.
  * @param flows Flow names used in screenshot names (for example `nhi` and `tcas`).
- * @returns The number of screenshots and comparison reports removed.
+ * @returns The number of screenshot/HTML files and comparison reports removed.
  */
 export async function removeQuoteOutput(
   basename: string,
   flows: string[]
 ): Promise<{ screenshots: number; comparisons: number }> {
   const screenshotPaths = flows.flatMap((flow) =>
-    screenshotSuffixes.map((suffix) => resolve('screenshots', `${basename}-${flow}${suffix}.png`))
+    outputSuffixes.map((suffix) => resolve('screenshots', `${basename}-${flow}${suffix}`))
   );
   const screenshots = (await Promise.all(screenshotPaths.map(removeFile))).filter(Boolean).length;
   const comparisons = await removeComparisons(new Set(screenshotPaths));

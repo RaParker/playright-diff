@@ -1,5 +1,9 @@
 export const quotePageHtml = '<h2>Welcome Alex, here&rsquo;s your quote</h2>';
 
+/** Declined quote page, as shown when the site cannot offer a quote. */
+export const declinedPageHtml = `<h2>Welcome Mr. Alex, we&rsquo;re sorry...</h2><h3>We're sorry...</h3>
+  <h4>But we're unable to offer you a quote based on your details</h4><button>Edit quote</button>`;
+
 /** NHI quote summary page markup, without behaviour. */
 export const summaryPageHtml = `<h1>Welcome Alex, thank you for choosing Homeprotect</h1>
   <div class="text-center"><button id="hp-summary-continue-button" type="button" class="hp-continue btn btn-primary"
@@ -44,6 +48,7 @@ export const quoteSummaryHtml = nhiPagesHtml(summaryPageHtml, {
  * @param {number} [options.lookupMs] Milliseconds until the lookup finishes (default 300).
  * @param {boolean} [options.resolves] Whether Continue clears the summary once the lookup finishes (default true);
  * when false, Continue leaves the summary in place, like an answer that fails validation.
+ * @param {boolean} [options.declines] Whether Get your quote shows the declined page instead of the quote.
  * @returns {string} Page HTML.
  */
 export function unsavedJourneyHtml({
@@ -52,7 +57,8 @@ export function unsavedJourneyHtml({
   bounceTo,
   bounceTimes = 1,
   lookupMs = 300,
-  resolves = true
+  resolves = true,
+  declines = false
 } = {}) {
   return `<h1></h1><p id="lookup" hidden>Checking property details</p>
     <button id="continue">Continue</button><button id="quote" hidden>Get your quote</button><script>
@@ -102,7 +108,7 @@ export function unsavedJourneyHtml({
         return;
       }
 
-      document.body.innerHTML = ${JSON.stringify(quotePageHtml)};
+      document.body.innerHTML = ${JSON.stringify(declines ? declinedPageHtml : quotePageHtml)};
     };
   </script>`;
 }

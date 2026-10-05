@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { describe, test } from 'node:test';
 import { defaultQuoteGuidCount, readQuoteGuidList, selectQuoteGuids } from '../dist/quote-guid-list.js';
 import { readQuoteGuidMapping, requestQuoteGuid, saveQuoteGuidMapping } from '../dist/quote-guid.js';
-import { quotePageHtml, quoteSummaryHtml, unsavedJourneyHtml } from './unsaved-journey-html.mjs';
+import { declinedPageHtml, quotePageHtml, quoteSummaryHtml, unsavedJourneyHtml } from './unsaved-journey-html.mjs';
 
 const script = resolve('dist/main.js');
 const policyA = 'ABCDEF1234567890ABCDEF1234567890';
@@ -432,7 +432,98 @@ describe('quote-page NHI Oops fallback', () => {
   });
 });
 
+// Serves the declined page for any request whose path contains one of the given fragments.
+function decliningHandler(fragments, handler = quoteJourneyHandler([])) {
+  return (request, response) => {
+    if (fragments.some((fragment) => request.url.includes(fragment))) {
+      response.setHeader('Content-Type', 'text/html');
+      response.end(declinedPageHtml);
+      return;
+    }
+
+    handler(request, response);
+  };
+}
+
+describe('quote-page declined quotes', () => {
+  for (const [name, fragments, expectedSuccess, expectedOutput, expectedScreenshots] of [
+    [
+      'succeeds without comparing when NHI and TCAS both decline',
+      ['/nhi/', '/tcas/'],
+      true,
+      /NHI and TCAS both declined the quote; comparison skipped\./,
+      ['nhi-declined.html', 'nhi-declined.png', 'tcas-declined.html', 'tcas-declined.png']
+    ],
+    [
+      'fails when only NHI declines',
+      ['/nhi/'],
+      false,
+      /Quote outcomes differ: NHI declined, TCAS quoted; comparison skipped\./,
+      ['nhi-declined.html', 'nhi-declined.png', 'tcas.png']
+    ],
+    [
+      'fails when only TCAS declines',
+      ['/tcas/'],
+      false,
+      /Quote outcomes differ: NHI quoted, TCAS declined; comparison skipped\./,
+      ['nhi.png', 'tcas-declined.html', 'tcas-declined.png']
+    ]
+  ]) {
+    test(name, async () => {
+      await withServer(decliningHandler(fragments), async (base) => {
+        // arrange
+        const { directory, env } = await fixture(base);
+
+        // act
+        const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+        // assert
+        assert.equal(result.code === 0, expectedSuccess, result.output);
+        assert.match(result.output, expectedOutput);
+        assert.ok(!(await readdir(directory)).includes('comparisons'));
+        assert.deepEqual(
+          (await readdir(join(directory, 'screenshots'))).sort(),
+          expectedScreenshots.map((suffix) => `${policyA}-1-${suffix}`)
+        );
+      });
+    });
+  }
+
+  test('captures the replacement TCAS quote when the replacement NHI journey declines', async () => {
+    await withServer(
+      quoteJourneyHandler(['orig-guid'], 'new-guid', { declines: true }, declinedPageHtml),
+      async (base, requests) => {
+        // arrange
+        const { directory, env } = await fixture(base);
+
+        // act
+        const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+        // assert
+        assert.equal(result.code, 0, result.output);
+        assert.ok(requests.includes('/tcas-replacement/new-guid'));
+        assert.match(result.output, /NHI and TCAS both declined/);
+      }
+    );
+  });
+});
+
 describe('quote-pages', () => {
+  test('counts policies where both sides declined as passed', async () => {
+    await withServer(decliningHandler(['guid-a', policyA]), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base, { [`${policyA}-1`]: 'guid-a', [`${policyB}-1`]: 'guid-b' });
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n`);
+
+      // act
+      const result = await run(directory, env, ['quote-pages', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.match(result.output, /2 passed \(1 both declined\), 0 failed/);
+    });
+  });
+
   test('runs the selected GUIDs from the list with historyId 1', async () => {
     await withServer(quoteJourneyHandler([]), async (base, requests) => {
       // arrange
@@ -444,7 +535,7 @@ describe('quote-pages', () => {
 
       // assert
       assert.equal(result.code, 0, result.output);
-      assert.match(result.output, /1 passed, 0 failed/);
+      assert.match(result.output, /1 passed \(0 both declined\), 0 failed/);
       assert.ok(requests.includes(`/tcas/${policyA}/1`));
       assert.ok(!requests.some((path) => path.startsWith('/tcas-replacement/')));
       assert.ok(!requests.some((path) => path.includes(policyB) || path.includes('guid-b')));
@@ -462,7 +553,7 @@ describe('quote-pages', () => {
 
       // assert
       assert.notEqual(result.code, 0);
-      assert.match(result.output, /1 passed, 1 failed/);
+      assert.match(result.output, /1 passed \(0 both declined\), 1 failed/);
       assert.match(result.output, new RegExp(`${policyA}-1: .*ENOENT`));
       assert.ok((await readdir(join(directory, 'screenshots'))).includes(`${policyB}-1-nhi.png`));
     });

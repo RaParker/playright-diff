@@ -127,7 +127,7 @@ test('Oops appearing during capture cannot produce a normal screenshot', async (
       }),
       /Website displayed <h2>Oops<\/h2>/
     );
-    assert.deepEqual(await readdir(directory), ['quote-failed.png']);
+    assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
   } finally {
     server.closeAllConnections();
     await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
@@ -187,7 +187,7 @@ for (const [name, html, expectedError] of cases) {
         assert.deepEqual(await readdir(directory), ['quote.png']);
       } else {
         await assert.rejects(capture, expectedError);
-        assert.deepEqual(await readdir(directory), ['quote-failed.png']);
+        assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
         const image = await readFile(join(directory, 'quote-failed.png'));
         assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
       }

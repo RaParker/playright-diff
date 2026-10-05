@@ -11,12 +11,28 @@ export interface ScreenshotOptions {
   beforeCapture?: (page: Page) => Promise<void>;
 }
 
+/** Decline heading, e.g. "We're sorry..." or "Welcome Mr. A, we're sorry...", with any apostrophe style. */
+const declinedHeadingPattern = "we['’‘ʼ]re\\s+sorry";
+/** Decline wording that must also appear, so a stray "we're sorry" heading is not treated as a decline. */
+const declinedTextPattern = 'unable\\s+to\\s+offer\\s+you\\s+a\\s+quote';
+
 /** Raised when the page displays an `<h2>Oops</h2>` heading, so callers can tell it apart from other failures. */
 export class OopsError extends Error {
   /** @param url Page that displayed Oops, appended to the message when given. */
   constructor(url?: string) {
     super(`Website displayed <h2>Oops</h2>; stopping the journey.${url === undefined ? '' : ` (${url})`}`);
     this.name = 'OopsError';
+  }
+}
+
+/** Raised when the page shows the "We're sorry… unable to offer you a quote" decline, which is a result, not a fault. */
+export class DeclinedError extends Error {
+  /** @param url Page that declined the quote, appended to the message when given. */
+  constructor(url?: string) {
+    super(
+      `Website declined the quote ("We're sorry..."); stopping the journey.${url === undefined ? '' : ` (${url})`}`
+    );
+    this.name = 'DeclinedError';
   }
 }
 
@@ -28,7 +44,7 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
     page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
     page.setDefaultTimeout(timeout);
     page.setDefaultNavigationTimeout(timeout);
-    const { failure } = await watchForOops(page);
+    const { failure } = await watchForStops(page);
     await Promise.race([capturePage(page, url.href, output, extension, wait, options.beforeCapture), failure]);
     console.log(`Screenshot saved to ${output}`);
   } catch (error) {
@@ -39,11 +55,20 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
         .or(page.locator('h2').filter({ hasText: /^Loading your quote$/ }))
         .count()) === 0
     ) {
-      const failedOutput = `${output.slice(0, -extension.length)}-failed.png`;
+      const declined = error instanceof DeclinedError;
+      const failedOutput = `${output.slice(0, -extension.length)}-${declined ? 'declined' : 'failed'}`;
       try {
         await mkdir(dirname(failedOutput), { recursive: true });
-        await page.screenshot({ path: failedOutput, type: 'png', fullPage: true, timeout, animations: 'disabled' });
-        console.error(`Failure screenshot saved to ${failedOutput}`);
+        await page.screenshot({
+          path: `${failedOutput}.png`,
+          type: 'png',
+          fullPage: true,
+          timeout,
+          animations: 'disabled'
+        });
+        // The rendered DOM (React builds the page in the browser), saved for turning into test fixtures.
+        await writeFile(`${failedOutput}.html`, await page.evaluate(() => document.documentElement.outerHTML));
+        console.error(`${declined ? 'Declined' : 'Failure'} screenshot and HTML saved to ${failedOutput}.png/.html`);
       } catch (captureError) {
         console.error(`Could not capture failure screenshot: ${String(captureError)}`);
       }
@@ -68,29 +93,40 @@ async function capturePage(
     throw new Error(`Website returned HTTP ${response.status()}.`);
   }
 
-  await checkForOops(page);
+  await checkForStops(page);
   await waitForQuoteLoading(page);
   await beforeCapture?.(page);
-  await checkForOops(page);
+  await checkForStops(page);
   await waitForQuoteLoading(page);
   await scrollPage(page);
   await page.waitForTimeout(wait);
   await mkdir(dirname(output), { recursive: true });
   await waitForQuoteLoading(page);
-  await checkForOops(page);
+  await checkForStops(page);
   const image = await page.screenshot({
     type: extension === '.png' ? 'png' : 'jpeg',
     fullPage: true,
     animations: 'disabled'
   });
-  await checkForOops(page);
+  await checkForStops(page);
   await writeFile(output, image);
 }
 
-async function checkForOops(page: Page): Promise<void> {
+async function checkForStops(page: Page): Promise<void> {
   const headings = await page.locator('h2').allTextContents();
   if (headings.some((text) => text.trim() === 'Oops')) {
     throw new OopsError();
+  }
+
+  const declined = await page.evaluate(
+    ({ declinedHeadingPattern, declinedTextPattern }) =>
+      [...document.querySelectorAll('h1, h2, h3')].some((heading) =>
+        new RegExp(declinedHeadingPattern, 'i').test(heading.textContent?.trim() ?? '')
+      ) && new RegExp(declinedTextPattern, 'i').test(document.body.textContent),
+    { declinedHeadingPattern, declinedTextPattern }
+  );
+  if (declined) {
+    throw new DeclinedError();
   }
 }
 
@@ -106,27 +142,44 @@ async function waitForQuoteLoading(page: Page): Promise<void> {
   }
 }
 
-async function watchForOops(page: Page): Promise<{ failure: Promise<never> }> {
+/** Stops the capture when the page shows an Oops heading or a declined quote, whenever either appears. */
+async function watchForStops(page: Page): Promise<{ failure: Promise<never> }> {
   let stop: (error: Error) => void = () => undefined;
   const failure = new Promise<never>((_resolve, reject) => {
     stop = reject;
   });
-  await page.exposeFunction('__stopOnOops', () => {
-    stop(new OopsError());
+  await page.exposeFunction('__stopOnPage', (reason: string) => {
+    stop(reason === 'declined' ? new DeclinedError() : new OopsError());
   });
-  await page.addInitScript(() => {
-    let reported = false;
+  await page.addInitScript(
+    ({ declinedHeadingPattern, declinedTextPattern }) => {
+      let reported = false;
 
-    const check = () => {
-      if (!reported && [...document.querySelectorAll('h2')].some((heading) => heading.textContent?.trim() === 'Oops')) {
-        reported = true;
-        void (window as unknown as { __stopOnOops: () => Promise<void> }).__stopOnOops();
-      }
-    };
+      const check = () => {
+        if (reported) {
+          return;
+        }
 
-    new MutationObserver(check).observe(document, { childList: true, subtree: true, characterData: true });
-    check();
-  });
+        const headings = [...document.querySelectorAll('h1, h2, h3')].map(
+          (heading) => heading.textContent?.trim() ?? ''
+        );
+        const reason = headings.some((text) => text === 'Oops')
+          ? 'oops'
+          : headings.some((text) => new RegExp(declinedHeadingPattern, 'i').test(text)) &&
+              new RegExp(declinedTextPattern, 'i').test(document.body?.textContent ?? '')
+            ? 'declined'
+            : undefined;
+        if (reason !== undefined) {
+          reported = true;
+          void (window as unknown as { __stopOnPage: (reason: string) => Promise<void> }).__stopOnPage(reason);
+        }
+      };
+
+      new MutationObserver(check).observe(document, { childList: true, subtree: true, characterData: true });
+      check();
+    },
+    { declinedHeadingPattern, declinedTextPattern }
+  );
   return { failure };
 }
 

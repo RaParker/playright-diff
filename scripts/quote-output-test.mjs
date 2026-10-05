@@ -28,13 +28,15 @@ describe('removeQuoteOutput', () => {
   });
   afterEach(() => process.chdir(originalDirectory));
 
-  test('removes every screenshot for the policy and keeps other policies and history IDs', async () => {
+  test('removes every screenshot and failure HTML for the policy and keeps other policies and history IDs', async () => {
     // arrange
     await mkdir(join(directory, 'screenshots'));
-    const removed = ['nhi', 'nhi-failed', 'nhi-declined', 'tcas', 'tcas-failed', 'tcas-declined'].map(
-      (suffix) => `${basename}-${suffix}.png`
+    const removed = ['nhi', 'tcas'].flatMap((flow) =>
+      ['.png', '-failed.png', '-failed.html', '-declined.png', '-declined.html'].map(
+        (suffix) => `${basename}-${flow}${suffix}`
+      )
     );
-    const kept = [`${policy}-12-nhi.png`, `11111111111111111111111111111111-1-nhi.png`, `${basename}-nhi.txt`];
+    const kept = [`${policy}-12-nhi.png`, `11111111111111111111111111111111-1-nhi.png`, `${basename}-nhi.html`];
     for (const name of [...removed, ...kept]) {
       await writeFile(join(directory, 'screenshots', name), '');
     }

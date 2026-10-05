@@ -117,7 +117,7 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
 - **Output:** `screenshots/<ID>-<historyId>-nhi.png` and `-tcas.png`, plus a new timestamped
   report directory under `comparisons/`. Before capturing (once the inputs are valid), the
   previous run's output for that policy and history ID is deleted: its `-nhi`/`-tcas`
-  screenshots (including `-failed` and `-declined`) and every `comparisons/` report whose
+  screenshots and HTML (including `-failed` and `-declined`) and every `comparisons/` report whose
   `report.json` compares them. `quote-guid-mapping.json` is kept.
 
 See [How quote-page works](#how-quote-page-works) for the journey, error handling and the
@@ -136,8 +136,10 @@ npm run quote-pages -- 6819e30c2058490b8d1d9e25d267b002     # one entry (case-in
 npm run quote-pages -- 10 --no-ocr
 ```
 
-Policies run one at a time. A failed policy is reported and the run continues; a pass/fail
-summary prints at the end, and the exit code is non-zero if any policy failed.
+Policies run one at a time. A failed policy is reported and the run continues; a summary
+such as `Quote pages: 9 passed (2 both declined), 1 failed.` prints at the end, and the exit
+code is non-zero if any policy failed. A policy where
+[both sides declined](#declined-quotes) counts as passed.
 
 ## Configuration
 
@@ -248,13 +250,31 @@ page:
   If one appears, the flow stops, saves a failure screenshot, and skips remaining steps and
   the comparison. NHI first tries the [fallback](#nhi-oops-fallback).
 
-### Failure screenshots
+### Declined quotes
+
+The site may decline to quote ("We're sorry... but we're unable to offer you a quote based on
+your details"). Both flows watch for it from navigation through capture, like Oops: a
+`h1`–`h3` heading containing "we're sorry" (any apostrophe) together with the words "unable to
+offer you a quote" anywhere on the page. When it appears, the flow stops and saves
+`-declined.png` and `-declined.html` instead of a quote screenshot. A decline is not an Oops,
+so it never triggers the [NHI fallback](#nhi-oops-fallback).
+
+| NHI      | TCAS     | Result                                                                    |
+| -------- | -------- | ------------------------------------------------------------------------- |
+| quoted   | quoted   | Compared as usual                                                         |
+| declined | declined | Success, not compared: `NHI and TCAS both declined the quote`             |
+| declined | quoted   | Failure, not compared: `Quote outcomes differ: NHI declined, TCAS quoted` |
+| quoted   | declined | Failure, not compared: `Quote outcomes differ: NHI quoted, TCAS declined` |
+
+### Failure screenshots and HTML
 
 If navigation or a Playwright step fails after the page opens, the current page is saved
 next to the intended output with a `-failed.png` suffix (for example
-`ABCDEF1234567890ABCDEF1234567890-42-tcas-failed.png`). The original error is still
-reported. If the failure screenshot itself can't be saved, that error is logged without
-hiding the original.
+`ABCDEF1234567890ABCDEF1234567890-42-tcas-failed.png`), along with its rendered DOM as
+`-failed.html` (`document.documentElement.outerHTML`, so it holds what React built, not the
+served source; typed input values are not included). Use the HTML to build test fixtures.
+The original error is still reported. If the failure screenshot or HTML can't be saved, that
+error is logged without hiding the original.
 
 ### NHI Oops fallback
 
@@ -348,8 +368,8 @@ npm start -- screenshot https://example.com --output screenshots/example.png
 Before calling work done, run `./VerifyProject.ps1` and check it prints `Done` with no
 `FAILED at:` line. It chains the type check, tests and lint.
 
-**Tests:** `npm test` covers screenshot, comparison, quote-page, the NHI quote summary and
-assumptions pages, the quote GUID fallback and `quote-pages`. Chromium must be installed, and the
+**Tests:** `npm test` covers screenshot, comparison, quote-page, the quote summary and
+assumptions pages, output clean-up, declined quotes, the quote GUID fallback and `quote-pages`. Chromium must be installed, and the
 OCR test may download language data on its first run. Run a subset with `npm run test:compare` or `npm run test:quote-page` (the
 latter includes `scripts/quote-summary-test.mjs` and `scripts/quote-guid-test.mjs`).
 
