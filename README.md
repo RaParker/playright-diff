@@ -214,7 +214,7 @@ Contact details once. Any remaining errors stop the journey as usual.
 
 The NHI quote URL opens the quote **summary** page ("Welcome …, thank you for choosing
 Homeprotect"), which already shows a price. Before capturing, the action clicks
-**Continue with quote** (matched case-insensitively on a button or link) and waits for the
+**Continue with quote** (`button#hp-summary-continue-button`) and waits for the
 welcome quote heading, so the NHI screenshot shows the quote page. A page already showing the
 quote is captured as it is. If an error summary appears after the click, its text is reported
 and the comparison is skipped.

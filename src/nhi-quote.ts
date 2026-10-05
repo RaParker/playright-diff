@@ -5,8 +5,7 @@ import { readErrorSummary } from './tcas-quote.js';
 /** Heading shown on the quote page, for any customer name and apostrophe style. */
 export const quoteHeadingPattern = "^Welcome\\s+.*?,\\s*here['’‘ʼ]s\\s+your\\s+quote\\s*$";
 const errorSelector = 'div.av-card-error-summary';
-const continueSelector = 'button, a, [role="button"]';
-const continuePattern = '^Continue with quote$';
+const continueSelector = 'button#hp-summary-continue-button';
 
 /**
  * Moves an NHI quote summary page on to its quote page. The summary already shows a price, but the quote page only
@@ -20,11 +19,7 @@ export async function nhiQuote(page: Page): Promise<void> {
   }
 
   console.log(color.Gray('NHI: quote summary: clicking Continue with quote.'));
-  await page
-    .locator(continueSelector)
-    .filter({ hasText: new RegExp(continuePattern, 'i') })
-    .first()
-    .click();
+  await page.locator(continueSelector).click();
   if ((await waitForPage(page, true)) === 'error') {
     throw new Error(`NHI quote summary errors: ${await readErrorSummary(page, errorSelector)}`);
   }
@@ -36,19 +31,14 @@ export async function nhiQuote(page: Page): Promise<void> {
  */
 async function waitForPage(page: Page, clicked: boolean): Promise<string> {
   const handle = await page.waitForFunction(
-    ({ clicked, quoteHeadingPattern, continueSelector, continuePattern, errorSelector }) => {
-      // No named helper functions here: tsx wraps them in __name(), which does not exist in the browser.
-      const targets: [string, string][] = [
-        ['h2', quoteHeadingPattern],
-        [continueSelector, continuePattern]
-      ];
-      const [quoteShown, continueShown] = targets.map(([selector, pattern]) =>
-        [...document.querySelectorAll(selector)].some(
+    ({ clicked, quoteHeadingPattern, continueSelector, errorSelector }) => {
+      if (
+        [...document.querySelectorAll('h2')].some(
           (element) =>
-            new RegExp(pattern, 'i').test(element.textContent?.trim() ?? '') && element.getClientRects().length > 0
+            new RegExp(quoteHeadingPattern, 'i').test(element.textContent?.trim() ?? '') &&
+            element.getClientRects().length > 0
         )
-      );
-      if (quoteShown === true) {
+      ) {
         return 'quote';
       }
 
@@ -56,9 +46,10 @@ async function waitForPage(page: Page, clicked: boolean): Promise<string> {
         return document.querySelector(errorSelector) !== null ? 'error' : false;
       }
 
-      return continueShown === true ? 'summary' : false;
+      const button = document.querySelector(continueSelector);
+      return button !== null && button.getClientRects().length > 0 ? 'summary' : false;
     },
-    { clicked, quoteHeadingPattern, continueSelector, continuePattern, errorSelector }
+    { clicked, quoteHeadingPattern, continueSelector, errorSelector }
   );
   return String(await handle.jsonValue());
 }

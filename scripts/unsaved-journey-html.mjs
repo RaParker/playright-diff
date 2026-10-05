@@ -2,7 +2,8 @@ export const quotePageHtml = '<h2>Welcome Alex, here&rsquo;s your quote</h2>';
 
 /** NHI quote summary page: its Continue with quote button shows the quote page. */
 export const quoteSummaryHtml = `<h1>Welcome Alex, thank you for choosing Homeprotect</h1>
-  <button onclick="document.body.innerHTML = '${quotePageHtml}'">Continue with quote</button>`;
+  <div class="text-center"><button id="hp-summary-continue-button" type="button" class="hp-continue btn btn-primary"
+    onclick="document.body.innerHTML = '${quotePageHtml}'">Continue with quote</button></div>`;
 
 /**
  * Builds an `nhi=false` style journey: Continue moves through the sections, and Get your quote on the last
