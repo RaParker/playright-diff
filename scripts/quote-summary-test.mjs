@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { quoteSummary } from '../dist/quote-summary.js';
-import { screenshot } from '../dist/screenshot.js';
+import { screenshot, ValidationError } from '../dist/screenshot.js';
 import { assertGreyLogsInOrder } from './log-assertions.mjs';
 import {
   assumptionsPageHtml,
@@ -133,7 +133,7 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
   ],
   [
     'reports the error summary shown after Yes, take me to my quote',
-    nhiPagesHtml(assumptionsPageHtml, { [assumptionsButton]: errorSummaryHtml }),
+    nhiPagesHtml(assumptionsPageHtml, { [assumptionsButton]: assumptionsPageHtml + errorSummaryHtml }),
     /NHI assumptions errors: Quote unavailable/
   ],
   [
@@ -143,7 +143,7 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
   ],
   [
     'prefixes errors with the flow label',
-    nhiPagesHtml(assumptionsPageHtml, { [assumptionsButton]: errorSummaryHtml }),
+    nhiPagesHtml(assumptionsPageHtml, { [assumptionsButton]: assumptionsPageHtml + errorSummaryHtml }),
     /TCAS assumptions errors: Quote unavailable/,
     'TCAS'
   ],
@@ -230,7 +230,16 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
         await capture;
         assert.deepEqual(await readdir(directory), ['quote.png']);
       } else {
-        await assert.rejects(capture, expectedError);
+        await assert.rejects(capture, (error) => {
+          assert.match(error.message, expectedError);
+          // Error summaries on the assumptions page or a journey section are validation; the quote summary's are not.
+          assert.equal(
+            error instanceof ValidationError,
+            /^(NHI|TCAS) (assumptions|[a-z ]+ (details|circumstances)) errors: /.test(error.message),
+            error.message
+          );
+          return true;
+        });
         assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
       }
       assertGreyLogsInOrder(log, expectedLogs);

@@ -61,7 +61,7 @@ export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
  * @param options Input folder, URL templates and the optional NHI Oops fallback.
  * @returns `'compared'`, or `'declined'` when both sides declined to quote (the comparison is skipped).
  * @throws When the inputs are invalid, a capture fails, or only one side declined to quote. A
- * {@link ValidationError} when every failed capture stopped on journey validation.
+ * {@link ValidationError} when every failed capture stopped on a validation error.
  */
 export async function quotePage(
   policyArgument: string,
@@ -295,7 +295,7 @@ async function captureAt(label: string, url: string, options: ScreenshotOptions)
     }
 
     if (error instanceof ValidationError) {
-      throw new ValidationError(`${error.message} (${url})`);
+      throw new ValidationError(`${error.message} (${url})`, { cause: error });
     }
 
     throw new Error(`${error instanceof Error ? error.message : String(error)} (${url})`, { cause: error });

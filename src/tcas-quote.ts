@@ -1,7 +1,7 @@
 import type { Locator, Page } from 'playwright';
 import { color } from './color.js';
-import { fixJourneyError } from './journey-fixes.js';
-import { extendWhileLoading } from './screenshot.js';
+import { errorSummaryError, fixJourneyError } from './journey-fixes.js';
+import { extendWhileLoading, ValidationError } from './screenshot.js';
 import steps from './tcas-quote.steps.json' with { type: 'json' };
 
 export async function tcasQuote(page: Page): Promise<void> {
@@ -13,10 +13,10 @@ export async function tcasQuote(page: Page): Promise<void> {
         color.Gray(`TCAS step ${index + 1} (${step.action}) passed in ${Math.round(performance.now() - started)} ms`)
       );
     } catch (error) {
-      throw new Error(
-        `TCAS step ${index + 1} (${step.action}) failed: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error }
-      );
+      const message = `TCAS step ${index + 1} (${step.action}) failed: ${error instanceof Error ? error.message : String(error)}`;
+      throw error instanceof ValidationError
+        ? new ValidationError(message, { cause: error })
+        : new Error(message, { cause: error });
     }
   }
 }
@@ -126,6 +126,6 @@ async function waitForQuote(page: Page, selector: string, textPattern: string, e
 async function checkQuoteErrors(page: Page, errorSelector: string): Promise<void> {
   const errors = await readErrorSummary(page, errorSelector);
   if (errors !== undefined) {
-    throw new Error(`TCAS quote errors: ${errors}`);
+    throw await errorSummaryError(page, `TCAS quote errors: ${errors}`);
   }
 }

@@ -36,10 +36,13 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 | `npm run quote-pages` | Run `quote-page` for every policy in a GUID list            |
 
 Add `-- --help` to any command for its options (for example `npm run compare -- --help`). Failures are shown in
-red, except unsaved NHI journey validation failures (`NHI journey validation failed on …` and
-`NHI journey returned to … after Get your quote N times`), which are yellow because the site
-rejected the copied answers. A capture failure is yellow only when every failed side stopped on
-validation. Progress steps are grey; `quote-pages` shows each policy's `[n/total]` line in cyan, and
+red, except validation failures, which are yellow because the site rejected the copied
+answers: an error summary the [journey error auto-fixes](#journey-error-auto-fixes) cannot clear,
+shown on a journey section (its `div.av-timeline-all-sections` timeline is visible) or the
+assumptions page, in any flow. For example `NHI journey validation failed on …`,
+`NHI cover details errors: …`, `NHI assumptions errors: …` or `TCAS step 2 (click) failed:
+TCAS quote errors: …`. Errors on the quote summary page stay red. A capture failure is yellow
+only when every failed side stopped on validation. Progress steps are grey; `quote-pages` shows each policy's `[n/total]` line in cyan, and
 a comparison summary is green when the images are identical and yellow when they differ.
 
 ### screenshot

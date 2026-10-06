@@ -1,5 +1,11 @@
 import type { Page } from 'playwright';
 import { color } from './color.js';
+import { ValidationError } from './screenshot.js';
+
+/** Section timeline shown on every journey section. */
+const journeyTimelineSelector = 'div.av-timeline-all-sections';
+/** Yes, take me to my quote, shown on the assumptions page. */
+const assumptionsButtonSelector = 'button#hp-assumptions-quote-button';
 
 /** Email address entered when the journey rejects the test data's email. */
 export const replacementEmail = 'nobody.special@nhitest.com';
@@ -87,11 +93,27 @@ export async function fixJourneyError(
   return fixedSection;
 }
 
+/**
+ * Builds the error for an error summary the flow cannot fix: a {@link ValidationError} (shown in yellow) when the page
+ * is a journey section (its section timeline is shown) or the assumptions page, because the site rejected the answers
+ * there; otherwise (for example on the quote summary page) a plain `Error` (shown in red).
+ * @param page Page showing the error summary.
+ * @param message Error message.
+ * @param cause Error that led to this one, if any.
+ * @returns The error to throw.
+ */
+export async function errorSummaryError(page: Page, message: string, cause?: unknown): Promise<Error> {
+  const onValidationPage =
+    (await page.locator(journeyTimelineSelector).first().isVisible()) ||
+    (await page.locator(assumptionsButtonSelector).first().isVisible());
+  return onValidationPage ? new ValidationError(message, { cause }) : new Error(message, { cause });
+}
+
 async function showSection(page: Page, section: string, label: string): Promise<void> {
   const heading = page.locator('h1').filter({ hasText: new RegExp(`^\\s*${section}\\s*$`) });
   if (!(await heading.isVisible())) {
     console.log(color.Gray(`${label}: opening ${section} from the timeline.`));
-    await page.locator(`div.av-timeline-all-sections > ul > li[title="${section}"]`).click();
+    await page.locator(`${journeyTimelineSelector} > ul > li[title="${section}"]`).click();
     await heading.waitFor({ state: 'visible' });
   }
 }

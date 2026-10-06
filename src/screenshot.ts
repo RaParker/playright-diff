@@ -27,13 +27,16 @@ export class OopsError extends Error {
 }
 
 /**
- * Raised when a journey stops because the site rejected its answers (the error summary stayed after the journey's
- * fixes), so the failure can be shown in yellow rather than red.
+ * Raised when a flow stops because the site rejected its answers (an error summary the journey fixes cannot clear, on
+ * a journey section or the assumptions page), so the failure can be shown in yellow rather than red.
  */
 export class ValidationError extends Error {
-  /** @param message Failure message, naming the section and the error summary text. */
-  constructor(message: string) {
-    super(message);
+  /**
+   * @param message Failure message, naming the page and the error summary text.
+   * @param options Standard error options, such as the `cause`.
+   */
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'ValidationError';
   }
 }

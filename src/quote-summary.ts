@@ -1,6 +1,6 @@
 import type { Page } from 'playwright';
 import { color } from './color.js';
-import { fixJourneyError } from './journey-fixes.js';
+import { errorSummaryError, fixJourneyError } from './journey-fixes.js';
 import { extendWhileLoading } from './screenshot.js';
 import { readErrorSummary } from './tcas-quote.js';
 
@@ -43,8 +43,9 @@ const maxClicks = 5;
  * {@link returnToQuote}).
  * @param label Flow name (e.g. `NHI` or `TCAS`) that prefixes logs and errors.
  * @returns A `beforeCapture` step for a page opened on a quote summary.
- * The step throws when a click leads to any other error summary (or an error already fixed once), the quote is not reached within {@link maxClicks} clicks,
- * or the quote page does not appear before the timeout.
+ * The step throws when a click leads to any other error summary (or an error already fixed once), the quote is not
+ * reached within {@link maxClicks} clicks, or the quote page does not appear before the timeout. An error summary on a
+ * journey section or the assumptions page throws a `ValidationError` (see {@link errorSummaryError}).
  */
 export function quoteSummary(label: string): (page: Page) => Promise<void> {
   return async (page) => {
@@ -61,7 +62,7 @@ export function quoteSummary(label: string): (page: Page) => Promise<void> {
         const errors = await readErrorSummary(page, errorSelector);
         const section = await fixJourneyError(page, label, errors, fixed);
         if (section === undefined) {
-          throw new Error(`${label} ${clicked?.name ?? 'quote'} errors: ${errors}`);
+          throw await errorSummaryError(page, `${label} ${clicked?.name ?? 'quote'} errors: ${errors}`);
         }
 
         step = { ...returnToQuote, name: section.toLowerCase() };
@@ -97,7 +98,7 @@ async function waitForClickResult(page: Page, label: string, clicked: QuoteStep 
       throw error;
     }
 
-    throw new Error(`${label} ${clicked.name} errors: ${errors}`, { cause: error });
+    throw await errorSummaryError(page, `${label} ${clicked.name} errors: ${errors}`, error);
   }
 }
 

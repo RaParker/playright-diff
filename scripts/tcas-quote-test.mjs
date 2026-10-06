@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { screenshot } from '../dist/screenshot.js';
+import { screenshot, ValidationError } from '../dist/screenshot.js';
 import { tcasQuote } from '../dist/tcas-quote.js';
 import { assertGreyLogsInOrder } from './log-assertions.mjs';
 
@@ -141,6 +141,12 @@ const cases = [
     /Invalid address/
   ]
 ];
+/** Cases whose error summary stays on a journey section (the timeline is still shown), so they fail validation. */
+const validationCases = new Set([
+  'cover start recovery: 2026-10-02, persistent error true',
+  'email address recovery: replacement accepted false',
+  'errors after contact click'
+]);
 
 test('Oops appearing during capture cannot produce a normal screenshot', async () => {
   const server = createServer((_request, response) => {
@@ -232,7 +238,11 @@ for (const [name, html, expectedError, expectedLogs = []] of cases) {
         await capture;
         assert.deepEqual(await readdir(directory), ['quote.png']);
       } else {
-        await assert.rejects(capture, expectedError);
+        await assert.rejects(capture, (error) => {
+          assert.match(error.message, expectedError);
+          assert.equal(error instanceof ValidationError, validationCases.has(name), error.message);
+          return true;
+        });
         assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
         const image = await readFile(join(directory, 'quote-failed.png'));
         assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
