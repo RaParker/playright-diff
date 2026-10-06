@@ -20,7 +20,7 @@ export async function removeQuoteOutput(
     outputSuffixes.map((suffix) => resolve('screenshots', `${basename}-${flow}${suffix}`))
   );
   const screenshots = (await Promise.all(screenshotPaths.map(removeFile))).filter(Boolean).length;
-  const comparisons = await removeComparisons(new Set(screenshotPaths));
+  const comparisons = await removeComparisons(basename, new Set(screenshotPaths));
   if (screenshots + comparisons > 0) {
     console.log(
       color.Gray(`Removed previous output for ${basename}: ${screenshots} screenshot(s), ${comparisons} comparison(s).`)
@@ -30,14 +30,18 @@ export async function removeQuoteOutput(
   return { screenshots, comparisons };
 }
 
-/** Removes each `comparisons/*` report whose `report.json` compares one of the given screenshots. */
-async function removeComparisons(screenshotPaths: Set<string>): Promise<number> {
+/**
+ * Removes the policy's own `comparisons/<basename>` report (even one a crashed run left without `report.json`) and
+ * each other `comparisons/*` report whose `report.json` compares one of the given screenshots (such as older
+ * `run-<timestamp>` reports).
+ */
+async function removeComparisons(basename: string, screenshotPaths: Set<string>): Promise<number> {
   const root = resolve('comparisons');
   let removed = 0;
   for (const entry of await readDirectories(root)) {
     const directory = join(root, entry);
-    const images = await readReportImages(join(directory, 'report.json'));
-    if (images.some((image) => screenshotPaths.has(image))) {
+    const images = entry === basename ? [] : await readReportImages(join(directory, 'report.json'));
+    if (entry === basename || images.some((image) => screenshotPaths.has(image))) {
       await rm(directory, { recursive: true, force: true });
       removed++;
     }

@@ -80,6 +80,19 @@ describe('removeQuoteOutput', () => {
     });
   }
 
+  test("removes the policy's own comparison folder even without a report.json", async () => {
+    // arrange
+    await writeComparison(directory, basename, undefined);
+    await writeComparison(directory, `${policy}-12`, undefined);
+
+    // act
+    const result = await removeQuoteOutput(basename, ['nhi', 'tcas']);
+
+    // assert
+    assert.equal(result.comparisons, 1);
+    assert.deepEqual(await list(directory, 'comparisons'), [`${policy}-12`]);
+  });
+
   test('does nothing when no output folders exist', async () => {
     // arrange
     // (empty working directory)

@@ -142,7 +142,7 @@ export async function quotePage(
     );
   }
 
-  await compare(nhiPath, tcasPath, { useOcr: options.useOcr });
+  await compare(nhiPath, tcasPath, { output: resolve('comparisons', basename), useOcr: options.useOcr });
   return 'compared';
 }
 
