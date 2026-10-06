@@ -6,12 +6,13 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { screenshot } from '../dist/screenshot.js';
 import { unsavedQuote } from '../dist/unsaved-quote.js';
+import { assertGreyLogsInOrder } from './log-assertions.mjs';
 import { unsavedJourneyHtml } from './unsaved-journey-html.mjs';
 
 const manySections = Array.from({ length: 20 }, (_value, index) => `Section ${index + 1}`);
 const rebuildingCostSections = ['Cover details', 'Property circumstances', 'Contact details'];
 
-for (const [name, journey, expectedError] of [
+for (const [name, journey, expectedError, expectedLogs = []] of [
   ['continues through each section and gets the quote', {}, undefined],
   [
     'reports the section and error summary when Continue fails validation',
@@ -51,7 +52,8 @@ for (const [name, journey, expectedError] of [
   [
     'opens Cover details from the timeline when Get your quote reports the cover start out of range',
     { coverStartError: 'quote' },
-    undefined
+    undefined,
+    ['NHI: selecting cover start 2026-10-06 on Cover details.', 'NHI: opening Cover details from the timeline.']
   ],
   [
     'stops when Get your quote keeps reporting the cover start after the date is fixed',
@@ -77,7 +79,8 @@ for (const [name, journey, expectedError] of [
   [
     'selects Choose another amount before entering the replacement rebuilding cost',
     { sections: rebuildingCostSections, rebuildingCostError: true, rebuildingCostOther: false },
-    undefined
+    undefined,
+    ['NHI: entering rebuilding cost 249995 on Property circumstances.', 'NHI: selecting Choose another amount.']
   ],
   [
     'reports a rebuilding cost error that Continue still shows after the cost is replaced',
@@ -85,8 +88,9 @@ for (const [name, journey, expectedError] of [
     /NHI journey validation failed on Property circumstances: Enter the cost of rebuilding the property/
   ]
 ]) {
-  test(`unsaved quote journey ${name}`, async () => {
+  test(`unsaved quote journey ${name}`, async (context) => {
     // arrange
+    const log = context.mock.method(console, 'log');
     const server = createServer((_request, response) => {
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
       response.end(unsavedJourneyHtml(journey));
@@ -110,6 +114,7 @@ for (const [name, journey, expectedError] of [
         await assert.rejects(capture, expectedError);
         assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
       }
+      assertGreyLogsInOrder(log, expectedLogs);
     } finally {
       server.closeAllConnections();
       await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));

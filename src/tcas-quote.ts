@@ -62,7 +62,7 @@ async function runStep(page: Page, step: Step): Promise<void> {
       await target.waitFor({ state: 'visible' });
       return;
     case 'click':
-      await clickAndRecover(page, target, step.recoverJourneyErrors === true);
+      await clickAndRecover(page, target, step.text ?? step.selector, step.recoverJourneyErrors === true);
       return;
     case 'waitForQuote':
       if (step.textPattern === undefined || step.errorSelector === undefined) {
@@ -78,9 +78,9 @@ async function runStep(page: Page, step: Step): Promise<void> {
 
 /**
  * Clicks `target` and checks for errors. With `recover`, test data the journey rejects is fixed (each error once, see
- * {@link fixJourneyError}) and `target` is clicked again, until no errors remain or none can be fixed.
+ * {@link fixJourneyError}) and `target` (logged as `name`) is clicked again, until no errors remain or none can be fixed.
  */
-async function clickAndRecover(page: Page, target: Locator, recover: boolean): Promise<void> {
+async function clickAndRecover(page: Page, target: Locator, name: string, recover: boolean): Promise<void> {
   const fixed = new Set<string>();
   await target.click();
   for (;;) {
@@ -95,6 +95,7 @@ async function clickAndRecover(page: Page, target: Locator, recover: boolean): P
         throw error;
       }
 
+      console.log(color.Gray(`TCAS: clicking ${name} again.`));
       await target.click();
     }
   }

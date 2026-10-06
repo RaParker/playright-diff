@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { quoteSummary } from '../dist/quote-summary.js';
 import { screenshot } from '../dist/screenshot.js';
+import { assertGreyLogsInOrder } from './log-assertions.mjs';
 import {
   assumptionsPageHtml,
   nhiPagesHtml,
@@ -100,7 +101,7 @@ function journeyErrorHtml({ error = 'cover start', returnTo = 'Cover details', a
   </script>`;
 }
 
-for (const [name, html, expectedError, label = 'NHI'] of [
+for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
   ['clicks through the summary and assumptions pages and captures the quote', quoteSummaryHtml, undefined],
   [
     'clicks Continue with quote when the summary leads straight to the quote',
@@ -191,7 +192,14 @@ for (const [name, html, expectedError, label = 'NHI'] of [
   [
     'opens Property circumstances from the timeline to replace the rebuilding cost',
     journeyErrorHtml({ error: 'rebuilding cost' }),
-    undefined
+    undefined,
+    'NHI',
+    [
+      'NHI: entering rebuilding cost 249995 on Property circumstances.',
+      'NHI: opening Property circumstances from the timeline.',
+      'NHI: selecting Choose another amount.',
+      'NHI: property circumstances: clicking Return to quote.'
+    ]
   ],
   [
     'reports a rebuilding cost error shown again after Return to quote',
@@ -199,8 +207,9 @@ for (const [name, html, expectedError, label = 'NHI'] of [
     /NHI property circumstances errors: Enter the cost of rebuilding the property/
   ]
 ]) {
-  test(`${label} quote summary ${name}`, async () => {
+  test(`${label} quote summary ${name}`, async (context) => {
     // arrange
+    const log = context.mock.method(console, 'log');
     const server = createServer((_request, response) => {
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
       response.end(html);
@@ -224,6 +233,7 @@ for (const [name, html, expectedError, label = 'NHI'] of [
         await assert.rejects(capture, expectedError);
         assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
       }
+      assertGreyLogsInOrder(log, expectedLogs);
     } finally {
       server.closeAllConnections();
       await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));

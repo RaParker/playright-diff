@@ -248,7 +248,8 @@ there are no links) and stops the journey and comparison.
 
 The **Contact details** and **Get your quote** clicks (steps with `"recoverJourneyErrors":
 true`) fix rejected test data once per error, as described in
-[Journey error auto-fixes](#journey-error-auto-fixes), then retry the click. Any remaining
+[Journey error auto-fixes](#journey-error-auto-fixes), then retry the click (logged in grey
+as for example `TCAS: clicking Get your quote again.`). Any remaining
 errors stop the journey as usual.
 
 ### Quote summary and assumptions
@@ -289,8 +290,14 @@ Some errors come from the test data rather than the quote, so the action fixes t
 
 - Each fix first opens its section from the timeline
   (`div.av-timeline-all-sections > ul > li[title="…"]`), unless that `<h1>` heading is
-  already shown. It is logged in grey, for example
-  `NHI: entering email address nobody.special@nhitest.com on Contact details.`
+  already shown. Every action is logged in grey, for example:
+
+  ```text
+  NHI: entering rebuilding cost 249995 on Property circumstances.
+  NHI: opening Property circumstances from the timeline.
+  NHI: selecting Choose another amount.
+  ```
+
 - Each error is fixed at most once per flow; if it comes back, it is reported as usual.
 - This applies to the quote summary flows (NHI and replacement TCAS), the TCAS journey's
   Contact details and Get your quote steps, and the unsaved NHI journey (`nhi=false`).

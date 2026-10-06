@@ -16,8 +16,8 @@ interface JourneyFix {
   section: string;
   /** Describes the change for the log line. */
   describe: (match: RegExpExecArray) => string;
-  /** Changes the field, once {@link section} is shown. */
-  apply: (page: Page, match: RegExpExecArray) => Promise<void>;
+  /** Changes the field, once {@link section} is shown; `label` prefixes any further log lines. */
+  apply: (page: Page, match: RegExpExecArray, label: string) => Promise<void>;
 }
 
 /** Errors the journey can report about test data, and how each is fixed. */
@@ -41,7 +41,7 @@ const journeyFixes: JourneyFix[] = [
     pattern: /Enter the cost of rebuilding the property/i,
     section: 'Property circumstances',
     describe: () => `entering rebuilding cost ${replacementRebuildingCost}`,
-    apply: (page) => enterRebuildingCost(page)
+    apply: (page, _match, label) => enterRebuildingCost(page, label)
   }
 ];
 
@@ -54,7 +54,8 @@ const journeyFixes: JourneyFix[] = [
  * - "Enter the cost of rebuilding the property" selects "Choose another amount" (unless already selected) and enters
  *   {@link replacementRebuildingCost} on Property circumstances.
  *
- * Each fix opens its section from the timeline unless it is already shown.
+ * Each fix is logged in grey, then opens its section from the timeline unless it is already shown; opening a section
+ * and selecting "Choose another amount" are logged too.
  * @param page Page showing the journey's error summary.
  * @param label Flow name (e.g. `NHI` or `TCAS`) that prefixes the log lines.
  * @param errors Error summary text to check.
@@ -78,26 +79,28 @@ export async function fixJourneyError(
 
     console.log(color.Gray(`${label}: ${fix.describe(match)} on ${fix.section}.`));
     applied.add(fix.name);
-    await showSection(page, fix.section);
-    await fix.apply(page, match);
+    await showSection(page, fix.section, label);
+    await fix.apply(page, match, label);
     fixedSection = fix.section;
   }
 
   return fixedSection;
 }
 
-async function showSection(page: Page, section: string): Promise<void> {
+async function showSection(page: Page, section: string, label: string): Promise<void> {
   const heading = page.locator('h1').filter({ hasText: new RegExp(`^\\s*${section}\\s*$`) });
   if (!(await heading.isVisible())) {
+    console.log(color.Gray(`${label}: opening ${section} from the timeline.`));
     await page.locator(`div.av-timeline-all-sections > ul > li[title="${section}"]`).click();
     await heading.waitFor({ state: 'visible' });
   }
 }
 
-async function enterRebuildingCost(page: Page): Promise<void> {
+async function enterRebuildingCost(page: Page, label: string): Promise<void> {
   // The cost field is only shown once "Choose another amount" (rather than the BCIS estimate) is selected.
   const otherAmount = page.locator('label[id$="~Kother"]').filter({ hasText: 'Choose another amount' });
-  if (!(await otherAmount.evaluate((label) => label.classList.contains('active')))) {
+  if (!(await otherAmount.evaluate((element) => element.classList.contains('active')))) {
+    console.log(color.Gray(`${label}: selecting Choose another amount.`));
     await otherAmount.click();
   }
 

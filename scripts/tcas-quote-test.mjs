@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { screenshot } from '../dist/screenshot.js';
 import { tcasQuote } from '../dist/tcas-quote.js';
+import { assertGreyLogsInOrder } from './log-assertions.mjs';
 
 const cover = '<h1>Cover details</h1>';
 const contact = '<div class="av-timeline-all-sections"><ul><li title="Contact details">Contact details</li></ul></div>';
@@ -68,7 +69,14 @@ const cases = [
       document.querySelector('[aria-label]').onclick = () => { selected = true; };
       document.querySelector('button').onclick = () => { document.body.innerHTML = "<h2>Welcome Alex, here's your quote</h2>"; };
     </script>`,
-    expectedError
+    expectedError,
+    expectedError === undefined
+      ? [
+          `TCAS: selecting cover start ${date} on Cover details.`,
+          'TCAS: opening Cover details from the timeline.',
+          'TCAS: clicking div.av-timeline-all-sections > ul > li[title="Contact details"] again.'
+        ]
+      : []
   ]),
   ...[true, false].map((fixable) => [
     `email address recovery: replacement accepted ${fixable}`,
@@ -92,7 +100,11 @@ const cases = [
     </script>`,
     fixable
       ? undefined
-      : /step 3 \(click\) failed: TCAS quote errors: The Email address field contains invalid characters/
+      : /step 3 \(click\) failed: TCAS quote errors: The Email address field contains invalid characters/,
+    [
+      'TCAS: entering email address nobody.special@nhitest.com on Contact details.',
+      'TCAS: clicking Get your quote again.'
+    ]
   ]),
   ['straight apostrophe', journey("<h2>Welcome Alex, here's your quote</h2>"), undefined],
   ['curly apostrophe', journey('<h2>Welcome Sam Smith, here&rsquo;s your quote</h2>'), undefined],
@@ -200,8 +212,9 @@ for (const loading of ['<h2>Loading your quote</h2>', '<div class="hp-loading-wi
   }
 }
 
-for (const [name, html, expectedError] of cases) {
-  test(`TCAS journey: ${name}`, async () => {
+for (const [name, html, expectedError, expectedLogs = []] of cases) {
+  test(`TCAS journey: ${name}`, async (context) => {
+    const log = context.mock.method(console, 'log');
     const server = createServer((_request, response) => {
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
       response.end(html);
@@ -224,6 +237,7 @@ for (const [name, html, expectedError] of cases) {
         const image = await readFile(join(directory, 'quote-failed.png'));
         assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
       }
+      assertGreyLogsInOrder(log, expectedLogs);
     } finally {
       server.closeAllConnections();
       await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
