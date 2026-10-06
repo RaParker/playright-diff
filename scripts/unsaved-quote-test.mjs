@@ -36,6 +36,26 @@ for (const [name, journey, expectedError] of [
     'stops when Get your quote is not reached within the section limit',
     { sections: manySections },
     /did not reach Get your quote within 15 sections/
+  ],
+  [
+    'fixes the cover start date when Continue on Cover details reports it out of range',
+    { coverStartError: 'continue' },
+    undefined
+  ],
+  [
+    'reports a cover start error that Continue still shows after the date is fixed',
+    { coverStartError: 'continue', coverStartFixable: false },
+    /NHI journey validation failed on Cover details: The Cover start field needs to be between 2026-10-06/
+  ],
+  [
+    'opens Cover details from the timeline when Get your quote reports the cover start out of range',
+    { coverStartError: 'quote' },
+    undefined
+  ],
+  [
+    'stops when Get your quote keeps reporting the cover start after the date is fixed',
+    { coverStartError: 'quote', coverStartFixable: false },
+    /NHI journey returned to Contact details after Get your quote 2 times: The Cover start field needs to be between/
   ]
 ]) {
   test(`unsaved quote journey ${name}`, async () => {

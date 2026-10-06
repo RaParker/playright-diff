@@ -269,9 +269,10 @@ page:
   the comparison is skipped.
 - The flow stops after 5 clicks without reaching the quote.
 - If a click returns to the journey with a cover start error, the action fixes the date once
-  (see below), clicks **Return to quote** (`button.hp-submit-form`, logged as
-  `NHI: cover details: clicking Return to quote.`) and carries on. A cover start error shown
-  again, or left on screen until the timeout, is reported as `NHI cover details errors: …`.
+  (see below) and clicks **Return to quote** (`button.hp-submit-form`, logged as
+  `NHI: cover details: clicking Return to quote.`), which goes straight to the quote page. A
+  cover start error shown again, or left on screen until the timeout, is reported as
+  `NHI cover details errors: …`.
 
 ### Cover start date auto-fix
 
@@ -285,8 +286,11 @@ When an error summary says "The Cover start field needs to be between YYYY-MM-DD
 2. Opens `svg.av-icon-calendar` and picks the calendar `div` whose aria-label ends with the
    earliest allowed date (for example `October 6th, 2026`), skipping days outside the month.
 
-This applies to the quote summary flows (NHI and replacement TCAS) and to the TCAS journey's
-Contact details step. The unsaved NHI journey (`nhi=false`) does not fix the date.
+This applies to the quote summary flows (NHI and replacement TCAS), the TCAS journey's
+Contact details step, and the unsaved NHI journey (`nhi=false`). In the unsaved journey, a
+cover start error from **Continue** or from **Get your quote** returning to a section is
+fixed once, then the journey is walked again from Cover details; a return fixed this way does
+not count towards the one-return limit.
 
 ### Annual payments
 

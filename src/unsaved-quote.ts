@@ -1,5 +1,6 @@
 import type { Page, Request } from 'playwright';
 import { color } from './color.js';
+import { fixCoverStart } from './cover-start.js';
 import { quoteHeadingPattern } from './quote-summary.js';
 import { extendWhileLoading } from './screenshot.js';
 import { readErrorSummary } from './tcas-quote.js';
@@ -22,8 +23,10 @@ const lookupInProgressPattern = /^Checking property details$/i;
  * Drives an unsaved quote journey (opened with `nhi=false`) to its quote page, which saves the quote to NHI.
  * Clicks Continue through each section until Get your quote appears, clicks it, and waits for the quote heading.
  * If Get your quote returns to a section, that section's lookups are waited for and the journey is walked again.
+ * A cover start date out of range (reported by Continue or by a return) is fixed once on Cover details (see
+ * {@link fixCoverStart}) and the journey is walked again from there.
  * @param page Page opened on the journey.
- * @throws When Continue leaves an error summary on a section, Get your quote returns to a section more than
+ * @throws When Continue leaves any other error summary (or a cover start error after it was fixed) on a section, Get your quote returns to a section more than
  * {@link maxReturns} time(s), or Get your quote is not reached within the section limit. Errors name the section
  * and include the summary text.
  */
@@ -31,6 +34,7 @@ export async function unsavedQuote(page: Page): Promise<void> {
   const apiRequests = trackApiRequests(page);
   const quoteButton = page.locator('button').filter({ hasText: /^Get your quote$/ });
   let returns = 0;
+  let coverStartFixed = false;
   for (let step = 0; step < maxSections; step++) {
     const section = await readSection(page);
     // Lookups started by a section (e.g. the rebuild estimate) must finish before moving on.
@@ -43,8 +47,14 @@ export async function unsavedQuote(page: Page): Promise<void> {
       }
 
       const returnedTo = await readSection(page);
+      const errors = await readErrorSummary(page, errorSelector);
+      if (!coverStartFixed && (await fixCoverStart(page, 'NHI', errors))) {
+        coverStartFixed = true;
+        console.log(color.Gray(`NHI journey: Get your quote returned to ${returnedTo}; walking the journey again.`));
+        continue;
+      }
+
       if (++returns > maxReturns) {
-        const errors = await readErrorSummary(page, errorSelector);
         throw new Error(
           `NHI journey returned to ${returnedTo} after Get your quote ${returns} times${errors === undefined ? '' : `: ${errors}`}`
         );
@@ -55,7 +65,14 @@ export async function unsavedQuote(page: Page): Promise<void> {
     }
 
     console.log(color.Gray(`NHI journey: ${section}: clicking Continue.`));
-    await continueFrom(page, section);
+    const errors = await continueFrom(page, section);
+    if (errors !== undefined) {
+      if (coverStartFixed || !(await fixCoverStart(page, 'NHI', errors))) {
+        throw new Error(`NHI journey validation failed on ${section}: ${errors}`);
+      }
+
+      coverStartFixed = true;
+    }
   }
 
   throw new Error(`NHI journey did not reach Get your quote within ${maxSections} sections.`);
@@ -104,7 +121,11 @@ async function waitForQuote(page: Page, section: string): Promise<boolean> {
   return (await quoteHeading.jsonValue()) === 'quote';
 }
 
-async function continueFrom(page: Page, section: string): Promise<void> {
+/**
+ * Clicks Continue and waits for the next section or a new error summary.
+ * @returns The error summary text when Continue failed validation, otherwise `undefined`.
+ */
+async function continueFrom(page: Page, section: string): Promise<string | undefined> {
   // Mark summaries already shown, so only a new one (or the heading changing) ends the wait.
   await page.evaluate(
     ({ errorSelector, seenErrorAttribute }) =>
@@ -132,20 +153,15 @@ async function continueFrom(page: Page, section: string): Promise<void> {
     outcome = await handle.jsonValue();
   } catch (error) {
     // A summary that stays in place keeps the section on screen until the wait times out.
-    await throwOnErrorSummary(page, section);
-    throw error;
+    const errors = await readErrorSummary(page, errorSelector);
+    if (errors === undefined) {
+      throw error;
+    }
+
+    return errors;
   }
 
-  if (outcome !== 'moved') {
-    await throwOnErrorSummary(page, section);
-  }
-}
-
-async function throwOnErrorSummary(page: Page, section: string): Promise<void> {
-  const errors = await readErrorSummary(page, errorSelector);
-  if (errors !== undefined) {
-    throw new Error(`NHI journey validation failed on ${section}: ${errors}`);
-  }
+  return outcome === 'moved' ? undefined : readErrorSummary(page, errorSelector);
 }
 
 function trackApiRequests(page: Page): { settled: () => Promise<void> } {

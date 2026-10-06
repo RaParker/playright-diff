@@ -23,8 +23,9 @@ const errorSummaryHtml = '<div class="av-card-error-summary"><ul><li><a>Quote un
  * trimmed from the live page). The Cover start calendar is only shown on Cover details.
  * @param {object} [options]
  * @param {string} [options.returnTo] Section Yes returns to (default Cover details).
- * @param {'quote' | 'new error' | 'same error'} [options.afterFix] What Return to quote shows once October 6th is
- * picked: the quote, a re-rendered error summary, or nothing (the existing summary stays in place).
+ * @param {'quote' | 'loading' | 'new error' | 'same error'} [options.afterFix] What Return to quote shows once October
+ * 6th is picked: the quote, a loading screen that outlasts the step timeout before the quote, a re-rendered error
+ * summary, or nothing (the existing summary stays in place).
  * @returns {string} Page HTML.
  */
 function coverStartJourneyHtml({ returnTo = 'Cover details', afterFix = 'quote' } = {}) {
@@ -62,6 +63,9 @@ function coverStartJourneyHtml({ returnTo = 'Cover details', afterFix = 'quote' 
         const afterFix = ${JSON.stringify(afterFix)};
         if (selected && afterFix === 'quote') {
           setTimeout(() => { document.body.innerHTML = ${JSON.stringify(quotePageHtml)}; }, 100);
+        } else if (selected && afterFix === 'loading') {
+          document.body.insertAdjacentHTML('beforeend', '<h2>Loading your quote</h2>');
+          setTimeout(() => { document.body.innerHTML = ${JSON.stringify(quotePageHtml)}; }, 2500);
         } else if (afterFix === 'new error') {
           setTimeout(showError, 100);
         }
@@ -126,6 +130,11 @@ for (const [name, html, expectedError, label = 'NHI'] of [
   [
     'opens Cover details from the timeline to fix the cover start date',
     coverStartJourneyHtml({ returnTo: 'Contact details' }),
+    undefined
+  ],
+  [
+    'waits for the loading screen Return to quote shows before the quote',
+    coverStartJourneyHtml({ afterFix: 'loading' }),
     undefined
   ],
   [

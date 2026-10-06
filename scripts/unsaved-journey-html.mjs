@@ -72,6 +72,10 @@ export const quoteSummaryHtml = nhiPagesHtml(summaryPageHtml, {
  * @param {boolean} [options.resolves] Whether Continue clears the summary once the lookup finishes (default true);
  * when false, Continue leaves the summary in place, like an answer that fails validation.
  * @param {boolean} [options.declines] Whether Get your quote shows the declined page instead of the quote.
+ * @param {'continue' | 'quote'} [options.coverStartError] Adds a section timeline and a Cover start calendar (shown on
+ * Cover details only), and reports the cover start date as out of range until October 6th is picked: on Continue from
+ * Cover details, or when Get your quote is clicked (staying on the last section).
+ * @param {boolean} [options.coverStartFixable] Whether picking October 6th clears the cover start error (default true).
  * @returns {string} Page HTML.
  */
 export function unsavedJourneyHtml({
@@ -81,15 +85,27 @@ export function unsavedJourneyHtml({
   bounceTimes = 1,
   lookupMs = 300,
   resolves = true,
-  declines = false
+  declines = false,
+  coverStartError,
+  coverStartFixable = true
 } = {}) {
-  return `<h1></h1><p id="lookup" hidden>Checking property details</p>
+  const coverStartHtml =
+    coverStartError === undefined
+      ? ''
+      : `<div class="av-timeline-all-sections"><ul>${sections.map((section) => `<li title="${section}">${section}</li>`).join('')}</ul></div>
+    <span id="calendar"><svg class="av-icon av-icon-calendar" width="24" height="24"><rect width="24" height="24" /></svg></span>
+    <div id="day" hidden aria-label="Choose Tuesday, October 6th, 2026">6</div>`;
+  return `<h1></h1>${coverStartHtml}<p id="lookup" hidden>Checking property details</p>
     <button id="continue">Continue</button><button id="quote" hidden>Get your quote</button><script>
     const sections = ${JSON.stringify(sections)};
     const errorOn = ${JSON.stringify(errorOn ?? null)};
     const bounceTo = ${JSON.stringify(bounceTo ?? null)};
     const lookupMs = ${JSON.stringify(lookupMs)};
     const resolves = ${JSON.stringify(resolves)};
+    const coverStartError = ${JSON.stringify(coverStartError ?? null)};
+    const coverStartFixable = ${JSON.stringify(coverStartFixable)};
+    const coverStartSummary = 'The Cover start field needs to be between 2026-10-06 and 2026-11-20';
+    let coverStartValid = coverStartError === null;
     let bouncesLeft = ${JSON.stringify(bounceTimes)};
     let lookupDone = true;
     let index = 0;
@@ -99,9 +115,26 @@ export function unsavedJourneyHtml({
       document.querySelector('h1').textContent = sections[index];
       document.getElementById('continue').hidden = last;
       document.getElementById('quote').hidden = !last;
+      if (coverStartError !== null) document.getElementById('calendar').hidden = sections[index] !== 'Cover details';
     };
     show();
+    if (coverStartError !== null) {
+      document.querySelectorAll('li[title]').forEach((item) => {
+        item.onclick = () => {
+          index = sections.indexOf(item.title);
+          show();
+        };
+      });
+      document.querySelector('svg').onclick = () => { document.getElementById('day').hidden = false; };
+      document.getElementById('day').onclick = () => { coverStartValid = coverStartFixable; };
+    }
     document.getElementById('continue').onclick = () => {
+      if (coverStartError === 'continue' && sections[index] === 'Cover details' && !coverStartValid) {
+        document.querySelector('.av-card-error-summary')?.remove();
+        document.body.insertAdjacentHTML('beforeend', summary(coverStartSummary));
+        return;
+      }
+
       if (sections[index] === errorOn) {
         document.body.insertAdjacentHTML('beforeend', summary('Enter the year built'));
         return;
@@ -116,6 +149,12 @@ export function unsavedJourneyHtml({
       show();
     };
     document.getElementById('quote').onclick = () => {
+      if (coverStartError === 'quote' && !coverStartValid) {
+        document.querySelector('.av-card-error-summary')?.remove();
+        document.body.insertAdjacentHTML('beforeend', summary(coverStartSummary));
+        return;
+      }
+
       if (bounceTo !== null && bouncesLeft > 0) {
         bouncesLeft--;
         index = sections.indexOf(bounceTo);
