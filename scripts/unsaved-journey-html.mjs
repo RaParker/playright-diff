@@ -60,6 +60,29 @@ export const quoteSummaryHtml = nhiPagesHtml(summaryPageHtml, {
 });
 
 /**
+ * Builds the Property circumstances rebuilding cost question (markup trimmed from the live page): the cost field is
+ * only shown once "Choose another amount" is selected. Needs {@link otherAmountScript} on the page.
+ * @param {boolean} other Whether "Choose another amount" starts selected, rather than the BCIS estimate.
+ * @returns {string} Question HTML.
+ */
+export function rebuildingCostHtml(other) {
+  return `<div id="rebuilding"><label id="Qrebuild~K424000" class="btn btn-primary${other ? '' : ' active'}"
+    >Use £424,000 estimate</label><label id="Qrebuild~Kother" class="btn btn-primary${other ? ' active' : ''}"
+    >Choose another amount</label><input inputmode="decimal" name="rebuildingCost" type="text"
+    ${other ? '' : 'hidden'} value="500,000"></div>`;
+}
+
+/** Script that selects "Choose another amount" and shows the cost field when its label is clicked. */
+export const otherAmountScript = `document.addEventListener('click', (event) => {
+  const other = event.target.closest('label[id$="~Kother"]');
+  if (other === null) return;
+  if (other.classList.toggle('active')) {
+    document.querySelector('label[id$="~K424000"]').classList.remove('active');
+  }
+  document.querySelector('input[name="rebuildingCost"]').hidden = !other.classList.contains('active');
+});`;
+
+/**
  * Builds an `nhi=false` style journey: Continue moves through the sections, and Get your quote on the last
  * section shows the quote page.
  * @param {object} [options]
@@ -79,6 +102,11 @@ export const quoteSummaryHtml = nhiPagesHtml(summaryPageHtml, {
  * @param {boolean} [options.emailError] Adds a section timeline and an email field (shown on Contact details only),
  * and reports the email address as invalid when Get your quote is clicked until nobody.special@nhitest.com is entered.
  * @param {boolean} [options.emailFixable] Whether entering that email clears the email error (default true).
+ * @param {boolean} [options.rebuildingCostError] Adds the rebuilding cost question (shown on Property circumstances
+ * only), and reports the rebuilding cost as missing on Continue from Property circumstances until 249995 is entered.
+ * @param {boolean} [options.rebuildingCostOther] Whether "Choose another amount" starts selected (default true).
+ * @param {boolean} [options.rebuildingCostFixable] Whether entering 249995 clears the rebuilding cost error (default
+ * true).
  * @returns {string} Page HTML.
  */
 export function unsavedJourneyHtml({
@@ -92,7 +120,10 @@ export function unsavedJourneyHtml({
   coverStartError,
   coverStartFixable = true,
   emailError = false,
-  emailFixable = true
+  emailFixable = true,
+  rebuildingCostError = false,
+  rebuildingCostFixable = true,
+  rebuildingCostOther = true
 } = {}) {
   const timelineHtml =
     coverStartError === undefined && !emailError
@@ -106,7 +137,8 @@ export function unsavedJourneyHtml({
   const emailHtml = emailError
     ? '<input id="email" inputmode="email" name="email" type="text" class="form-control" value="first name.last@example.com">'
     : '';
-  return `<h1></h1>${timelineHtml}${coverStartHtml}${emailHtml}<p id="lookup" hidden>Checking property details</p>
+  const rebuildingHtml = rebuildingCostError ? rebuildingCostHtml(rebuildingCostOther) : '';
+  return `<h1></h1>${timelineHtml}${coverStartHtml}${emailHtml}${rebuildingHtml}<p id="lookup" hidden>Checking property details</p>
     <button id="continue">Continue</button><button id="quote" hidden>Get your quote</button><script>
     const sections = ${JSON.stringify(sections)};
     const errorOn = ${JSON.stringify(errorOn ?? null)};
@@ -119,6 +151,9 @@ export function unsavedJourneyHtml({
     const emailError = ${JSON.stringify(emailError)};
     const emailFixable = ${JSON.stringify(emailFixable)};
     const emailValid = () => !emailError || (emailFixable && document.getElementById('email').value === 'nobody.special@nhitest.com');
+    const rebuildingCostError = ${JSON.stringify(rebuildingCostError)};
+    const rebuildingCostFixable = ${JSON.stringify(rebuildingCostFixable)};
+    const rebuildingCost = () => document.querySelector('input[name="rebuildingCost"]');
     let coverStartValid = coverStartError === null;
     let bouncesLeft = ${JSON.stringify(bounceTimes)};
     let lookupDone = true;
@@ -131,8 +166,10 @@ export function unsavedJourneyHtml({
       document.getElementById('quote').hidden = !last;
       if (coverStartError !== null) document.getElementById('calendar').hidden = sections[index] !== 'Cover details';
       if (emailError) document.getElementById('email').hidden = sections[index] !== 'Contact details';
+      if (rebuildingCostError) document.getElementById('rebuilding').hidden = sections[index] !== 'Property circumstances';
     };
     show();
+    ${otherAmountScript}
     document.querySelectorAll('li[title]').forEach((item) => {
       item.onclick = () => {
         index = sections.indexOf(item.title);
@@ -147,6 +184,16 @@ export function unsavedJourneyHtml({
       if (coverStartError === 'continue' && sections[index] === 'Cover details' && !coverStartValid) {
         document.querySelector('.av-card-error-summary')?.remove();
         document.body.insertAdjacentHTML('beforeend', summary(coverStartSummary));
+        return;
+      }
+
+      if (
+        rebuildingCostError &&
+        sections[index] === 'Property circumstances' &&
+        !(rebuildingCostFixable && !rebuildingCost().hidden && rebuildingCost().value === '249995')
+      ) {
+        document.querySelector('.av-card-error-summary')?.remove();
+        document.body.insertAdjacentHTML('beforeend', summary('Enter the cost of rebuilding the property'));
         return;
       }
 
@@ -181,7 +228,7 @@ export function unsavedJourneyHtml({
         index = sections.indexOf(bounceTo);
         show();
         document.querySelector('.av-card-error-summary')?.remove();
-        document.body.insertAdjacentHTML('beforeend', summary('Enter the cost of rebuilding the property'));
+        document.body.insertAdjacentHTML('beforeend', summary('Enter the number of bedrooms'));
         lookupDone = false;
         document.getElementById('lookup').hidden = false;
         setTimeout(() => {

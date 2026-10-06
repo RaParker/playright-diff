@@ -285,6 +285,7 @@ Some errors come from the test data rather than the quote, so the action fixes t
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | "The Cover start field needs to be between YYYY-MM-DD and …" | Opens `svg.av-icon-calendar` and picks the calendar `div` whose aria-label ends with the earliest allowed date (for example `October 6th, 2026`), skipping days outside the month (**Cover details**) |
 | "The Email address field contains invalid characters"        | Enters `nobody.special@nhitest.com` in `input[name="email"]` (**Contact details**)                                                                                                                    |
+| "Enter the cost of rebuilding the property"                  | Selects **Choose another amount** (`label[id$="~Kother"]`) unless it already has the `active` class, then enters `249995` in `input[name="rebuildingCost"]` (**Property circumstances**)              |
 
 - Each fix first opens its section from the timeline
   (`div.av-timeline-all-sections > ul > li[title="…"]`), unless that `<h1>` heading is
@@ -369,9 +370,9 @@ click it waits for the page's `/api/` requests and any "Checking property detail
 finish.
 
 - If Continue leaves a `div.av-card-error-summary` on a section, the flow fails with the
-  section and summary text, for example `NHI journey validation failed on Property
-circumstances: Enter the cost of rebuilding the property`. The copied answers need changing
-  before that policy can be quoted.
+  section and summary text, for example `NHI journey validation failed on Property type:
+Enter the year built`, unless it is one of the [journey error auto-fixes](#journey-error-auto-fixes).
+  Otherwise the copied answers need changing before that policy can be quoted.
 - If Get your quote returns to a section (for example while the rebuild estimate is still
   being looked up), the journey is walked again once; a second return fails with the summary.
 - The journey stops after 15 sections without reaching Get your quote.

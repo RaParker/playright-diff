@@ -4,6 +4,9 @@ import { color } from './color.js';
 /** Email address entered when the journey rejects the test data's email. */
 export const replacementEmail = 'nobody.special@nhitest.com';
 
+/** Rebuilding cost entered when the journey rejects the test data's rebuilding cost. */
+export const replacementRebuildingCost = '249995';
+
 interface JourneyFix {
   /** Key recorded in the `applied` set, so each fix is tried once. */
   name: string;
@@ -32,6 +35,13 @@ const journeyFixes: JourneyFix[] = [
     section: 'Contact details',
     describe: () => `entering email address ${replacementEmail}`,
     apply: (page) => page.locator('input[name="email"]').fill(replacementEmail)
+  },
+  {
+    name: 'rebuilding cost',
+    pattern: /Enter the cost of rebuilding the property/i,
+    section: 'Property circumstances',
+    describe: () => `entering rebuilding cost ${replacementRebuildingCost}`,
+    apply: (page) => enterRebuildingCost(page)
   }
 ];
 
@@ -41,6 +51,8 @@ const journeyFixes: JourneyFix[] = [
  * - "The Cover start field needs to be between YYYY-MM-DD and ..." picks the earliest allowed date in the Cover start
  *   calendar on Cover details.
  * - "The Email address field contains invalid characters" enters {@link replacementEmail} on Contact details.
+ * - "Enter the cost of rebuilding the property" selects "Choose another amount" (unless already selected) and enters
+ *   {@link replacementRebuildingCost} on Property circumstances.
  *
  * Each fix opens its section from the timeline unless it is already shown.
  * @param page Page showing the journey's error summary.
@@ -80,6 +92,16 @@ async function showSection(page: Page, section: string): Promise<void> {
     await page.locator(`div.av-timeline-all-sections > ul > li[title="${section}"]`).click();
     await heading.waitFor({ state: 'visible' });
   }
+}
+
+async function enterRebuildingCost(page: Page): Promise<void> {
+  // The cost field is only shown once "Choose another amount" (rather than the BCIS estimate) is selected.
+  const otherAmount = page.locator('label[id$="~Kother"]').filter({ hasText: 'Choose another amount' });
+  if (!(await otherAmount.evaluate((label) => label.classList.contains('active')))) {
+    await otherAmount.click();
+  }
+
+  await page.locator('input[name="rebuildingCost"]').fill(replacementRebuildingCost);
 }
 
 async function selectCoverStart(page: Page, dateText: string): Promise<void> {

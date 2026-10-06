@@ -9,7 +9,9 @@ import { screenshot } from '../dist/screenshot.js';
 import {
   assumptionsPageHtml,
   nhiPagesHtml,
+  otherAmountScript,
   quotePageHtml,
+  rebuildingCostHtml,
   quoteSummaryHtml,
   summaryPageHtml
 } from './unsaved-journey-html.mjs';
@@ -20,10 +22,13 @@ const errorSummaryHtml = '<div class="av-card-error-summary"><ul><li><a>Quote un
 
 /**
  * Builds an assumptions page whose Yes button returns to the journey with an error about its test data (markup trimmed
- * from the live page). The Cover start calendar is only shown on Cover details, and the email field on Contact details.
+ * from the live page). The Cover start calendar is only shown on Cover details, the email field on Contact details, and
+ * the rebuilding cost field on Property circumstances.
  * @param {object} [options]
- * @param {'cover start' | 'email'} [options.error] Error reported: the cover start date out of range (fixed by picking
- * October 6th), or invalid characters in the email address (fixed by entering nobody.special@nhitest.com).
+ * @param {'cover start' | 'email' | 'rebuilding cost'} [options.error] Error reported: the cover start date out of range
+ * (fixed by picking October 6th), invalid characters in the email address (fixed by entering
+ * nobody.special@nhitest.com), or a missing rebuilding cost (fixed by selecting "Choose another amount", which starts
+ * unselected, and entering 249995).
  * @param {string} [options.returnTo] Section Yes returns to (default Cover details).
  * @param {'quote' | 'loading' | 'new error' | 'same error'} [options.afterFix] What Return to quote shows once the error
  * is fixed: the quote, a loading screen that outlasts the step timeout before the quote, a re-rendered error summary, or
@@ -31,27 +36,37 @@ const errorSummaryHtml = '<div class="av-card-error-summary"><ul><li><a>Quote un
  * @returns {string} Page HTML.
  */
 function journeyErrorHtml({ error = 'cover start', returnTo = 'Cover details', afterFix = 'quote' } = {}) {
-  const message =
-    error === 'email'
-      ? 'The Email address field contains invalid characters'
-      : 'The Cover start field needs to be between 2026-10-06 and 2026-11-20';
+  const message = {
+    'cover start': 'The Cover start field needs to be between 2026-10-06 and 2026-11-20',
+    email: 'The Email address field contains invalid characters',
+    'rebuilding cost': 'Enter the cost of rebuilding the property'
+  }[error];
   return `${assumptionsPageHtml}<script>
     const journey = '<div class="av-timeline-all-sections"><ul><li title="Cover details">Cover details</li>'
+      + '<li title="Property circumstances">Property circumstances</li>'
       + '<li title="Contact details">Contact details</li></ul></div><h1></h1><span id="calendar">'
       + '<svg class="av-icon av-icon-calendar" width="24" height="24"><rect width="24" height="24" /></svg></span>'
       + '<div id="day" hidden aria-label="Choose Tuesday, October 6th, 2026">6</div>'
       + '<input name="email" type="text" value="first name.last@example.com">'
+      + ${JSON.stringify(rebuildingCostHtml(false))}
       + '<button type="button" class="btn btn-primary hp-submit-form"><div>Return to quote</div></button>';
     const summary = '<div class="av-card-error-summary"><h3>You haven&lsquo;t answered all the questions</h3><ul><li>'
       + '<a href="#">' + ${JSON.stringify(message)} + '</a></li></ul></div>';
     let picked = false;
-    const fixed = () => ${JSON.stringify(error)} === 'email'
-      ? document.querySelector('input[name="email"]').value === 'nobody.special@nhitest.com'
-      : picked;
+    const fixed = () => ({
+      'cover start': () => picked,
+      email: () => document.querySelector('input[name="email"]').value === 'nobody.special@nhitest.com',
+      'rebuilding cost': () => {
+        const cost = document.querySelector('input[name="rebuildingCost"]');
+        return !cost.hidden && cost.value === '249995';
+      }
+    })[${JSON.stringify(error)}]();
+    ${otherAmountScript}
     const showSection = (section) => {
       document.querySelector('h1').textContent = section;
       document.getElementById('calendar').hidden = section !== 'Cover details';
       document.querySelector('input[name="email"]').hidden = section !== 'Contact details';
+      document.getElementById('rebuilding').hidden = section !== 'Property circumstances';
     };
     const showError = () => {
       document.querySelector('.av-card-error-summary')?.remove();
@@ -172,6 +187,16 @@ for (const [name, html, expectedError, label = 'NHI'] of [
     'reports an email error shown again after Return to quote',
     journeyErrorHtml({ error: 'email', returnTo: 'Contact details', afterFix: 'new error' }),
     /NHI contact details errors: The Email address field contains invalid characters/
+  ],
+  [
+    'opens Property circumstances from the timeline to replace the rebuilding cost',
+    journeyErrorHtml({ error: 'rebuilding cost' }),
+    undefined
+  ],
+  [
+    'reports a rebuilding cost error shown again after Return to quote',
+    journeyErrorHtml({ error: 'rebuilding cost', returnTo: 'Property circumstances', afterFix: 'new error' }),
+    /NHI property circumstances errors: Enter the cost of rebuilding the property/
   ]
 ]) {
   test(`${label} quote summary ${name}`, async () => {

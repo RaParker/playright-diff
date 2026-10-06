@@ -9,6 +9,7 @@ import { unsavedQuote } from '../dist/unsaved-quote.js';
 import { unsavedJourneyHtml } from './unsaved-journey-html.mjs';
 
 const manySections = Array.from({ length: 20 }, (_value, index) => `Section ${index + 1}`);
+const rebuildingCostSections = ['Cover details', 'Property circumstances', 'Contact details'];
 
 for (const [name, journey, expectedError] of [
   ['continues through each section and gets the quote', {}, undefined],
@@ -25,12 +26,12 @@ for (const [name, journey, expectedError] of [
   [
     'reports the section and error summary that Continue leaves in place after a return',
     { bounceTo: 'Property type', resolves: false },
-    /NHI journey validation failed on Property type: Enter the cost of rebuilding the property/
+    /NHI journey validation failed on Property type: Enter the number of bedrooms/
   ],
   [
     'stops when Get your quote returns to a section a second time',
     { bounceTo: 'Property type', bounceTimes: 2 },
-    /NHI journey returned to Property type after Get your quote 2 times: Enter the cost of rebuilding the property/
+    /NHI journey returned to Property type after Get your quote 2 times: Enter the number of bedrooms/
   ],
   [
     'stops when Get your quote is not reached within the section limit',
@@ -67,7 +68,22 @@ for (const [name, journey, expectedError] of [
     { emailError: true, emailFixable: false },
     /NHI journey returned to Contact details after Get your quote 2 times: The Email address field contains invalid/
   ],
-  ['fixes both the cover start date and the email address', { coverStartError: 'quote', emailError: true }, undefined]
+  ['fixes both the cover start date and the email address', { coverStartError: 'quote', emailError: true }, undefined],
+  [
+    'enters the replacement rebuilding cost when Continue on Property circumstances reports it',
+    { sections: rebuildingCostSections, rebuildingCostError: true },
+    undefined
+  ],
+  [
+    'selects Choose another amount before entering the replacement rebuilding cost',
+    { sections: rebuildingCostSections, rebuildingCostError: true, rebuildingCostOther: false },
+    undefined
+  ],
+  [
+    'reports a rebuilding cost error that Continue still shows after the cost is replaced',
+    { sections: rebuildingCostSections, rebuildingCostError: true, rebuildingCostFixable: false },
+    /NHI journey validation failed on Property circumstances: Enter the cost of rebuilding the property/
+  ]
 ]) {
   test(`unsaved quote journey ${name}`, async () => {
     // arrange
