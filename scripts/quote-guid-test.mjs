@@ -13,6 +13,8 @@ const script = resolve('dist/main.js');
 const policyA = 'ABCDEF1234567890ABCDEF1234567890';
 const policyB = '11111111111111111111111111111111';
 const policyC = '22222222222222222222222222222222';
+const red = '\u001b[31m';
+const yellow = '\u001b[33m';
 const tcasJourneyHtml = `<h1>Cover details</h1>
   <div class="av-timeline-all-sections"><ul><li title="Contact details">Contact details</li></ul></div>
   <button onclick="document.body.innerHTML = '${quotePageHtml}'">Get your quote</button>`;
@@ -352,6 +354,7 @@ describe('quote-page NHI Oops fallback', () => {
         ),
         result.output
       );
+      assert.ok(result.output.includes(`${red}Quote capture failed; comparison skipped.`), result.output);
       assert.ok(!(await readdir(directory)).includes('comparisons'));
     });
   });
@@ -372,6 +375,8 @@ describe('quote-page NHI Oops fallback', () => {
         ),
         result.output
       );
+      assert.ok(result.output.includes(`${yellow}Quote capture failed; comparison skipped.`), result.output);
+      assert.ok(result.output.includes(`${yellow}Failure screenshot and HTML saved to`), result.output);
     });
   });
 

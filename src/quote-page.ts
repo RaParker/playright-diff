@@ -13,7 +13,7 @@ import {
 import { selectAnnualPayment } from './payment.js';
 import { removeQuoteOutput } from './quote-output.js';
 import { quoteSummary } from './quote-summary.js';
-import { DeclinedError, OopsError, screenshot, type ScreenshotOptions } from './screenshot.js';
+import { DeclinedError, OopsError, screenshot, ValidationError, type ScreenshotOptions } from './screenshot.js';
 import { tcasQuote } from './tcas-quote.js';
 import { unsavedQuote } from './unsaved-quote.js';
 
@@ -60,7 +60,8 @@ export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
  * @param historyId TCAS history ID.
  * @param options Input folder, URL templates and the optional NHI Oops fallback.
  * @returns `'compared'`, or `'declined'` when both sides declined to quote (the comparison is skipped).
- * @throws When the inputs are invalid, a capture fails, or only one side declined to quote.
+ * @throws When the inputs are invalid, a capture fails, or only one side declined to quote. A
+ * {@link ValidationError} when every failed capture stopped on journey validation.
  */
 export async function quotePage(
   policyArgument: string,
@@ -117,15 +118,17 @@ export async function quotePage(
   }
 
   const captures = [nhi, tcas];
-  const failures = captures.flatMap((result, index) =>
-    result.status === 'rejected'
-      ? [
-          `${index === 0 ? 'NHI' : 'TCAS'}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`
-        ]
-      : []
+  const rejected = captures.flatMap((result, index) =>
+    result.status === 'rejected' ? [{ label: index === 0 ? 'NHI' : 'TCAS', reason: result.reason as unknown }] : []
   );
-  if (failures.length > 0) {
-    throw new Error(`Quote capture failed; comparison skipped.\n${failures.join('\n')}`);
+  if (rejected.length > 0) {
+    const message = `Quote capture failed; comparison skipped.\n${rejected
+      .map(({ label, reason }) => `${label}: ${reason instanceof Error ? reason.message : String(reason)}`)
+      .join('\n')}`;
+    // Shown in yellow only when every failed side stopped on validation; any other failure keeps it red.
+    throw rejected.every(({ reason }) => reason instanceof ValidationError)
+      ? new ValidationError(message)
+      : new Error(message);
   }
 
   const nhiOutcome = nhi.status === 'fulfilled' ? nhi.value.outcome : undefined;
@@ -163,6 +166,7 @@ export async function quotePages(
   failedPath?: string
 ): Promise<void> {
   const failures: FailedQuotePage[] = [];
+  const validationFailures = new Set<string>();
   let declined = 0;
   for (const [index, policyDetailsId] of policyDetailsIds.entries()) {
     console.log(color.Cyan(`[${index + 1}/${policyDetailsIds.length}] ${policyDetailsId}-${historyId}`));
@@ -172,7 +176,11 @@ export async function quotePages(
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(color.Red(message));
+      if (error instanceof ValidationError) {
+        validationFailures.add(policyDetailsId);
+      }
+
+      console.error(failureColor(error instanceof ValidationError)(message));
       failures.push({ policyDetailsId, issues: message.split('\n') });
     }
   }
@@ -181,7 +189,7 @@ export async function quotePages(
     await writeFailedQuotePages(failedPath, { historyId, failed: failures });
   }
 
-  printSummary(policyDetailsIds.length, historyId, declined, failures);
+  printSummary(policyDetailsIds.length, historyId, declined, failures, validationFailures);
   if (failures.length > 0 && failedPath !== undefined) {
     console.log(
       color.Gray(`Failed policies saved to ${failedPath}; retry them with npm run quote-pages -- retry-failed`)
@@ -269,7 +277,7 @@ async function captureNhi(
 /**
  * Logs the URL a flow opens, captures it, and adds the URL to any failure.
  * @returns `'declined'` when the site declined to quote (its `-declined.png` is saved), otherwise `'captured'`.
- * @throws The capture's error with the URL appended; an {@link OopsError} stays an `OopsError`.
+ * @throws The capture's error with the URL appended; an {@link OopsError} or {@link ValidationError} keeps its class.
  */
 async function captureAt(label: string, url: string, options: ScreenshotOptions): Promise<CaptureOutcome> {
   console.log(`${label}: opening ${url}`);
@@ -286,23 +294,42 @@ async function captureAt(label: string, url: string, options: ScreenshotOptions)
       throw new OopsError(url);
     }
 
+    if (error instanceof ValidationError) {
+      throw new ValidationError(`${error.message} (${url})`);
+    }
+
     throw new Error(`${error instanceof Error ? error.message : String(error)} (${url})`, { cause: error });
   }
 }
 
-/** Prints the quote-pages summary: a title, the counts, then each failed policy with its issues indented below it. */
-function printSummary(total: number, historyId: number, declined: number, failures: FailedQuotePage[]): void {
+/**
+ * Prints the quote-pages summary: a title, the counts, then each failed policy with its issues indented below it.
+ * Validation failures are yellow and other failures red; the failed count is yellow only when every failure is one.
+ */
+function printSummary(
+  total: number,
+  historyId: number,
+  declined: number,
+  failures: FailedQuotePage[],
+  validationFailures: Set<string>
+): void {
   const failed = `${failures.length} failed`;
+  const allValidation = failures.every(({ policyDetailsId }) => validationFailures.has(policyDetailsId));
   console.log(`\n${color.Cyan('Quote pages summary')}`);
   console.log(
-    `${color.Green(`${total - failures.length} passed`)} (${declined} both declined), ${failures.length > 0 ? color.Red(failed) : failed}.`
+    `${color.Green(`${total - failures.length} passed`)} (${declined} both declined), ${failures.length > 0 ? failureColor(allValidation)(failed) : failed}.`
   );
   for (const { policyDetailsId, issues } of failures) {
     console.log(`${policyDetailsId}-${historyId}`);
     for (const issue of issues) {
-      console.log(`  ${color.Red(issue)}`);
+      console.log(`  ${failureColor(validationFailures.has(policyDetailsId))(issue)}`);
     }
   }
+}
+
+/** Yellow for a journey validation failure (the site rejected the answers), otherwise red. */
+function failureColor(validation: boolean): (text: string) => string {
+  return validation ? color.Yellow : color.Red;
 }
 
 /** Follows a journey to the quote page, then selects annual payments so both flows capture the same price. */

@@ -26,6 +26,18 @@ export class OopsError extends Error {
   }
 }
 
+/**
+ * Raised when a journey stops because the site rejected its answers (the error summary stayed after the journey's
+ * fixes), so the failure can be shown in yellow rather than red.
+ */
+export class ValidationError extends Error {
+  /** @param message Failure message, naming the section and the error summary text. */
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
 /** Raised when the page shows the "We're sorry… unable to offer you a quote" decline, which is a result, not a fault. */
 export class DeclinedError extends Error {
   /** @param url Page that declined the quote, appended to the message when given. */
@@ -95,7 +107,7 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
         // The rendered DOM (React builds the page in the browser), saved for turning into test fixtures.
         await writeFile(`${failedOutput}.html`, await page.evaluate(() => document.documentElement.outerHTML));
         const saved = `${declined ? 'Declined' : 'Failure'} screenshot and HTML saved to ${failedOutput}.png/.html`;
-        console.error(declined ? saved : color.Red(saved));
+        console.error(declined ? saved : error instanceof ValidationError ? color.Yellow(saved) : color.Red(saved));
       } catch (captureError) {
         console.error(color.Red(`Could not capture failure screenshot: ${String(captureError)}`));
       }

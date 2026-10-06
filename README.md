@@ -36,7 +36,10 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 | `npm run quote-pages` | Run `quote-page` for every policy in a GUID list            |
 
 Add `-- --help` to any command for its options (for example `npm run compare -- --help`). Failures are shown in
-red and progress steps in grey; `quote-pages` shows each policy's `[n/total]` line in cyan, and
+red, except unsaved NHI journey validation failures (`NHI journey validation failed on …` and
+`NHI journey returned to … after Get your quote N times`), which are yellow because the site
+rejected the copied answers. A capture failure is yellow only when every failed side stopped on
+validation. Progress steps are grey; `quote-pages` shows each policy's `[n/total]` line in cyan, and
 a comparison summary is green when the images are identical and yellow when they differ.
 
 ### screenshot
@@ -145,7 +148,8 @@ npm run quote-pages -- retry-failed                         # only the last run'
 
 Policies run one at a time. A failed policy is reported and the run continues. At the end,
 after a blank line, a summary lists the counts and then each failed policy with its issues
-indented below it (only the issues and the failed count are red):
+indented below it (only the issues and the failed count are coloured: yellow for validation
+failures, otherwise red; the count is yellow only when every failure is a validation failure):
 
 ```text
 Quote pages summary

@@ -2,7 +2,7 @@ import type { Page, Request } from 'playwright';
 import { color } from './color.js';
 import { fixJourneyError } from './journey-fixes.js';
 import { quoteHeadingPattern } from './quote-summary.js';
-import { extendWhileLoading } from './screenshot.js';
+import { extendWhileLoading, ValidationError } from './screenshot.js';
 import { readErrorSummary } from './tcas-quote.js';
 
 const errorSelector = 'div.av-card-error-summary';
@@ -26,9 +26,9 @@ const lookupInProgressPattern = /^Checking property details$/i;
  * Test data the journey rejects (reported by Continue or by a return), such as a cover start date out of range or an
  * invalid email address, is fixed once (see {@link fixJourneyError}) and the journey is walked again from there.
  * @param page Page opened on the journey.
- * @throws When Continue leaves any other error summary (or an error already fixed once) on a section, Get your quote returns to a section more than
- * {@link maxReturns} time(s), or Get your quote is not reached within the section limit. Errors name the section
- * and include the summary text.
+ * @throws A {@link ValidationError} when Continue leaves any other error summary (or an error already fixed once) on a
+ * section, or Get your quote returns to a section more than {@link maxReturns} time(s); these name the section and
+ * include the summary text. An `Error` when Get your quote is not reached within the section limit.
  */
 export async function unsavedQuote(page: Page): Promise<void> {
   const apiRequests = trackApiRequests(page);
@@ -54,7 +54,7 @@ export async function unsavedQuote(page: Page): Promise<void> {
       }
 
       if (++returns > maxReturns) {
-        throw new Error(
+        throw new ValidationError(
           `NHI journey returned to ${returnedTo} after Get your quote ${returns} times${errors === undefined ? '' : `: ${errors}`}`
         );
       }
@@ -66,7 +66,7 @@ export async function unsavedQuote(page: Page): Promise<void> {
     console.log(color.Gray(`NHI journey: ${section}: clicking Continue.`));
     const errors = await continueFrom(page, section);
     if (errors !== undefined && (await fixJourneyError(page, 'NHI', errors, fixed)) === undefined) {
-      throw new Error(`NHI journey validation failed on ${section}: ${errors}`);
+      throw new ValidationError(`NHI journey validation failed on ${section}: ${errors}`);
     }
   }
 

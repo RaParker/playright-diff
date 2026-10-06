@@ -4,7 +4,7 @@ import { compare } from './compare.js';
 import { quotePage, quotePages, type QuotePageOptions } from './quote-page.js';
 import { failedQuotePagesPath, readFailedQuotePages } from './failed-quote-pages.js';
 import { isQuoteGuid, readQuoteGuidList, selectQuoteGuids } from './quote-guid-list.js';
-import { screenshot } from './screenshot.js';
+import { screenshot, ValidationError } from './screenshot.js';
 import { loadEnvironment } from './environment.js';
 
 const help = `Usage: npm start -- <screenshot|compare|quote-page|quote-pages> [arguments] [options]
@@ -238,6 +238,7 @@ function required(environment: Record<string, string | undefined>, name: string)
 }
 
 main().catch((error: unknown) => {
-  console.error(color.Red(error instanceof Error ? error.message : String(error)));
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(error instanceof ValidationError ? color.Yellow(message) : color.Red(message));
   process.exitCode = 1;
 });

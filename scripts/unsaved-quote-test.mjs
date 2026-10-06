@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { screenshot } from '../dist/screenshot.js';
+import { screenshot, ValidationError } from '../dist/screenshot.js';
 import { unsavedQuote } from '../dist/unsaved-quote.js';
 import { assertGreyLogsInOrder } from './log-assertions.mjs';
 import { unsavedJourneyHtml } from './unsaved-journey-html.mjs';
@@ -111,7 +111,16 @@ for (const [name, journey, expectedError, expectedLogs = []] of [
         await capture;
         assert.deepEqual(await readdir(directory), ['quote.png']);
       } else {
-        await assert.rejects(capture, expectedError);
+        await assert.rejects(capture, (error) => {
+          assert.match(error.message, expectedError);
+          // Only the site rejecting the answers is a validation failure; the section limit is not.
+          assert.equal(
+            error instanceof ValidationError,
+            /^NHI journey (validation failed on|returned to) /.test(error.message),
+            error.message
+          );
+          return true;
+        });
         assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
       }
       assertGreyLogsInOrder(log, expectedLogs);
