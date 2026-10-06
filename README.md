@@ -139,7 +139,14 @@ NHI Oops fallback.
 
 Runs `quote-page` (with `historyId` 1) for each entry in `QUOTE_GUID_LIST_PATH` — the same
 list of TCAS-format policy IDs that drives `mrp-and-quote`'s `fetch`/`compare`/`diff`
-commands, one per line. The matching `-1-mrp.json` files must already be fetched.
+commands, one per line.
+
+Before any policy runs (including `retry-failed`), policies with no `-1-mrp.json` in
+`MRP_AND_QUOTE_OUTPUT_DIR` are fetched by running `go run . fetch <count>` once in its parent
+folder (the mrp-and-quote project). `fetch` deletes its output folder first and takes only a
+count, so the count also covers every list entry that already has an MRP file, which is fetched
+again rather than lost. Policies not in the list are reported in yellow and not fetched, as is
+an output folder whose parent has no `go.mod`; a failed fetch stops the run.
 
 ```sh
 npm run quote-pages                                         # first 250 entries
@@ -194,7 +201,7 @@ The committed `.env` targets the feature-dev environment.
 | `QUOTE_JOURNEY_AGENT_ID`                      | both          | Fallback request `agentId`                                               |
 | `QUOTE_JOURNEY_BRANCH_CODE`                   | both          | Fallback request `branchCode`                                            |
 | `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both          | Fallback request `callMediaUser`                                         |
-| `QUOTE_GUID_LIST_PATH`                        | `quote-pages` | GUID list file, one policy ID per line                                   |
+| `QUOTE_GUID_LIST_PATH`                        | `quote-pages` | GUID list file, one policy ID per line (also used by `retry-failed`)     |
 
 All variables listed for a command are required.
 
