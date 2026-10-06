@@ -245,10 +245,9 @@ After each click, the action checks for `div.av-card-error-summary`. If present,
 the text of each `.av-card-error-summary > ul > li > a` link (or the full summary text if
 there are no links) and stops the journey and comparison.
 
-**Cover start date auto-fix:** if Contact details reports "The cover start field needs to
-be between YYYY-MM-DD ...", the action opens `svg.av-icon-calendar`, picks the calendar
-`div` whose aria-label ends with that date (for example `October 2nd, 2026`), and retries
-Contact details once. Any remaining errors stop the journey as usual.
+The **Contact details** click fixes an out-of-range cover start date once, as described in
+[Cover start date auto-fix](#cover-start-date-auto-fix), then retries Contact details. Any
+remaining errors stop the journey as usual.
 
 ### Quote summary and assumptions
 
@@ -269,6 +268,25 @@ page:
   `TCAS quote summary errors: …`) and
   the comparison is skipped.
 - The flow stops after 5 clicks without reaching the quote.
+- If a click returns to the journey with a cover start error, the action fixes the date once
+  (see below), clicks **Return to quote** (`button.hp-submit-form`, logged as
+  `NHI: cover details: clicking Return to quote.`) and carries on. A cover start error shown
+  again, or left on screen until the timeout, is reported as `NHI cover details errors: …`.
+
+### Cover start date auto-fix
+
+When an error summary says "The Cover start field needs to be between YYYY-MM-DD and …"
+(for example after **Yes, take me to my quote**, once the quote date has passed), the action
+(`src/cover-start.ts`, logged as `NHI: selecting cover start YYYY-MM-DD on Cover details.`):
+
+1. Opens **Cover details** from the timeline
+   (`div.av-timeline-all-sections > ul > li[title="Cover details"]`), unless the
+   `<h1>Cover details</h1>` heading is already shown.
+2. Opens `svg.av-icon-calendar` and picks the calendar `div` whose aria-label ends with the
+   earliest allowed date (for example `October 6th, 2026`), skipping days outside the month.
+
+This applies to the quote summary flows (NHI and replacement TCAS) and to the TCAS journey's
+Contact details step. The unsaved NHI journey (`nhi=false`) does not fix the date.
 
 ### Annual payments
 

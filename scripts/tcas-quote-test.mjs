@@ -37,7 +37,9 @@ const cases = [
     ['2026-02-30', 'Monday, March 2nd, 2026', false, /Invalid cover start date/]
   ].map(([date, label, keepError, expectedError]) => [
     `cover start recovery: ${date}, persistent error ${keepError}`,
-    `${cover}${contact}<svg class="av-icon-calendar" width="24" height="24"><rect width="24" height="24" /></svg>
+    `${cover}<div class="av-timeline-all-sections"><ul><li title="Cover details">Cover details</li>
+    <li title="Contact details">Contact details</li></ul></div>
+    <span id="calendar"><svg class="av-icon-calendar" width="24" height="24"><rect width="24" height="24" /></svg></span>
     <div hidden aria-label="${label}">Select date</div>
     <div class="react-datepicker__day react-datepicker__day--outside-month" aria-label="${label}">Outside month</div>
     <div aria-label="October 02, 2026">Wrong date format</div>
@@ -45,16 +47,23 @@ const cases = [
     <script>
       let selected = false;
       let attempts = 0;
-      document.querySelector('li').onclick = () => {
+      // The error leaves Cover details, so the calendar is only reachable from the Cover details section.
+      const showSection = (section) => {
+        document.querySelector('h1').textContent = section;
+        document.getElementById('calendar').hidden = section !== 'Cover details';
+      };
+      document.querySelector('li[title="Contact details"]').onclick = () => {
         attempts++;
         if (attempts > 2) throw new Error('Too many retries');
         if (selected && !${keepError}) {
           document.querySelector('.av-card-error-summary')?.remove();
           document.querySelector('button').hidden = false;
         } else if (!document.querySelector('.av-card-error-summary')) {
+          showSection('Contact details');
           document.body.insertAdjacentHTML('beforeend', '<div class="av-card-error-summary"><ul><li><a>The cover start field needs to be between ${date} and 2027-01-01</a></li></ul></div>');
         }
       };
+      document.querySelector('li[title="Cover details"]').onclick = () => showSection('Cover details');
       document.querySelector('svg').onclick = () => { document.querySelector('[aria-label]').hidden = false; };
       document.querySelector('[aria-label]').onclick = () => { selected = true; };
       document.querySelector('button').onclick = () => { document.body.innerHTML = "<h2>Welcome Alex, here's your quote</h2>"; };

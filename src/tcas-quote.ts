@@ -1,5 +1,6 @@
 import type { Page } from 'playwright';
 import { color } from './color.js';
+import { fixCoverStart } from './cover-start.js';
 import { extendWhileLoading } from './screenshot.js';
 import steps from './tcas-quote.steps.json' with { type: 'json' };
 
@@ -65,16 +66,13 @@ async function runStep(page: Page, step: Step): Promise<void> {
       try {
         await checkQuoteErrors(page, 'div.av-card-error-summary');
       } catch (error) {
-        const date =
-          error instanceof Error
-            ? /The cover start field needs to be between (\d{4}-\d{2}-\d{2})\b/i.exec(error.message)?.[1]
-            : undefined;
-        if (step.recoverCoverStart !== true || date === undefined) {
+        if (
+          step.recoverCoverStart !== true ||
+          !(await fixCoverStart(page, 'TCAS', error instanceof Error ? error.message : undefined))
+        ) {
           throw error;
         }
 
-        console.log(color.Gray(`Selecting cover start ${date} and retrying Contact details.`));
-        await selectCoverStart(page, date);
         await target.click();
         await checkQuoteErrors(page, 'div.av-card-error-summary');
       }
@@ -119,18 +117,4 @@ async function checkQuoteErrors(page: Page, errorSelector: string): Promise<void
   if (errors !== undefined) {
     throw new Error(`TCAS quote errors: ${errors}`);
   }
-}
-
-async function selectCoverStart(page: Page, dateText: string): Promise<void> {
-  const date = new Date(`${dateText}T00:00:00Z`);
-  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== dateText) {
-    throw new Error(`Invalid cover start date in error summary: ${dateText}`);
-  }
-
-  const day = date.getUTCDate();
-  const suffix = day % 100 >= 11 && day % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] ?? 'th');
-  const month = date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
-  const label = `${month} ${day}${suffix}, ${date.getUTCFullYear()}`;
-  await page.locator('svg.av-icon-calendar').click();
-  await page.locator(`div[aria-label$="${label}"]:not(.react-datepicker__day--outside-month)`).click();
 }
