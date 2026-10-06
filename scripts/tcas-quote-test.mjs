@@ -70,6 +70,30 @@ const cases = [
     </script>`,
     expectedError
   ]),
+  ...[true, false].map((fixable) => [
+    `email address recovery: replacement accepted ${fixable}`,
+    `${cover}${contact}<input name="email" type="text" hidden value="first name.last@example.com">
+    <button hidden>Get your quote</button>
+    <script>
+      const email = document.querySelector('input');
+      document.querySelector('li').onclick = () => {
+        document.querySelector('h1').textContent = 'Contact details';
+        email.hidden = false;
+        document.querySelector('button').hidden = false;
+      };
+      document.querySelector('button').onclick = () => {
+        document.querySelector('.av-card-error-summary')?.remove();
+        if (${fixable} && email.value === 'nobody.special@nhitest.com') {
+          document.body.innerHTML = "<h2>Welcome Alex, here's your quote</h2>";
+        } else {
+          document.body.insertAdjacentHTML('beforeend', '<div class="av-card-error-summary"><ul><li><a>The Email address field contains invalid characters</a></li></ul></div>');
+        }
+      };
+    </script>`,
+    fixable
+      ? undefined
+      : /step 3 \(click\) failed: TCAS quote errors: The Email address field contains invalid characters/
+  ]),
   ['straight apostrophe', journey("<h2>Welcome Alex, here's your quote</h2>"), undefined],
   ['curly apostrophe', journey('<h2>Welcome Sam Smith, here&rsquo;s your quote</h2>'), undefined],
   ['missing cover heading', contact + '<button>Get your quote</button>', /step 1/],

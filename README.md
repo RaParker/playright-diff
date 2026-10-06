@@ -246,9 +246,10 @@ After each click, the action checks for `div.av-card-error-summary`. If present,
 the text of each `.av-card-error-summary > ul > li > a` link (or the full summary text if
 there are no links) and stops the journey and comparison.
 
-The **Contact details** click fixes an out-of-range cover start date once, as described in
-[Cover start date auto-fix](#cover-start-date-auto-fix), then retries Contact details. Any
-remaining errors stop the journey as usual.
+The **Contact details** and **Get your quote** clicks (steps with `"recoverJourneyErrors":
+true`) fix rejected test data once per error, as described in
+[Journey error auto-fixes](#journey-error-auto-fixes), then retry the click. Any remaining
+errors stop the journey as usual.
 
 ### Quote summary and assumptions
 
@@ -269,29 +270,32 @@ page:
   `TCAS quote summary errors: …`) and
   the comparison is skipped.
 - The flow stops after 5 clicks without reaching the quote.
-- If a click returns to the journey with a cover start error, the action fixes the date once
-  (see below) and clicks **Return to quote** (`button.hp-submit-form`, logged as
-  `NHI: cover details: clicking Return to quote.`), which goes straight to the quote page. A
-  cover start error shown again, or left on screen until the timeout, is reported as
+- If a click returns to the journey with an error the action can fix (see below), it fixes it
+  once and clicks **Return to quote** (`button.hp-submit-form`, logged as for example
+  `NHI: cover details: clicking Return to quote.`), which goes straight to the quote page. An
+  error shown again, or left on screen until the timeout, is reported as for example
   `NHI cover details errors: …`.
 
-### Cover start date auto-fix
+### Journey error auto-fixes
 
-When an error summary says "The Cover start field needs to be between YYYY-MM-DD and …"
-(for example after **Yes, take me to my quote**, once the quote date has passed), the action
-(`src/cover-start.ts`, logged as `NHI: selecting cover start YYYY-MM-DD on Cover details.`):
+Some errors come from the test data rather than the quote, so the action fixes them
+(`src/journey-fixes.ts`) and carries on:
 
-1. Opens **Cover details** from the timeline
-   (`div.av-timeline-all-sections > ul > li[title="Cover details"]`), unless the
-   `<h1>Cover details</h1>` heading is already shown.
-2. Opens `svg.av-icon-calendar` and picks the calendar `div` whose aria-label ends with the
-   earliest allowed date (for example `October 6th, 2026`), skipping days outside the month.
+| Error summary text                                           | Fix (on section)                                                                                                                                                                                      |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "The Cover start field needs to be between YYYY-MM-DD and …" | Opens `svg.av-icon-calendar` and picks the calendar `div` whose aria-label ends with the earliest allowed date (for example `October 6th, 2026`), skipping days outside the month (**Cover details**) |
+| "The Email address field contains invalid characters"        | Enters `nobody.special@nhitest.com` in `input[name="email"]` (**Contact details**)                                                                                                                    |
 
-This applies to the quote summary flows (NHI and replacement TCAS), the TCAS journey's
-Contact details step, and the unsaved NHI journey (`nhi=false`). In the unsaved journey, a
-cover start error from **Continue** or from **Get your quote** returning to a section is
-fixed once, then the journey is walked again from Cover details; a return fixed this way does
-not count towards the one-return limit.
+- Each fix first opens its section from the timeline
+  (`div.av-timeline-all-sections > ul > li[title="…"]`), unless that `<h1>` heading is
+  already shown. It is logged in grey, for example
+  `NHI: entering email address nobody.special@nhitest.com on Contact details.`
+- Each error is fixed at most once per flow; if it comes back, it is reported as usual.
+- This applies to the quote summary flows (NHI and replacement TCAS), the TCAS journey's
+  Contact details and Get your quote steps, and the unsaved NHI journey (`nhi=false`).
+- In the unsaved journey, an error from **Continue** or from **Get your quote** returning to
+  a section is fixed, then the journey is walked again from the fixed section; a return fixed
+  this way does not count towards the one-return limit.
 
 ### Annual payments
 

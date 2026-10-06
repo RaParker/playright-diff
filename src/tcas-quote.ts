@@ -1,6 +1,6 @@
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 import { color } from './color.js';
-import { fixCoverStart } from './cover-start.js';
+import { fixJourneyError } from './journey-fixes.js';
 import { extendWhileLoading } from './screenshot.js';
 import steps from './tcas-quote.steps.json' with { type: 'json' };
 
@@ -46,7 +46,7 @@ interface Step {
   text?: string;
   textPattern?: string;
   errorSelector?: string;
-  recoverCoverStart?: boolean;
+  recoverJourneyErrors?: boolean;
 }
 
 async function runStep(page: Page, step: Step): Promise<void> {
@@ -62,21 +62,7 @@ async function runStep(page: Page, step: Step): Promise<void> {
       await target.waitFor({ state: 'visible' });
       return;
     case 'click':
-      await target.click();
-      try {
-        await checkQuoteErrors(page, 'div.av-card-error-summary');
-      } catch (error) {
-        if (
-          step.recoverCoverStart !== true ||
-          !(await fixCoverStart(page, 'TCAS', error instanceof Error ? error.message : undefined))
-        ) {
-          throw error;
-        }
-
-        await target.click();
-        await checkQuoteErrors(page, 'div.av-card-error-summary');
-      }
-
+      await clickAndRecover(page, target, step.recoverJourneyErrors === true);
       return;
     case 'waitForQuote':
       if (step.textPattern === undefined || step.errorSelector === undefined) {
@@ -87,6 +73,30 @@ async function runStep(page: Page, step: Step): Promise<void> {
       return;
     default:
       throw new Error(`Unknown action: ${step.action}`);
+  }
+}
+
+/**
+ * Clicks `target` and checks for errors. With `recover`, test data the journey rejects is fixed (each error once, see
+ * {@link fixJourneyError}) and `target` is clicked again, until no errors remain or none can be fixed.
+ */
+async function clickAndRecover(page: Page, target: Locator, recover: boolean): Promise<void> {
+  const fixed = new Set<string>();
+  await target.click();
+  for (;;) {
+    try {
+      await checkQuoteErrors(page, 'div.av-card-error-summary');
+      return;
+    } catch (error) {
+      if (
+        !recover ||
+        (await fixJourneyError(page, 'TCAS', error instanceof Error ? error.message : undefined, fixed)) === undefined
+      ) {
+        throw error;
+      }
+
+      await target.click();
+    }
   }
 }
 

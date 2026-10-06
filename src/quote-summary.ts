@@ -1,6 +1,6 @@
 import type { Page } from 'playwright';
 import { color } from './color.js';
-import { fixCoverStart } from './cover-start.js';
+import { fixJourneyError } from './journey-fixes.js';
 import { extendWhileLoading } from './screenshot.js';
 import { readErrorSummary } from './tcas-quote.js';
 
@@ -24,11 +24,11 @@ const quoteSteps: QuoteStep[] = [
   { name: 'assumptions', selector: 'button#hp-assumptions-quote-button', button: 'Yes, take me to my quote' }
 ];
 /**
- * Clicked on the Cover details section the journey returns to when the cover start date is out of range, once the date
- * has been fixed (see {@link fixCoverStart}).
+ * Clicked on the section the journey returns to when it rejects test data (such as a cover start date out of range),
+ * once the data has been fixed (see {@link fixJourneyError}). Its name is replaced by the fixed section's.
  */
 const returnToQuote: QuoteStep = {
-  name: 'cover details',
+  name: 'journey',
   selector: 'button.hp-submit-form',
   button: 'Return to quote'
 };
@@ -38,17 +38,18 @@ const maxClicks = 5;
 /**
  * Builds a capture step that moves a quote summary on to its quote page. The quote summary already shows a price and
  * the assumptions page asks the customer to confirm them, but the quote page only appears after clicking through them
- * (see {@link quoteSteps}). A page already showing the quote is left as it is. If a click returns to the journey with a
- * cover start date out of range, the date is fixed once and Return to quote is clicked (see {@link returnToQuote}).
+ * (see {@link quoteSteps}). A page already showing the quote is left as it is. If a click returns to the journey with
+ * test data it rejects (see {@link fixJourneyError}), each error is fixed once and Return to quote is clicked (see
+ * {@link returnToQuote}).
  * @param label Flow name (e.g. `NHI` or `TCAS`) that prefixes logs and errors.
  * @returns A `beforeCapture` step for a page opened on a quote summary.
- * The step throws when a click leads to any other error summary (or a cover start error after it was fixed), the quote is not reached within {@link maxClicks} clicks,
+ * The step throws when a click leads to any other error summary (or an error already fixed once), the quote is not reached within {@link maxClicks} clicks,
  * or the quote page does not appear before the timeout.
  */
 export function quoteSummary(label: string): (page: Page) => Promise<void> {
   return async (page) => {
     let clicked: QuoteStep | undefined;
-    let coverStartFixed = false;
+    const fixed = new Set<string>();
     for (let clicks = 0; ; clicks++) {
       const outcome = await waitForClickResult(page, label, clicked);
       if (outcome === 'quote') {
@@ -58,12 +59,12 @@ export function quoteSummary(label: string): (page: Page) => Promise<void> {
       let step = quoteSteps.find(({ name }) => name === outcome);
       if (step === undefined) {
         const errors = await readErrorSummary(page, errorSelector);
-        if (coverStartFixed || !(await fixCoverStart(page, label, errors))) {
+        const section = await fixJourneyError(page, label, errors, fixed);
+        if (section === undefined) {
           throw new Error(`${label} ${clicked?.name ?? 'quote'} errors: ${errors}`);
         }
 
-        coverStartFixed = true;
-        step = returnToQuote;
+        step = { ...returnToQuote, name: section.toLowerCase() };
       }
 
       if (clicks === maxClicks) {

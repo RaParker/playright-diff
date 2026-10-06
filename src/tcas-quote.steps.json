@@ -7,12 +7,13 @@
   {
     "action": "click",
     "selector": "div.av-timeline-all-sections > ul > li[title=\"Contact details\"]",
-    "recoverCoverStart": true
+    "recoverJourneyErrors": true
   },
   {
     "action": "click",
     "selector": "button",
-    "text": "Get your quote"
+    "text": "Get your quote",
+    "recoverJourneyErrors": true
   },
   {
     "action": "waitForQuote",

@@ -56,7 +56,18 @@ for (const [name, journey, expectedError] of [
     'stops when Get your quote keeps reporting the cover start after the date is fixed',
     { coverStartError: 'quote', coverStartFixable: false },
     /NHI journey returned to Contact details after Get your quote 2 times: The Cover start field needs to be between/
-  ]
+  ],
+  [
+    'enters the replacement email address when Get your quote reports invalid characters',
+    { emailError: true },
+    undefined
+  ],
+  [
+    'stops when Get your quote keeps reporting the email address after it is replaced',
+    { emailError: true, emailFixable: false },
+    /NHI journey returned to Contact details after Get your quote 2 times: The Email address field contains invalid/
+  ],
+  ['fixes both the cover start date and the email address', { coverStartError: 'quote', emailError: true }, undefined]
 ]) {
   test(`unsaved quote journey ${name}`, async () => {
     // arrange

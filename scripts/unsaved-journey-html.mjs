@@ -76,6 +76,9 @@ export const quoteSummaryHtml = nhiPagesHtml(summaryPageHtml, {
  * Cover details only), and reports the cover start date as out of range until October 6th is picked: on Continue from
  * Cover details, or when Get your quote is clicked (staying on the last section).
  * @param {boolean} [options.coverStartFixable] Whether picking October 6th clears the cover start error (default true).
+ * @param {boolean} [options.emailError] Adds a section timeline and an email field (shown on Contact details only),
+ * and reports the email address as invalid when Get your quote is clicked until nobody.special@nhitest.com is entered.
+ * @param {boolean} [options.emailFixable] Whether entering that email clears the email error (default true).
  * @returns {string} Page HTML.
  */
 export function unsavedJourneyHtml({
@@ -87,15 +90,23 @@ export function unsavedJourneyHtml({
   resolves = true,
   declines = false,
   coverStartError,
-  coverStartFixable = true
+  coverStartFixable = true,
+  emailError = false,
+  emailFixable = true
 } = {}) {
+  const timelineHtml =
+    coverStartError === undefined && !emailError
+      ? ''
+      : `<div class="av-timeline-all-sections"><ul>${sections.map((section) => `<li title="${section}">${section}</li>`).join('')}</ul></div>`;
   const coverStartHtml =
     coverStartError === undefined
       ? ''
-      : `<div class="av-timeline-all-sections"><ul>${sections.map((section) => `<li title="${section}">${section}</li>`).join('')}</ul></div>
-    <span id="calendar"><svg class="av-icon av-icon-calendar" width="24" height="24"><rect width="24" height="24" /></svg></span>
+      : `<span id="calendar"><svg class="av-icon av-icon-calendar" width="24" height="24"><rect width="24" height="24" /></svg></span>
     <div id="day" hidden aria-label="Choose Tuesday, October 6th, 2026">6</div>`;
-  return `<h1></h1>${coverStartHtml}<p id="lookup" hidden>Checking property details</p>
+  const emailHtml = emailError
+    ? '<input id="email" inputmode="email" name="email" type="text" class="form-control" value="first name.last@example.com">'
+    : '';
+  return `<h1></h1>${timelineHtml}${coverStartHtml}${emailHtml}<p id="lookup" hidden>Checking property details</p>
     <button id="continue">Continue</button><button id="quote" hidden>Get your quote</button><script>
     const sections = ${JSON.stringify(sections)};
     const errorOn = ${JSON.stringify(errorOn ?? null)};
@@ -105,6 +116,9 @@ export function unsavedJourneyHtml({
     const coverStartError = ${JSON.stringify(coverStartError ?? null)};
     const coverStartFixable = ${JSON.stringify(coverStartFixable)};
     const coverStartSummary = 'The Cover start field needs to be between 2026-10-06 and 2026-11-20';
+    const emailError = ${JSON.stringify(emailError)};
+    const emailFixable = ${JSON.stringify(emailFixable)};
+    const emailValid = () => !emailError || (emailFixable && document.getElementById('email').value === 'nobody.special@nhitest.com');
     let coverStartValid = coverStartError === null;
     let bouncesLeft = ${JSON.stringify(bounceTimes)};
     let lookupDone = true;
@@ -116,15 +130,16 @@ export function unsavedJourneyHtml({
       document.getElementById('continue').hidden = last;
       document.getElementById('quote').hidden = !last;
       if (coverStartError !== null) document.getElementById('calendar').hidden = sections[index] !== 'Cover details';
+      if (emailError) document.getElementById('email').hidden = sections[index] !== 'Contact details';
     };
     show();
+    document.querySelectorAll('li[title]').forEach((item) => {
+      item.onclick = () => {
+        index = sections.indexOf(item.title);
+        show();
+      };
+    });
     if (coverStartError !== null) {
-      document.querySelectorAll('li[title]').forEach((item) => {
-        item.onclick = () => {
-          index = sections.indexOf(item.title);
-          show();
-        };
-      });
       document.querySelector('svg').onclick = () => { document.getElementById('day').hidden = false; };
       document.getElementById('day').onclick = () => { coverStartValid = coverStartFixable; };
     }
@@ -152,6 +167,12 @@ export function unsavedJourneyHtml({
       if (coverStartError === 'quote' && !coverStartValid) {
         document.querySelector('.av-card-error-summary')?.remove();
         document.body.insertAdjacentHTML('beforeend', summary(coverStartSummary));
+        return;
+      }
+
+      if (!emailValid()) {
+        document.querySelector('.av-card-error-summary')?.remove();
+        document.body.insertAdjacentHTML('beforeend', summary('The Email address field contains invalid characters'));
         return;
       }
 
