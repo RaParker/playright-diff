@@ -4,8 +4,8 @@ import { errorSummaryError, fixJourneyError } from './journey-fixes.js';
 import { extendWhileLoading } from './screenshot.js';
 import { readErrorSummary } from './tcas-quote.js';
 
-/** Heading shown on the quote page, for any customer name and apostrophe style. */
-export const quoteHeadingPattern = "^Welcome\\s+.*?,\\s*here['’‘ʼ]s\\s+your\\s+quote\\s*$";
+/** Heading shown on the quote page (a quote or a conditional quote), for any customer name and apostrophe style. */
+export const quoteHeadingPattern = "^Welcome\\s+.*?,\\s*here['’‘ʼ]s\\s+your\\s+(?:conditional\\s+)?quote\\s*$";
 const errorSelector = 'div.av-card-error-summary';
 const seenErrorAttribute = 'data-quote-summary-seen';
 

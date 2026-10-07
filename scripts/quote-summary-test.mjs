@@ -9,6 +9,7 @@ import { screenshot, ValidationError } from '../dist/screenshot.js';
 import { assertGreyLogsInOrder } from './log-assertions.mjs';
 import {
   assumptionsPageHtml,
+  conditionalQuotePageHtml,
   nhiPagesHtml,
   otherAmountScript,
   quotePageHtml,
@@ -114,6 +115,12 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
     undefined
   ],
   ['captures a page already showing the quote without clicking', quotePageHtml, undefined],
+  ['captures a page showing a conditional quote', conditionalQuotePageHtml, undefined],
+  [
+    'clicks Continue with quote when the summary leads to a conditional quote',
+    nhiPagesHtml(summaryPageHtml, { [summaryButton]: conditionalQuotePageHtml }),
+    undefined
+  ],
   [
     'ignores a Continue with quote button without the summary id',
     '<button type="button">Continue with quote</button>',
