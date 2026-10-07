@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
-import { access } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { color } from './color.js';
 
 /** History ID of every policy that mrp-and-quote's `fetch` saves (it reads one TCAS ID per line, at history 1). */
@@ -21,7 +22,7 @@ export type MrpFetchRunner = (projectDir: string, policyDetailsIds: string[]) =>
  * @param historyId History ID of the run; nothing is fetched unless it is {@link fetchedHistoryId}.
  * @param guidList mrp-and-quote's GUID list (uppercase), in file order.
  * @param mrpAndQuoteOutputDir mrp-and-quote's output folder; its parent is the project folder `fetch` runs in.
- * @param runner Runs the fetch (default: `go run . fetch <guid...> --keep-output`).
+ * @param runner Runs the fetch (default: `go run . fetch --guid-file <file> --keep-output`).
  * @throws When the fetch fails.
  */
 export async function prefetchMissingMrpFiles(
@@ -65,22 +66,30 @@ export async function prefetchMissingMrpFiles(
 }
 
 /**
- * Runs `go run . fetch <guid...> --keep-output` in the mrp-and-quote project, showing its output, and rejects on a
- * non-zero exit.
+ * Writes the policies to a temporary GUID file (one per line) and runs `go run . fetch --guid-file <file> --keep-output`
+ * in the mrp-and-quote project, showing its output. The file keeps long lists off the command line and is always
+ * removed afterwards. Rejects on a non-zero exit.
  */
 async function runMrpFetch(projectDir: string, policyDetailsIds: string[]): Promise<void> {
-  const child = spawn('go', ['run', '.', 'fetch', ...policyDetailsIds, '--keep-output'], {
-    cwd: projectDir,
-    stdio: 'inherit'
-  });
-  const code = await new Promise<number | null>((resolveExit, reject) => {
-    child.once('error', reject);
-    child.once('close', resolveExit);
-  });
-  if (code !== 0) {
-    throw new Error(
-      `mrp-and-quote fetch of ${policyDetailsIds.length} policies failed with exit code ${code} (${projectDir}).`
-    );
+  const guidFileDir = await mkdtemp(join(tmpdir(), 'mrp-fetch-guids-'));
+  try {
+    const guidFile = join(guidFileDir, 'missing-guids.txt');
+    await writeFile(guidFile, `${policyDetailsIds.join('\n')}\n`);
+    const child = spawn('go', ['run', '.', 'fetch', '--guid-file', guidFile, '--keep-output'], {
+      cwd: projectDir,
+      stdio: 'inherit'
+    });
+    const code = await new Promise<number | null>((resolveExit, reject) => {
+      child.once('error', reject);
+      child.once('close', resolveExit);
+    });
+    if (code !== 0) {
+      throw new Error(
+        `mrp-and-quote fetch of ${policyDetailsIds.length} policies failed with exit code ${code} (${projectDir}).`
+      );
+    }
+  } finally {
+    await rm(guidFileDir, { recursive: true, force: true });
   }
 }
 
