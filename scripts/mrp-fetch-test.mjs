@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
-import { fetchCountCovering, prefetchMissingMrpFiles } from '../dist/mrp-fetch.js';
+import { prefetchMissingMrpFiles } from '../dist/mrp-fetch.js';
 
 const policyA = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const policyB = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
@@ -34,29 +34,8 @@ async function createOutputDir(fetchedPolicies, goModule = true) {
 /** Records each fetch the runner is asked for instead of running Go. */
 function recordingRunner() {
   const calls = [];
-  return { calls, runner: async (projectDir, count) => calls.push({ projectDir, count }) };
+  return { calls, runner: async (projectDir, policyDetailsIds) => calls.push({ projectDir, policyDetailsIds }) };
 }
-
-describe('fetchCountCovering', () => {
-  for (const [name, policies, expected] of [
-    ['the last listed policy', [policyB, policyD], 4],
-    ['a middle listed policy', [policyA, policyB], 2],
-    ['the first listed policy', [policyA], 1],
-    ['unlisted policies only', [unlistedPolicy], 0],
-    ['no policies', [], 0]
-  ]) {
-    test(`covers ${name}`, () => {
-      // arrange
-      const list = guidList;
-
-      // act
-      const count = fetchCountCovering(list, policies);
-
-      // assert
-      assert.equal(count, expected);
-    });
-  }
-});
 
 describe('prefetchMissingMrpFiles', () => {
   test('fetches nothing when every policy has an MRP file', async () => {
@@ -71,30 +50,30 @@ describe('prefetchMissingMrpFiles', () => {
     assert.deepEqual(calls, []);
   });
 
-  test('fetches once, in the project folder, up to the last missing policy', async () => {
+  test('fetches once, in the project folder, only the missing policies', async () => {
     // arrange
-    const { projectDir, outputDir } = await createOutputDir([policyA]);
+    const { projectDir, outputDir } = await createOutputDir([policyA, policyC]);
     const { calls, runner } = recordingRunner();
 
     // act
-    await prefetchMissingMrpFiles([policyB, policyC], 1, guidList, outputDir, runner);
+    await prefetchMissingMrpFiles([policyA, policyB, policyC, policyD], 1, guidList, outputDir, runner);
 
     // assert
-    assert.deepEqual(calls, [{ projectDir, count: 3 }]);
+    assert.deepEqual(calls, [{ projectDir, policyDetailsIds: [policyB, policyD] }]);
   });
 
-  test('extends the fetch to keep existing MRP files later in the list', async () => {
+  test('fetches the listed missing policies but not unlisted ones', async () => {
     // arrange
-    const { outputDir } = await createOutputDir([policyD]);
+    const { outputDir } = await createOutputDir([]);
     const { calls, runner } = recordingRunner();
 
     // act
-    await prefetchMissingMrpFiles([policyB], 1, guidList, outputDir, runner);
+    await prefetchMissingMrpFiles([unlistedPolicy, policyC], 1, guidList, outputDir, runner);
 
     // assert
     assert.deepEqual(
-      calls.map(({ count }) => count),
-      [4]
+      calls.map(({ policyDetailsIds }) => policyDetailsIds),
+      [[policyC]]
     );
   });
 

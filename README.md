@@ -169,11 +169,11 @@ list of TCAS-format policy IDs that drives `mrp-and-quote`'s `fetch`/`compare`/`
 commands, one per line.
 
 Before any policy runs (including `retry-failed`), policies with no `-1-mrp.json` in
-`MRP_AND_QUOTE_OUTPUT_DIR` are fetched by running `go run . fetch <count>` once in its parent
-folder (the mrp-and-quote project). `fetch` deletes its output folder first and takes only a
-count, so the count also covers every list entry that already has an MRP file, which is fetched
-again rather than lost. Policies not in the list are reported in yellow and not fetched, as is
-an output folder whose parent has no `go.mod`; a failed fetch stops the run.
+`MRP_AND_QUOTE_OUTPUT_DIR` are fetched by running `go run . fetch <guid...> --keep-output` once
+in its parent folder (the mrp-and-quote project), so only the missing policies are fetched and
+every existing file is kept (this needs an mrp-and-quote with `--keep-output` support). Policies
+not in the list are reported in yellow and not fetched, as is an output folder whose parent has
+no `go.mod`; a failed fetch stops the run.
 
 ```sh
 npm run quote-pages                                         # first 250 entries
