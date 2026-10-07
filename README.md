@@ -35,7 +35,34 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 | `npm run quote-page`  | Capture NHI and TCAS versions of one quote and compare them |
 | `npm run quote-pages` | Run `quote-page` for every policy in a GUID list            |
 
-Add `-- --help` to any command for its options (for example `npm run compare -- --help`). Failures are shown in
+Add `-- --help` to any command for its options (for example `npm run compare -- --help`).
+
+### PowerShell wrapper
+
+`Run-Project.ps1` runs every command and development task with tab completion and validated
+parameters (for example a 32-character policy ID, a threshold of 0–255, or a `-Before` image
+that exists). It runs from the project root wherever you call it from, so `.env` is always
+found, and it exits with the command's exit code. Add `-WhatIf` to print the command without
+running it; with no arguments it shows its help (`Get-Help ./Run-Project.ps1 -Examples`).
+
+```powershell
+./Run-Project.ps1 -Screenshot -Url https://example.com -Width 390 -Height 844
+./Run-Project.ps1 -Compare -Before screenshots/before.png -After screenshots/after.png -NoOcr
+./Run-Project.ps1 -QuotePage -PolicyDetailsId ABCDEF1234567890ABCDEF1234567890 -HistoryId 42
+./Run-Project.ps1 -QuotePages                                    # first 250 entries
+./Run-Project.ps1 -QuotePages -MaxCount 10
+./Run-Project.ps1 -QuotePages -Guid 6819e30c2058490b8d1d9e25d267b002
+./Run-Project.ps1 -RetryFailed
+./Run-Project.ps1 -Task Verify   # Install, InstallBrowser, Build, Typecheck, Lint, Test,
+                                 # TestCompare, TestQuotePage, Verify, CleanUp
+```
+
+When you add or change a CLI option in `src/main.ts`, update the matching parameter in
+`Run-Project.ps1` and its tests in `scripts/Run-Project.Tests.ps1`.
+
+### Output colours
+
+Failures are shown in
 red, except validation failures, which are yellow because the site rejected the copied
 answers: an error summary the [journey error auto-fixes](#journey-error-auto-fixes) cannot clear,
 shown on a journey section (its `div.av-timeline-all-sections` timeline is visible) or the
@@ -459,7 +486,8 @@ npm start -- screenshot https://example.com --output screenshots/example.png
 ```
 
 Before calling work done, run `./VerifyProject.ps1` and check it prints `Done` with no
-`FAILED at:` line. It chains the type check, tests and lint.
+`FAILED at:` line. It chains the type check, tests, the `Run-Project.ps1` Pester tests
+(`scripts/*.Tests.ps1`, Pester 5+) and lint.
 
 **Tests:** `npm test` covers screenshot, comparison, quote-page, the quote summary and
 assumptions pages, output clean-up, declined quotes, the quote GUID fallback and `quote-pages`.
