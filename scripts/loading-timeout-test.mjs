@@ -42,10 +42,22 @@ for (const [name, html, beforeCapture, expectedError] of [
     /Timed out waiting for quote loading screen to disappear/
   ],
   [
-    'does not extend a wait with no loading screen',
+    'reports an unexpected page, not a timeout, for a wait with no loading screen',
     loadingAfterClick(0, '<h1>Still waiting</h1>'),
     quoteSummary('NHI'),
-    /Timeout 1000ms exceeded/
+    {
+      name: 'UnexpectedPageError',
+      message: /^Expected page did not appear within 1 s and no loading screen is shown; page shows "Still waiting"\.$/
+    }
+  ],
+  [
+    'reports an unexpected page when the page is wrong once the loading screen clears',
+    loadingAfterClick(timeout * 1.5, '<h1>Something else</h1>'),
+    quoteSummary('NHI'),
+    {
+      name: 'UnexpectedPageError',
+      message: /^Expected page did not appear within 1 s and no loading screen is shown; page shows "Something else"\.$/
+    }
   ]
 ]) {
   test(`loading timeout ${name}`, async () => {

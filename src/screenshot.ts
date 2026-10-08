@@ -52,6 +52,21 @@ export class DeclinedError extends Error {
   }
 }
 
+/**
+ * Raised when a wait for the next page runs out of time with no quote loading screen shown, so the page has settled
+ * somewhere unexpected rather than being slow. Only a loading screen that does not clear is reported as a timeout.
+ */
+export class UnexpectedPageError extends Error {
+  /**
+   * @param message Failure message, naming what the page shows.
+   * @param options Standard error options, such as the `cause`.
+   */
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'UnexpectedPageError';
+  }
+}
+
 /** Quote loading screens may take longer than other steps, so they get this many times the step timeout. */
 const loadingTimeoutMultiplier = 2;
 /** Longest wait for each page's quote loading screen to clear. */
@@ -60,25 +75,36 @@ const loadingTimeouts = new WeakMap<Page, number>();
 /**
  * Runs a wait, and if it times out while a quote loading screen is still shown, waits for the loading screen to clear
  * (up to the rest of the loading allowance, twice the step timeout in all) and runs the wait once more. A timeout
- * with no loading screen is rethrown at once.
+ * with no loading screen, on either run, is reported at once as an {@link UnexpectedPageError}.
  * @param page Page opened by {@link screenshot}.
  * @param wait Wait to run, which should use the page's default timeout.
  * @returns The wait's result.
- * @throws The wait's error, or a loading-screen timeout when the screen does not clear.
+ * @throws An {@link UnexpectedPageError} when the wait times out with no loading screen, a loading-screen timeout when
+ * the screen does not clear, or the wait's other errors.
  */
 export async function extendWhileLoading<T>(page: Page, wait: () => Promise<T>): Promise<T> {
   try {
     return await wait();
   } catch (error) {
     const loadingTimeout = loadingTimeouts.get(page);
-    if (!(error instanceof errors.TimeoutError) || loadingTimeout === undefined || !(await isQuoteLoading(page))) {
+    if (!(error instanceof errors.TimeoutError) || loadingTimeout === undefined) {
       throw error;
+    }
+
+    if (!(await isQuoteLoading(page))) {
+      throw await unexpectedPageError(page, error);
     }
 
     const extra = loadingTimeout - loadingTimeout / loadingTimeoutMultiplier;
     console.log(color.Gray(`Loading screen still shown; allowing up to ${Math.round(extra / 1000)} s more.`));
     await waitForQuoteLoading(page, extra);
-    return await wait();
+    try {
+      return await wait();
+    } catch (retryError) {
+      throw retryError instanceof errors.TimeoutError && !(await isQuoteLoading(page))
+        ? await unexpectedPageError(page, retryError)
+        : retryError;
+    }
   }
 }
 
@@ -193,6 +219,25 @@ async function waitForQuoteLoading(page: Page, timeout = loadingTimeouts.get(pag
   } catch (error) {
     throw new Error('Timed out waiting for quote loading screen to disappear.', { cause: error });
   }
+}
+
+/**
+ * Builds the error for a wait that ran out of time with no loading screen, naming the page by its visible `h1`
+ * headings (journey section names). `h2` headings are left out because they can hold the customer's name.
+ */
+async function unexpectedPageError(page: Page, timeout: Error): Promise<UnexpectedPageError> {
+  const headings = await page.locator('h1').evaluateAll((elements) =>
+    elements
+      .filter((element) => element.getClientRects().length > 0)
+      .map((element) => element.textContent?.trim() ?? '')
+      .filter((text) => text.length > 0)
+  );
+  const shown = headings.length > 0 ? `page shows ${headings.map((text) => `"${text}"`).join(', ')}` : 'no h1 heading';
+  const seconds = Math.round((loadingTimeouts.get(page) ?? 0) / loadingTimeoutMultiplier / 1000);
+  return new UnexpectedPageError(
+    `Expected page did not appear within ${seconds} s and no loading screen is shown; ${shown}.`,
+    { cause: timeout }
+  );
 }
 
 /** Stops the capture when the page shows an Oops heading or a declined quote, whenever either appears. */

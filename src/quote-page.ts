@@ -13,7 +13,14 @@ import {
 import { selectAnnualPayment } from './payment.js';
 import { removeQuoteOutput } from './quote-output.js';
 import { quoteSummary } from './quote-summary.js';
-import { DeclinedError, OopsError, screenshot, ValidationError, type ScreenshotOptions } from './screenshot.js';
+import {
+  DeclinedError,
+  OopsError,
+  screenshot,
+  UnexpectedPageError,
+  ValidationError,
+  type ScreenshotOptions
+} from './screenshot.js';
 import { tcasQuote } from './tcas-quote.js';
 import { unsavedQuote } from './unsaved-quote.js';
 
@@ -277,7 +284,8 @@ async function captureNhi(
 /**
  * Logs the URL a flow opens, captures it, and adds the URL to any failure.
  * @returns `'declined'` when the site declined to quote (its `-declined.png` is saved), otherwise `'captured'`.
- * @throws The capture's error with the URL appended; an {@link OopsError} or {@link ValidationError} keeps its class.
+ * @throws The capture's error with the URL appended; an {@link OopsError}, {@link ValidationError} or
+ * {@link UnexpectedPageError} keeps its class.
  */
 async function captureAt(label: string, url: string, options: ScreenshotOptions): Promise<CaptureOutcome> {
   console.log(`${label}: opening ${url}`);
@@ -296,6 +304,10 @@ async function captureAt(label: string, url: string, options: ScreenshotOptions)
 
     if (error instanceof ValidationError) {
       throw new ValidationError(`${error.message} (${url})`, { cause: error });
+    }
+
+    if (error instanceof UnexpectedPageError) {
+      throw new UnexpectedPageError(`${error.message} (${url})`, { cause: error });
     }
 
     throw new Error(`${error instanceof Error ? error.message : String(error)} (${url})`, { cause: error });

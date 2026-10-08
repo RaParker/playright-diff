@@ -131,14 +131,14 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
   [
     'ignores a Continue with quote button without the summary id',
     '<button type="button">Continue with quote</button>',
-    /Timeout/
+    /Expected page did not appear within 2 s and no loading screen is shown; no h1 heading\./
   ],
   [
     'never clicks No, I need to make changes',
     nhiPagesHtml('<button id="hp-edit-questions-button" type="button">No, I need to make changes</button>', {
       'hp-edit-questions-button': quotePageHtml
     }),
-    /Timeout/
+    /Expected page did not appear/
   ],
   [
     'reports the error summary shown after Continue with quote',
@@ -162,11 +162,15 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
     'TCAS'
   ],
   [
-    'times out when Continue with quote never shows the quote',
+    'reports an unexpected page when Continue with quote never shows the quote',
     nhiPagesHtml(summaryPageHtml, { [summaryButton]: '<h1>Still waiting</h1>' }),
-    /Timeout/
+    /Expected page did not appear within 2 s and no loading screen is shown; page shows "Still waiting"\./
   ],
-  ['times out when the page is neither the summary nor the quote', '<h1>Something else</h1>', /Timeout/],
+  [
+    'reports an unexpected page when the page is neither the summary nor the quote',
+    '<h1>Something else</h1><h2>Welcome Alex</h2>',
+    /no loading screen is shown; page shows "Something else"\.$/
+  ],
   ['fixes the cover start date on Cover details and returns to the quote', journeyErrorHtml(), undefined],
   [
     'opens Cover details from the timeline to fix the cover start date',

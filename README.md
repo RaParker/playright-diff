@@ -367,8 +367,15 @@ fails.
   fails without saving a screenshot of it.
 - If a wait for the quote page times out while a loading screen is still shown, the flow logs
   `Loading screen still shown; allowing up to 30 s more.`, waits for the loading screen to
-  clear within that time, and then waits for the quote page once more. A timeout with no
-  loading screen fails at 30 seconds as before.
+  clear within that time, and then waits for the quote page once more.
+- Only a loading screen that does not clear is reported as a timeout. When a wait for the next
+  page (TCAS step 4, a quote summary click, or the unsaved journey's quote) runs out with no
+  loading screen shown, the page has settled somewhere unexpected rather than being slow, so it
+  is reported as for example
+  `Expected page did not appear within 30 s and no loading screen is shown; page shows "Property circumstances".`
+  The visible `h1` headings (journey section names) identify the page; `h2` headings are left
+  out because they can hold the customer's name. Other steps, such as clicks, keep Playwright's
+  timeout message.
 - Both flows watch for an `h2` containing exactly `Oops` from navigation through capture.
   If one appears, the flow stops, saves a failure screenshot, and skips remaining steps and
   the comparison. NHI first tries the [fallback](#nhi-oops-fallback).

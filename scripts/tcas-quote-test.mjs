@@ -113,7 +113,11 @@ const cases = [
   ['missing cover heading', contact + '<button>Get your quote</button>', /step 1/],
   ['missing contact selector', cover + '<button>Get your quote</button>', /step 2/],
   ['missing quote button', cover + contact, /step 3/],
-  ['missing welcome heading', journey('<h2>Still processing</h2>'), /step 4/],
+  [
+    'missing welcome heading',
+    journey('<h2>Still processing</h2>'),
+    /step 4 \(waitForQuote\) failed: Expected page did not appear within 1 s and no loading screen is shown/
+  ],
   [
     'errors after contact click',
     `${cover}${contact}<script>
