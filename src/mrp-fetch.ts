@@ -22,8 +22,8 @@ export type MrpFetchRunner = (projectDir: string, policyDetailsIds: string[]) =>
  * @param historyId History ID of the run; nothing is fetched unless it is {@link fetchedHistoryId}.
  * @param guidList mrp-and-quote's GUID list (uppercase), in file order.
  * @param mrpAndQuoteOutputDir mrp-and-quote's output folder; its parent is the project folder `fetch` runs in.
- * @param runner Runs the fetch (default: `go run . fetch --guid-file <file> --keep-output`).
- * @throws When the fetch fails.
+ * @param runner Runs the fetch (default: `go run . fetch --guid-file <file> --keep-output`). A failed fetch is only
+ * reported, so the run continues.
  */
 export async function prefetchMissingMrpFiles(
   policyDetailsIds: string[],
@@ -62,7 +62,14 @@ export async function prefetchMissingMrpFiles(
   }
 
   console.log(color.Gray(`Fetching ${fetchable.length} missing MRP files with mrp-and-quote in ${projectDir}`));
-  await runner(projectDir, fetchable);
+  try {
+    await runner(projectDir, fetchable);
+  } catch (error) {
+    // A quote without a saved MRP fails the whole fetch; warn and carry on so the other policies still run, while
+    // those without an MRP file fail individually.
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(color.Yellow(`${message} Continuing; policies still missing an MRP file will fail.`));
+  }
 }
 
 /**

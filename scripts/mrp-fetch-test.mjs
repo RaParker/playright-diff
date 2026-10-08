@@ -113,7 +113,7 @@ describe('prefetchMissingMrpFiles', () => {
     assert.deepEqual(calls, []);
   });
 
-  test('rejects when the fetch fails', async () => {
+  test('resolves when the fetch fails', async () => {
     // arrange
     const { outputDir } = await createOutputDir([]);
     const runner = async () => {
@@ -124,6 +124,6 @@ describe('prefetchMissingMrpFiles', () => {
     const prefetch = prefetchMissingMrpFiles([policyA], 1, guidList, outputDir, runner);
 
     // assert
-    await assert.rejects(prefetch, /fetch failed/);
+    await assert.doesNotReject(prefetch);
   });
 });

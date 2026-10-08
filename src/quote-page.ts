@@ -209,7 +209,18 @@ export async function quotePages(
 }
 
 async function readQuoteGuid(mrpPath: string): Promise<string> {
-  const mrp: unknown = JSON.parse(await readFile(mrpPath, 'utf8'));
+  let content: string;
+  try {
+    content = await readFile(mrpPath, 'utf8');
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      throw new Error(`No saved MRP for this quote: ${mrpPath}`, { cause: error });
+    }
+
+    throw error;
+  }
+
+  const mrp: unknown = JSON.parse(content);
   if (mrp === null || typeof mrp !== 'object' || !('artemisQuoteGuid' in mrp)) {
     throw new Error(`MRP file must contain the "artemisQuoteGuid" property: ${mrpPath}`);
   }

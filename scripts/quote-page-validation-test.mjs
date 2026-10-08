@@ -67,7 +67,7 @@ const cases = [
   ['fractional history', ['ABCDEF1234567890ABCDEF1234567890', '1.5'], /historyId must/],
   ['negative history', ['--', 'ABCDEF1234567890ABCDEF1234567890', '-1'], /historyId must/],
   ['unsafe history', ['ABCDEF1234567890ABCDEF1234567890', '9007199254740992'], /historyId must/],
-  ['missing MRP file', ['11111111111111111111111111111111', '42'], /ENOENT/]
+  ['missing MRP file', ['11111111111111111111111111111111', '42'], /No saved MRP for this quote/]
 ];
 for (const [name, args, expected] of cases) {
   test(`quote-page rejects ${name} before writing output`, async () => {

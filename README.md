@@ -174,7 +174,8 @@ fetched by running `go run . fetch --guid-file <file> --keep-output` once in its
 (the mrp-and-quote project), so only the missing policies are fetched and every existing file is
 kept (this needs an mrp-and-quote with `--guid-file` and `--keep-output` support). Policies
 not in the list are reported in yellow and not fetched, as is an output folder whose parent has
-no `go.mod`; a failed fetch stops the run.
+no `go.mod`. A failed fetch (e.g. quotes without saved MRPs) is reported in yellow and the run
+continues; policies still missing an MRP file then fail individually.
 
 ```sh
 npm run quote-pages                                         # first 250 entries

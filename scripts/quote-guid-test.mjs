@@ -572,7 +572,7 @@ describe('quote-pages', () => {
       // assert
       assert.notEqual(result.code, 0);
       assert.match(result.plain, /Quote pages summary\n1 passed \(0 both declined\), 1 failed\.\n/);
-      assert.match(result.plain, new RegExp(`\n${policyA}-1\n  .*ENOENT`));
+      assert.match(result.plain, new RegExp(`\n${policyA}-1\n  No saved MRP for this quote`));
       assert.match(result.plain, /1 of 2 quote pages failed; see the summary above\./);
       // Only the issues and the failed count are red, not the whole summary.
       assert.ok(result.output.includes('\u001b[32m1 passed'), result.output);
@@ -583,7 +583,7 @@ describe('quote-pages', () => {
         saved.failed.map(({ policyDetailsId }) => policyDetailsId),
         [policyA]
       );
-      assert.match(saved.failed[0].issues.join('\n'), /ENOENT/);
+      assert.match(saved.failed[0].issues.join('\n'), /No saved MRP for this quote/);
       assert.match(
         result.plain,
         /Failed policies saved to quote-pages-failed\.json; retry them with npm run quote-pages -- retry-failed/
