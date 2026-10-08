@@ -10,7 +10,9 @@ export interface QuoteGuidRequestOptions {
 }
 
 /**
- * Requests a replacement NHI quote GUID with the TCAS policy's answers copied onto it.
+ * Requests a replacement NHI quote GUID with the TCAS policy's answers copied onto it, posting today's (local) date
+ * as the cover start date — without one, the endpoint keeps the policy's original cover start date, which the journey
+ * may then reject.
  * @param policyDetailsId TCAS policy details ID whose answers are copied.
  * @param historyId TCAS history ID whose answers are copied.
  * @param options Endpoint URL and agent details sent with the request.
@@ -32,7 +34,12 @@ export async function requestQuoteGuid(
   url.searchParams.set('callMediaUser', options.callMediaUser);
   url.searchParams.set('policyDetailsId', policyDetailsId);
   url.searchParams.set('historyId', String(historyId));
-  const response = await fetch(url, { signal: AbortSignal.timeout(options.timeout ?? 30000) });
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ coverStartDate: todayIsoDate() }),
+    signal: AbortSignal.timeout(options.timeout ?? 30000)
+  });
   if (!response.ok) {
     throw new Error(`Quote GUID request returned HTTP ${response.status}.`);
   }
@@ -93,4 +100,10 @@ export async function saveQuoteGuidMapping(path: string, originalGuid: string, r
   mapping[originalGuid] = replacementGuid;
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(mapping, null, 2)}\n`);
+}
+
+/** Today's local date as `YYYY-MM-DD`. */
+function todayIsoDate(): string {
+  const now = new Date();
+  return [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((part) => String(part).padStart(2, '0')).join('-');
 }

@@ -411,8 +411,10 @@ error is logged without hiding the original.
 
 When the NHI page shows `<h2>Oops</h2>`:
 
-1. The action calls `QUOTE_JOURNEY_QUOTE_GUID_URL` (`GET /api/nhi/quote-guid`, non-live
-   only) with `agentId`, `branchCode`, `callMediaUser`, `policyDetailsId` and `historyId`.
+1. The action calls `QUOTE_JOURNEY_QUOTE_GUID_URL` (`POST /api/nhi/quote-guid`, non-live
+   only) with `agentId`, `branchCode`, `callMediaUser`, `policyDetailsId` and `historyId` in
+   the query string, and a JSON body `{ "coverStartDate": "<today, YYYY-MM-DD>" }`. Without a
+   date the endpoint keeps the policy's original cover start date, which the journey may reject.
 2. The endpoint copies the TCAS policy's answers onto a new quote and returns its GUID in
    the response's `guid` property. The answers are saved only in the question set store, not
    NHI or TCAS, so the NHI quote page shows Oops for the new GUID until it is quoted.

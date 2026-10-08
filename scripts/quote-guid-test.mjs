@@ -190,7 +190,7 @@ describe('selectQuoteGuids', () => {
 });
 
 describe('requestQuoteGuid', () => {
-  test('sends agent and policy parameters and returns the guid', async () => {
+  test('posts agent and policy parameters and returns the guid', async () => {
     await withServer(jsonHandler(200, { guid: 'new-guid', productVersion: 'florence' }), async (base, requests) => {
       // arrange
       const options = { quoteGuidUrl: `${base}/api/nhi/quote-guid`, agentId: 'a', branchCode: 'b', callMediaUser: 'c' };
@@ -208,6 +208,34 @@ describe('requestQuoteGuid', () => {
         policyDetailsId: policyA,
         historyId: '1'
       });
+    });
+  });
+
+  test("sends today's date as the cover start date in a JSON body", async () => {
+    let received;
+    const handler = (request, response) => {
+      let body = '';
+      request.on('data', (chunk) => (body += chunk));
+      request.on('end', () => {
+        received = { method: request.method, contentType: request.headers['content-type'], body };
+        jsonHandler(200, { guid: 'new-guid' })(request, response);
+      });
+    };
+    await withServer(handler, async (base) => {
+      // arrange
+      const options = { quoteGuidUrl: `${base}/api/nhi/quote-guid`, agentId: 'a', branchCode: 'b', callMediaUser: 'c' };
+      const now = new Date();
+      const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+        .map((part) => String(part).padStart(2, '0'))
+        .join('-');
+
+      // act
+      await requestQuoteGuid(policyA, 1, options);
+
+      // assert
+      assert.equal(received.method, 'POST');
+      assert.equal(received.contentType, 'application/json');
+      assert.deepEqual(JSON.parse(received.body), { coverStartDate: today });
     });
   });
 
