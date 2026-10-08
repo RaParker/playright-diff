@@ -1,6 +1,8 @@
 export const quotePageHtml = '<h2>Welcome Alex, here&rsquo;s your quote</h2>';
 /** Quote page heading shown for a conditional quote. */
 export const conditionalQuotePageHtml = '<h2>Welcome Mrs. Alex, here&rsquo;s your conditional quote</h2>';
+/** Quote page heading shown for an estimated quote (a referral, which still shows a price). */
+export const estimatedQuotePageHtml = '<h2>Welcome Mrs. Alex, here&rsquo;s your estimated quote</h2>';
 
 /**
  * Builds the quote page's payment selector (markup trimmed from the live page).

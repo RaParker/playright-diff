@@ -109,6 +109,7 @@ const cases = [
   ['straight apostrophe', journey("<h2>Welcome Alex, here's your quote</h2>"), undefined],
   ['curly apostrophe', journey('<h2>Welcome Sam Smith, here&rsquo;s your quote</h2>'), undefined],
   ['conditional quote', journey('<h2>Welcome Mrs. Smith, here&rsquo;s your conditional quote</h2>'), undefined],
+  ['estimated quote', journey('<h2>Welcome Mrs. Smith, here&rsquo;s your estimated quote</h2>'), undefined],
   ['missing cover heading', contact + '<button>Get your quote</button>', /step 1/],
   ['missing contact selector', cover + '<button>Get your quote</button>', /step 2/],
   ['missing quote button', cover + contact, /step 3/],

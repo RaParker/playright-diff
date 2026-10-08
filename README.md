@@ -278,8 +278,10 @@ Before capturing TCAS, the steps in `src/tcas-quote.steps.json` run in order:
 1. Wait for **Cover details**.
 2. Click **Contact details**.
 3. Click **Get your quote**.
-4. Wait for either an error summary or the welcome quote heading ("here's your quote" or
-   "here's your conditional quote", any customer name, straight or curly apostrophes).
+4. Wait for either an error summary or the welcome quote heading ("here's your quote",
+   "here's your conditional quote" or "here's your estimated quote", any customer name,
+   straight or curly apostrophes). An estimated quote is a referral ("We need to double check a
+   few details with you") that still shows a price, so it is captured and compared as usual.
 
 Edit the JSON file to change selectors or steps. Each successful step is logged in grey
 with its number, action and elapsed milliseconds; a failure names the step that stopped.

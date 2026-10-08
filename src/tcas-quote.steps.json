@@ -18,7 +18,7 @@
   {
     "action": "waitForQuote",
     "selector": "h2",
-    "textPattern": "^Welcome\\s+.*?,\\s*here['’‘ʼ]s\\s+your\\s+(?:conditional\\s+)?quote\\s*$",
+    "textPattern": "^Welcome\\s+.*?,\\s*here['’‘ʼ]s\\s+your\\s+(?:(?:conditional|estimated)\\s+)?quote\\s*$",
     "errorSelector": "div.av-card-error-summary"
   }
 ]

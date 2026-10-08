@@ -10,6 +10,7 @@ import { assertGreyLogsInOrder } from './log-assertions.mjs';
 import {
   assumptionsPageHtml,
   conditionalQuotePageHtml,
+  estimatedQuotePageHtml,
   nhiPagesHtml,
   otherAmountScript,
   quotePageHtml,
@@ -119,6 +120,12 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
   [
     'clicks Continue with quote when the summary leads to a conditional quote',
     nhiPagesHtml(summaryPageHtml, { [summaryButton]: conditionalQuotePageHtml }),
+    undefined
+  ],
+  ['captures a page showing an estimated quote', estimatedQuotePageHtml, undefined],
+  [
+    'clicks Continue with quote when the summary leads to an estimated quote',
+    nhiPagesHtml(summaryPageHtml, { [summaryButton]: estimatedQuotePageHtml }),
     undefined
   ],
   [
