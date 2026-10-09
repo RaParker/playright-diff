@@ -14,3 +14,15 @@ export function assertGreyLogsInOrder(log, expected) {
     from = index + 1;
   }
 }
+
+/**
+ * Asserts that none of the given lines was logged in grey.
+ * @param {import('node:test').Mock<typeof console.log>} log Mock of `console.log`.
+ * @param {string[]} unexpected Log lines, without the grey colour codes.
+ */
+export function assertGreyLogsAbsent(log, unexpected) {
+  const lines = log.mock.calls.map((call) => String(call.arguments[0]));
+  for (const line of unexpected) {
+    assert.ok(!lines.includes(`\u001b[90m${line}\u001b[0m`), `Unexpected grey log line ${JSON.stringify(line)}`);
+  }
+}

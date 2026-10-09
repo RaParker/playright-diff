@@ -86,6 +86,90 @@ export const otherAmountScript = `document.addEventListener('click', (event) => 
   document.querySelector('input[name="rebuildingCost"]').hidden = !other.classList.contains('active');
 });`;
 
+/** Builds journey question fields (markup trimmed from the live page); {@link questionScript} gives them behaviour. */
+export const questionField = {
+  /**
+   * @param {string} name Input name.
+   * @param {string} [value] Starting value.
+   * @returns {string} Text field HTML.
+   */
+  text: (name, value = '') =>
+    `<input inputmode="decimal" name="${name}" type="text" class="form-control" value="${value}">`,
+  /**
+   * @param {string} name Button name.
+   * @param {string[]} options Button texts.
+   * @returns {string} Button list HTML.
+   */
+  buttons: (name, options) =>
+    `<div class="btn-toolbar" role="group">${options
+      .map(
+        (option) =>
+          `<div class="hp-btn-wrapper"><button name="${name}" type="button" class="btn">${option}</button></div>`
+      )
+      .join('')}</div>`,
+  /**
+   * @param {string[]} options Image captions.
+   * @returns {string} Image radio list HTML.
+   */
+  images: (options) =>
+    `<div class="hp-float" role="group">${options
+      .map(
+        (option) =>
+          `<label><input name="${option}" type="radio"><img alt="${option}"><div><span>${option}</span></div></label>`
+      )
+      .join('')}</div>`,
+  /**
+   * @param {string} name Dropdown name.
+   * @param {string[]} options Menu item texts, shown when the toggle is clicked.
+   * @returns {string} Dropdown HTML.
+   */
+  dropdown: (name, options) =>
+    `<div name="${name}" class="dropdown" data-options="${JSON.stringify(options).replaceAll('"', '&quot;')}"><button
+      type="button" class="dropdown-toggle btn">Please select</button></div>`
+};
+
+/**
+ * Script giving {@link questionField} fields behaviour: a clicked button or image is marked `data-selected`, and a
+ * dropdown toggle opens a menu whose items set the toggle text. Defines `answerOf(question)`, which reads a question's
+ * text field value, selected button or image, or dropdown toggle text.
+ */
+export const questionScript = `document.addEventListener('click', (event) => {
+  const choice = event.target.closest('.btn-toolbar button, .hp-float > label');
+  if (choice !== null) {
+    choice.closest('.av-field-section').querySelectorAll('[data-selected]').forEach((element) => element.removeAttribute('data-selected'));
+    choice.setAttribute('data-selected', '');
+    return;
+  }
+
+  const item = event.target.closest('.dropdown-item');
+  if (item !== null) {
+    item.parentElement.previousElementSibling.textContent = item.textContent;
+    item.parentElement.remove();
+    return;
+  }
+
+  const toggle = event.target.closest('.dropdown > .dropdown-toggle');
+  if (toggle !== null) {
+    const items = JSON.parse(toggle.parentElement.dataset.options).map((option) => '<button class="dropdown-item">' + option + '</button>');
+    toggle.insertAdjacentHTML('afterend', '<div class="dropdown-menu show">' + items.join('') + '</div>');
+  }
+});
+const answerOf = (question) =>
+  question.querySelector('input[type="text"]')?.value ??
+  (question.querySelector('[data-selected]') ?? question.querySelector('.dropdown-toggle'))?.textContent.trim();`;
+
+/**
+ * Builds a journey question showing a validation error (markup trimmed from the live page).
+ * @param {string} id Question id; the question's element id is `QP` followed by it.
+ * @param {string} message Error message shown on the question.
+ * @param {string} field Field HTML (see {@link questionField}).
+ * @returns {string} Question HTML.
+ */
+export function questionErrorHtml(id, message, field) {
+  return `<div id="QP${id}" class="hp-standard av-input-error form-group"><div class="av-field-messages"><div
+    class="av-error-message">${message}</div></div><div class="av-field-section">${field}</div></div>`;
+}
+
 /**
  * Builds an `nhi=false` style journey: Continue moves through the sections, and Get your quote on the last
  * section shows the quote page.
@@ -111,6 +195,9 @@ export const otherAmountScript = `document.addEventListener('click', (event) => 
  * @param {boolean} [options.rebuildingCostOther] Whether "Choose another amount" starts selected (default true).
  * @param {boolean} [options.rebuildingCostFixable] Whether entering 249995 clears the rebuilding cost error (default
  * true).
+ * @param {{ section: string, id: string, message: string, field: string, expected: string }[]} [options.questions]
+ * Questions (see {@link questionErrorHtml}) shown on their section only; Continue from a section reports each of its
+ * questions whose answer (see {@link questionScript}) is not `expected`, with an error summary of their messages.
  * @returns {string} Page HTML.
  */
 export function unsavedJourneyHtml({
@@ -127,7 +214,8 @@ export function unsavedJourneyHtml({
   emailFixable = true,
   rebuildingCostError = false,
   rebuildingCostFixable = true,
-  rebuildingCostOther = true
+  rebuildingCostOther = true,
+  questions = []
 } = {}) {
   const timelineHtml =
     coverStartError === undefined && !emailError
@@ -142,7 +230,8 @@ export function unsavedJourneyHtml({
     ? '<input id="email" inputmode="email" name="email" type="text" class="form-control" value="first name.last@example.com">'
     : '';
   const rebuildingHtml = rebuildingCostError ? rebuildingCostHtml(rebuildingCostOther) : '';
-  return `<h1></h1>${timelineHtml}${coverStartHtml}${emailHtml}${rebuildingHtml}<p id="lookup" hidden>Checking property details</p>
+  const questionsHtml = questions.map(({ id, message, field }) => questionErrorHtml(id, message, field)).join('');
+  return `<h1></h1>${timelineHtml}${coverStartHtml}${emailHtml}${rebuildingHtml}${questionsHtml}<p id="lookup" hidden>Checking property details</p>
     <button id="continue">Continue</button><button id="quote" hidden>Get your quote</button><script>
     const sections = ${JSON.stringify(sections)};
     const errorOn = ${JSON.stringify(errorOn ?? null)};
@@ -158,11 +247,15 @@ export function unsavedJourneyHtml({
     const rebuildingCostError = ${JSON.stringify(rebuildingCostError)};
     const rebuildingCostFixable = ${JSON.stringify(rebuildingCostFixable)};
     const rebuildingCost = () => document.querySelector('input[name="rebuildingCost"]');
+    const questions = ${JSON.stringify(questions.map(({ section, id, message, expected }) => ({ section, id, message, expected })))};
+    const unanswered = () =>
+      questions.filter(({ section, id, expected }) => section === sections[index] && answerOf(document.getElementById('QP' + id)) !== expected);
     let coverStartValid = coverStartError === null;
     let bouncesLeft = ${JSON.stringify(bounceTimes)};
     let lookupDone = true;
     let index = 0;
-    const summary = (text) => '<div class="av-card-error-summary"><ul><li><a>' + text + '</a></li></ul></div>';
+    const summary = (...texts) =>
+      '<div class="av-card-error-summary"><ul>' + texts.map((text) => '<li><a>' + text + '</a></li>').join('') + '</ul></div>';
     const show = () => {
       const last = index === sections.length - 1;
       document.querySelector('h1').textContent = sections[index];
@@ -171,9 +264,11 @@ export function unsavedJourneyHtml({
       if (coverStartError !== null) document.getElementById('calendar').hidden = sections[index] !== 'Cover details';
       if (emailError) document.getElementById('email').hidden = sections[index] !== 'Contact details';
       if (rebuildingCostError) document.getElementById('rebuilding').hidden = sections[index] !== 'Property circumstances';
+      questions.forEach(({ section, id }) => { document.getElementById('QP' + id).hidden = section !== sections[index]; });
     };
     show();
     ${otherAmountScript}
+    ${questionScript}
     document.querySelectorAll('li[title]').forEach((item) => {
       item.onclick = () => {
         index = sections.indexOf(item.title);
@@ -198,6 +293,12 @@ export function unsavedJourneyHtml({
       ) {
         document.querySelector('.av-card-error-summary')?.remove();
         document.body.insertAdjacentHTML('beforeend', summary('Enter the cost of rebuilding the property'));
+        return;
+      }
+
+      if (unanswered().length > 0) {
+        document.querySelector('.av-card-error-summary')?.remove();
+        document.body.insertAdjacentHTML('beforeend', summary(...unanswered().map(({ message }) => message)));
         return;
       }
 

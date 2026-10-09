@@ -6,13 +6,27 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { screenshot, ValidationError } from '../dist/screenshot.js';
 import { unsavedQuote } from '../dist/unsaved-quote.js';
-import { assertGreyLogsInOrder } from './log-assertions.mjs';
-import { unsavedJourneyHtml } from './unsaved-journey-html.mjs';
+import { assertGreyLogsAbsent, assertGreyLogsInOrder } from './log-assertions.mjs';
+import { questionField, unsavedJourneyHtml } from './unsaved-journey-html.mjs';
 
 const manySections = Array.from({ length: 20 }, (_value, index) => `Section ${index + 1}`);
 const rebuildingCostSections = ['Cover details', 'Property circumstances', 'Contact details'];
+const claimValueMessage = 'Must be between £1 and £10,000,000.';
 
-for (const [name, journey, expectedError, expectedLogs = []] of [
+/**
+ * Builds a journey whose `section` (the second of three) shows `questions` with validation errors.
+ * @param {string} section Section heading.
+ * @param {{ id: string, message: string, field: string, expected: string }[]} questions Questions on `section`.
+ * @returns {object} `unsavedJourneyHtml` options.
+ */
+function questionJourney(section, questions) {
+  return {
+    sections: ['Cover details', section, 'Contact details'],
+    questions: questions.map((question) => ({ ...question, section }))
+  };
+}
+
+for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of [
   ['continues through each section and gets the quote', {}, undefined],
   [
     'reports the section and error summary when Continue fails validation',
@@ -86,6 +100,82 @@ for (const [name, journey, expectedError, expectedLogs = []] of [
     'reports a rebuilding cost error that Continue still shows after the cost is replaced',
     { sections: rebuildingCostSections, rebuildingCostError: true, rebuildingCostFixable: false },
     /NHI journey validation failed on Property circumstances: Enter the cost of rebuilding the property/
+  ],
+  [
+    'enters the claim value on every claim that Continue on Household details reports out of range',
+    questionJourney('Household details', [
+      { id: 'claim~G01', message: claimValueMessage, field: questionField.text('claimPaid', '0'), expected: '55782' },
+      { id: 'claim~G02', message: claimValueMessage, field: questionField.text('claimPaid', '0'), expected: '55782' }
+    ]),
+    undefined,
+    ['NHI: entering claim value 55782 on Household details.']
+  ],
+  [
+    'selects the roof material from its dropdown when Continue on Property construction reports it',
+    questionJourney('Property construction', [
+      {
+        id: 'roof',
+        message: 'Please select what your roof is made of.',
+        field: questionField.dropdown('roofMaterial', ['Tile', 'Slate', 'Concrete']),
+        expected: 'Slate'
+      }
+    ]),
+    undefined,
+    ['NHI: selecting roof material Slate on Property construction.']
+  ],
+  [
+    'selects the external walls image when Continue on Property construction reports them',
+    questionJourney('Property construction', [
+      {
+        id: 'walls',
+        message: 'Please select what your external walls are made of.',
+        field: questionField.images(['Brick', 'Stone', 'Other']),
+        expected: 'Brick'
+      }
+    ]),
+    undefined,
+    ['NHI: selecting external walls Brick on Property construction.']
+  ],
+  [
+    'selects the number of bathrooms and bedrooms when Continue on Property type reports both',
+    questionJourney('Property type', [
+      {
+        id: 'bedrooms',
+        message: 'Please select the number of bedrooms.',
+        field: questionField.buttons('bedrooms', ['1', '2', '3', '10 or more']),
+        expected: '3'
+      },
+      {
+        id: 'bathrooms',
+        message: 'Please select the number of bathrooms.',
+        field: questionField.buttons('bathrooms', ['0', '1', '10 or more']),
+        expected: '1'
+      }
+    ]),
+    undefined,
+    ['NHI: selecting bedrooms 3 on Property type.', 'NHI: selecting bathrooms 1 on Property type.']
+  ],
+  [
+    'reports a claim value error that Continue still shows after the value is entered',
+    questionJourney('Household details', [
+      { id: 'claim~G01', message: claimValueMessage, field: questionField.text('claimPaid', '0'), expected: '1' }
+    ]),
+    /NHI journey validation failed on Household details: Must be between £1 and £10,000,000\./,
+    ['NHI: entering claim value 55782 on Household details.']
+  ],
+  [
+    'leaves an error message shared by a question it has no answer for',
+    questionJourney('Property type', [
+      {
+        id: 'other',
+        message: 'Please answer this question.',
+        field: questionField.buttons('otherQuestion', ['Yes', 'No']),
+        expected: 'Yes'
+      }
+    ]),
+    /NHI journey validation failed on Property type: Please answer this question\./,
+    [],
+    ['NHI: selecting own or rent Own (Mortgage) on Property type.']
   ]
 ]) {
   test(`unsaved quote journey ${name}`, async (context) => {
@@ -124,6 +214,7 @@ for (const [name, journey, expectedError, expectedLogs = []] of [
         assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
       }
       assertGreyLogsInOrder(log, expectedLogs);
+      assertGreyLogsAbsent(log, absentLogs);
     } finally {
       server.closeAllConnections();
       await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));

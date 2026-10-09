@@ -343,6 +343,37 @@ Some errors come from the test data rather than the quote, so the action fixes t
   NHI: selecting Choose another amount.
   ```
 
+#### Unanswered questions
+
+Errors shown on a question (a `div.av-input-error` whose `div.av-error-message` has the text)
+are answered with a fixed value, on every question that shows the error and has the field
+(for example each claim). Dropdowns are answered by clicking the toggle and then the
+`.dropdown-menu.show button.dropdown-item` with the answer text.
+
+| Error message                                                | Field                                | Answer (on section)                                   |
+| ------------------------------------------------------------ | ------------------------------------ | ----------------------------------------------------- |
+| "Must be between £1 and £10,000,000."                        | `input[name="claimPaid"]`            | `55782` (**Household details**)                       |
+| "Please select a claim/loss from the list."                  | `div.dropdown[name="claimType"]`     | Escape of water - other cause (**Household details**) |
+| "Please select what your roof is made of."                   | `div.dropdown[name="roofMaterial"]`  | Slate (**Property construction**)                     |
+| "Please select what your external walls are made of."        | `div.hp-float > label`               | Brick (**Property construction**)                     |
+| "Please tell us what type of house it is."                   | `div.dropdown[name="houseType"]`     | Detached House (**Property type**)                    |
+| "Please answer this question."                               | `button[name="ownOrRent"]`           | Own (Mortgage) (**Property type**)                    |
+| "Please enter the year the property was built."              | `input[name="yearBuilt"]`            | `1990` (**Property type**)                            |
+| "Please select the number of bedrooms."                      | `button[name="bedrooms"]`            | 3 (**Property type**)                                 |
+| "Please select the number of bathrooms."                     | `button[name="bathrooms"]`           | 1 (**Property type**)                                 |
+| "Please enter how long you held this type of insurance for." | `button[name="insuranceTypeLength"]` | 5 (**Property type**)                                 |
+| "Enter the total replacement value of your contents"         | `input[name="contentsCost"]`         | `50000` (**Your contents**)                           |
+| "The Safe rating field must contain a value"                 | `button[name="safeRating"]`          | UK: £1k /£10k (**Your contents**)                     |
+| "The Flood cause field must contain a value"                 | `button[name="floodCause"]`          | Flood (**Property circumstances**)                    |
+
+- A message other questions share (such as "Please answer this question.") is left alone
+  when no question showing it has the field, so it is reported as usual.
+- Each answer is logged in grey, for example
+  `NHI: entering claim value 55782 on Household details.` or
+  `NHI: selecting roof material Slate on Property construction.`
+
+#### All fixes
+
 - Each error is fixed at most once per flow; if it comes back, it is reported as usual.
 - This applies to the quote summary flows (NHI and replacement TCAS), the TCAS journey's
   Contact details and Get your quote steps, and the unsaved NHI journey (`nhi=false`).
