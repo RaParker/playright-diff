@@ -192,7 +192,15 @@ const questionAnswers: QuestionAnswer[] = [
     question: 'tree distance',
     kind: 'fill',
     field: 'input[name="nearbyTreeDistance"]',
-    answer: '10'
+    answer: '5'
+  },
+  {
+    message: 'The distance must be within 7 metres of the property.',
+    section: 'Property circumstances',
+    question: 'tree distance',
+    kind: 'fill',
+    field: 'input[name="nearbyTreeDistance"]',
+    answer: '5'
   },
   {
     message: 'The Damage caused by tree field must contain a value',
@@ -209,6 +217,46 @@ const questionAnswers: QuestionAnswer[] = [
     kind: 'autocomplete',
     field: 'input[name="criminalConvictionType"]',
     answer: 'Theft'
+  },
+  {
+    message: 'Please select an criminal conviction from the list.',
+    section: 'Household details',
+    question: 'criminal conviction',
+    kind: 'autocomplete',
+    field: 'input[name="criminalConvictionType"]',
+    answer: 'Theft'
+  },
+  {
+    message: 'Please select yes or no.',
+    section: 'Property circumstances',
+    question: 'flooded in the last 10 years',
+    kind: 'click',
+    field: 'button[name="flood"]',
+    answer: 'No'
+  },
+  {
+    message: 'Please select an option.',
+    section: 'Property circumstances',
+    question: 'main entrance lock',
+    kind: 'click',
+    field: 'div.hp-float > label:has(img[alt="Multi-point lock"])',
+    answer: 'Multi-point lock'
+  },
+  {
+    message: 'Please select an option.',
+    section: 'Property circumstances',
+    question: 'patio doors lock',
+    kind: 'click',
+    field: 'button[name="patioLockType"]',
+    answer: 'Multi-point lock'
+  },
+  {
+    message: 'Please select an option.',
+    section: 'Property circumstances',
+    question: 'other exits lock',
+    kind: 'click',
+    field: 'button[name="otherExitsLockType"]',
+    answer: 'No other exit'
   }
 ];
 
@@ -244,8 +292,8 @@ const journeyFixes: JourneyFix[] = [
  * - "The Cover start field needs to be between YYYY-MM-DD and ..." picks the earliest allowed date in the Cover start
  *   calendar on Cover details.
  * - "The Email address field contains invalid characters" enters {@link replacementEmail} on Contact details.
- * - "Enter the cost of rebuilding the property" selects "Choose another amount" (unless already selected) and enters
- *   {@link replacementRebuildingCost} on Property circumstances.
+ * - "Enter the cost of rebuilding the property" selects "Choose another amount" (unless already selected, or not
+ *   offered because there is no BCIS estimate) and enters {@link replacementRebuildingCost} on Property circumstances.
  * - Each message in {@link questionAnswers} (e.g. "Must be between £1 and £10,000,000." on a claim value, or "Please
  *   select what your roof is made of.") gives its answer to every question showing that message. The fix is skipped
  *   when no question showing the message has its field, as other questions share messages such as "Please answer this
@@ -311,7 +359,8 @@ async function showSection(page: Page, section: string, label: string): Promise<
 
 function answerFix(answer: QuestionAnswer): JourneyFix {
   return {
-    name: answer.question,
+    // A question can have more than one message (e.g. missing, then out of range), each fixed once.
+    name: `${answer.question}: ${answer.message}`,
     pattern: new RegExp(escapeRegExp(answer.message)),
     section: answer.section,
     describe: () => `${answer.kind === 'fill' ? 'entering' : 'selecting'} ${answer.question} ${answer.answer}`,
@@ -357,9 +406,13 @@ async function chooseDate(page: Page, question: Locator, date: string): Promise<
 }
 
 async function enterRebuildingCost(page: Page, label: string): Promise<void> {
-  // The cost field is only shown once "Choose another amount" (rather than the BCIS estimate) is selected.
+  // When a BCIS estimate is offered, the cost field is only shown once "Choose another amount" is selected; without an
+  // estimate, the cost field is shown on its own.
   const otherAmount = page.locator('label[id$="~Kother"]').filter({ hasText: 'Choose another amount' });
-  if (!(await otherAmount.evaluate((element) => element.classList.contains('active')))) {
+  if (
+    (await otherAmount.count()) > 0 &&
+    !(await otherAmount.evaluate((element) => element.classList.contains('active')))
+  ) {
     console.log(color.Gray(`${label}: selecting Choose another amount.`));
     await otherAmount.click();
   }

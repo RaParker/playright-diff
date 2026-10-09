@@ -327,11 +327,11 @@ page:
 Some errors come from the test data rather than the quote, so the action fixes them
 (`src/journey-fixes.ts`) and carries on:
 
-| Error summary text                                           | Fix (on section)                                                                                                                                                                                      |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "The Cover start field needs to be between YYYY-MM-DD and …" | Opens `svg.av-icon-calendar` and picks the calendar `div` whose aria-label ends with the earliest allowed date (for example `October 6th, 2026`), skipping days outside the month (**Cover details**) |
-| "The Email address field contains invalid characters"        | Enters `nobody.special@nhitest.com` in `input[name="email"]` (**Contact details**)                                                                                                                    |
-| "Enter the cost of rebuilding the property"                  | Selects **Choose another amount** (`label[id$="~Kother"]`) unless it already has the `active` class, then enters `249995` in `input[name="rebuildingCost"]` (**Property circumstances**)              |
+| Error summary text                                           | Fix (on section)                                                                                                                                                                                                              |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "The Cover start field needs to be between YYYY-MM-DD and …" | Opens `svg.av-icon-calendar` and picks the calendar `div` whose aria-label ends with the earliest allowed date (for example `October 6th, 2026`), skipping days outside the month (**Cover details**)                         |
+| "The Email address field contains invalid characters"        | Enters `nobody.special@nhitest.com` in `input[name="email"]` (**Contact details**)                                                                                                                                            |
+| "Enter the cost of rebuilding the property"                  | Selects **Choose another amount** (`label[id$="~Kother"]`) unless it already has the `active` class or is not offered (no BCIS estimate), then enters `249995` in `input[name="rebuildingCost"]` (**Property circumstances**) |
 
 - Each fix first opens its section from the timeline
   (`div.av-timeline-all-sections > ul > li[title="…"]`), unless that `<h1>` heading is
@@ -352,28 +352,35 @@ are answered with a fixed value, on every question that shows the error and has 
 the answer and then clicking the suggestion with that text; and a date by picking each
 part from the toggles whose ids end `~Kday`, `~Kmonth` and `~Kyear`.
 
-| Error message                                                | Field                                    | Answer (on section)                                                                                                |
-| ------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| "Must be between £1 and £10,000,000."                        | `input[name="claimPaid"]`                | `55782` (**Household details**)                                                                                    |
-| "Please select a claim/loss from the list."                  | `div.dropdown[name="claimType"]`         | Escape of water - other cause (**Household details**)                                                              |
-| "Please select what your roof is made of."                   | `div.dropdown[name="roofMaterial"]`      | Slate (**Property construction**)                                                                                  |
-| "Please select what your external walls are made of."        | `div.hp-float > label`                   | Brick (**Property construction**)                                                                                  |
-| "Please tell us what type of house it is."                   | `div.dropdown[name="houseType"]`         | Detached House (**Property type**)                                                                                 |
-| "Please answer this question."                               | `button[name="ownOrRent"]`               | Own (Mortgage) (**Property type**)                                                                                 |
-| "Please enter the year the property was built."              | `input[name="yearBuilt"]`                | `1990` (**Property type**)                                                                                         |
-| "Please select the number of bedrooms."                      | `button[name="bedrooms"]`                | 3 (**Property type**)                                                                                              |
-| "Please select the number of bathrooms."                     | `button[name="bathrooms"]`               | 1 (**Property type**)                                                                                              |
-| "Please enter how long you held this type of insurance for." | `button[name="insuranceTypeLength"]`     | 5 (**Property type**)                                                                                              |
-| "Enter the total replacement value of your contents"         | `input[name="contentsCost"]`             | `50000` (**Your contents**)                                                                                        |
-| "The Safe rating field must contain a value"                 | `button[name="safeRating"]`              | UK: £1k /£10k (**Your contents**)                                                                                  |
-| "The Flood cause field must contain a value"                 | `button[name="floodCause"]`              | Flood (**Property circumstances**)                                                                                 |
-| "Please select day, month and year."                         | `button.dropdown-toggle[id$="~Kday"]`    | 1 January, two years before this year (any date question; the year dropdown offers this year and the 25 before it) |
-| "The Tree location field must contain a value"               | `button[name="treeLocation"]`            | Your property (**Property circumstances**)                                                                         |
-| "The Tree distance field must contain a value"               | `input[name="nearbyTreeDistance"]`       | `10` (**Property circumstances**)                                                                                  |
-| "The Damage caused by tree field must contain a value"       | `button[name="nearbyTreesCausedDamage"]` | No (**Property circumstances**)                                                                                    |
-| "Enter the criminal conviction that they were convicted of"  | `input[name="criminalConvictionType"]`   | Theft, chosen from the suggestions (**Household details**)                                                         |
+| Error message                                                | Field                                                   | Answer (on section)                                                                                                |
+| ------------------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| "Must be between £1 and £10,000,000."                        | `input[name="claimPaid"]`                               | `55782` (**Household details**)                                                                                    |
+| "Please select a claim/loss from the list."                  | `div.dropdown[name="claimType"]`                        | Escape of water - other cause (**Household details**)                                                              |
+| "Please select what your roof is made of."                   | `div.dropdown[name="roofMaterial"]`                     | Slate (**Property construction**)                                                                                  |
+| "Please select what your external walls are made of."        | `div.hp-float > label`                                  | Brick (**Property construction**)                                                                                  |
+| "Please tell us what type of house it is."                   | `div.dropdown[name="houseType"]`                        | Detached House (**Property type**)                                                                                 |
+| "Please answer this question."                               | `button[name="ownOrRent"]`                              | Own (Mortgage) (**Property type**)                                                                                 |
+| "Please enter the year the property was built."              | `input[name="yearBuilt"]`                               | `1990` (**Property type**)                                                                                         |
+| "Please select the number of bedrooms."                      | `button[name="bedrooms"]`                               | 3 (**Property type**)                                                                                              |
+| "Please select the number of bathrooms."                     | `button[name="bathrooms"]`                              | 1 (**Property type**)                                                                                              |
+| "Please enter how long you held this type of insurance for." | `button[name="insuranceTypeLength"]`                    | 5 (**Property type**)                                                                                              |
+| "Enter the total replacement value of your contents"         | `input[name="contentsCost"]`                            | `50000` (**Your contents**)                                                                                        |
+| "The Safe rating field must contain a value"                 | `button[name="safeRating"]`                             | UK: £1k /£10k (**Your contents**)                                                                                  |
+| "The Flood cause field must contain a value"                 | `button[name="floodCause"]`                             | Flood (**Property circumstances**)                                                                                 |
+| "Please select day, month and year."                         | `button.dropdown-toggle[id$="~Kday"]`                   | 1 January, two years before this year (any date question; the year dropdown offers this year and the 25 before it) |
+| "The Tree location field must contain a value"               | `button[name="treeLocation"]`                           | Your property (**Property circumstances**)                                                                         |
+| "The Tree distance field must contain a value"               | `input[name="nearbyTreeDistance"]`                      | `5` (**Property circumstances**)                                                                                   |
+| "The Damage caused by tree field must contain a value"       | `button[name="nearbyTreesCausedDamage"]`                | No (**Property circumstances**)                                                                                    |
+| "Enter the criminal conviction that they were convicted of"  | `input[name="criminalConvictionType"]`                  | Theft, chosen from the suggestions (**Household details**)                                                         |
+| "The distance must be within 7 metres of the property."      | `input[name="nearbyTreeDistance"]`                      | `5` (**Property circumstances**)                                                                                   |
+| "Please select an criminal conviction from the list."        | `input[name="criminalConvictionType"]`                  | Theft, chosen from the suggestions (**Household details**)                                                         |
+| "Please select yes or no."                                   | `button[name="flood"]`                                  | No (**Property circumstances**)                                                                                    |
+| "Please select an option."                                   | `div.hp-float > label:has(img[alt="Multi-point lock"])` | Multi-point lock, on the main entrance lock (**Property circumstances**)                                           |
+| "Please select an option."                                   | `button[name="patioLockType"]`                          | Multi-point lock (**Property circumstances**)                                                                      |
+| "Please select an option."                                   | `button[name="otherExitsLockType"]`                     | No other exit (**Property circumstances**)                                                                         |
 
-- A message other questions share (such as "Please answer this question.") is left alone
+- A message other questions share (such as "Please answer this question." or "Please
+  select an option.") is left alone
   when no question showing it has the field, so it is reported as usual.
 - Each answer is logged in grey, for example
   `NHI: entering claim value 55782 on Household details.` or

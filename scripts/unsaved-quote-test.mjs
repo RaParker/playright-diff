@@ -98,6 +98,13 @@ for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of
     ['NHI: entering rebuilding cost 249995 on Property circumstances.', 'NHI: selecting Choose another amount.']
   ],
   [
+    'enters the replacement rebuilding cost when there is no BCIS estimate to choose another amount from',
+    { sections: rebuildingCostSections, rebuildingCostError: true, rebuildingCostEstimate: false },
+    undefined,
+    ['NHI: entering rebuilding cost 249995 on Property circumstances.'],
+    ['NHI: selecting Choose another amount.']
+  ],
+  [
     'reports a rebuilding cost error that Continue still shows after the cost is replaced',
     { sections: rebuildingCostSections, rebuildingCostError: true, rebuildingCostFixable: false },
     /NHI journey validation failed on Property circumstances: Enter the cost of rebuilding the property/
@@ -203,7 +210,7 @@ for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of
         id: 'treeDistance~G01',
         message: 'The Tree distance field must contain a value',
         field: questionField.text('nearbyTreeDistance'),
-        expected: '10'
+        expected: '5'
       },
       {
         id: 'treeDamage~G01',
@@ -215,8 +222,93 @@ for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of
     undefined,
     [
       'NHI: selecting tree location Your property on Property circumstances.',
-      'NHI: entering tree distance 10 on Property circumstances.',
+      'NHI: entering tree distance 5 on Property circumstances.',
       'NHI: selecting tree damage No on Property circumstances.'
+    ]
+  ],
+  [
+    'enters a tree distance within 7 metres when Continue reports the distance too far',
+    questionJourney('Property circumstances', [
+      {
+        id: 'treeDistance~G01',
+        message: 'The distance must be within 7 metres of the property.',
+        field: questionField.text('nearbyTreeDistance', '10'),
+        expected: '5'
+      }
+    ]),
+    undefined,
+    ['NHI: entering tree distance 5 on Property circumstances.']
+  ],
+  [
+    'chooses the criminal conviction from the list when Continue reports one typed that is not on it',
+    questionJourney('Household details', [
+      {
+        id: 'conviction~G01',
+        message: 'Please select an criminal conviction from the list.',
+        field: questionField.autocomplete('criminalConvictionType', ['Theft', 'Theft, shop']),
+        expected: 'Theft'
+      }
+    ]),
+    undefined,
+    ['NHI: selecting criminal conviction Theft on Household details.']
+  ],
+  [
+    'answers the flood and lock questions when Continue on Property circumstances reports them',
+    questionJourney('Property circumstances', [
+      {
+        id: 'flood',
+        message: 'Please select yes or no.',
+        field: questionField.buttons('flood', ['Yes', 'No']),
+        expected: 'No'
+      },
+      {
+        id: 'mainLock',
+        message: 'Please select an option.',
+        field: questionField.images(['5-lever mortice deadlock (BS 3621)', 'Multi-point lock', 'Other']),
+        expected: 'Multi-point lock'
+      },
+      {
+        id: 'patioLock',
+        message: 'Please select an option.',
+        field: questionField.buttons('patioLockType', ['No patio doors', 'Multi-point lock', 'Other']),
+        expected: 'Multi-point lock'
+      },
+      {
+        id: 'otherExitsLock',
+        message: 'Please select an option.',
+        field: questionField.buttons('otherExitsLockType', ['Multi-point lock', 'No other exit', 'Other']),
+        expected: 'No other exit'
+      }
+    ]),
+    undefined,
+    [
+      'NHI: selecting flooded in the last 10 years No on Property circumstances.',
+      'NHI: selecting main entrance lock Multi-point lock on Property circumstances.',
+      'NHI: selecting patio doors lock Multi-point lock on Property circumstances.',
+      'NHI: selecting other exits lock No other exit on Property circumstances.'
+    ]
+  ],
+  [
+    'answers only the lock question whose field shows the shared "Please select an option." message',
+    questionJourney('Property circumstances', [
+      {
+        id: 'patioLock',
+        message: 'Please select an option.',
+        field: questionField.buttons('patioLockType', ['No patio doors', 'Multi-point lock', 'Other']),
+        expected: 'Multi-point lock'
+      },
+      {
+        id: 'other',
+        message: 'Please select an option.',
+        field: questionField.buttons('otherQuestion', ['Multi-point lock', 'No other exit']),
+        expected: 'No other exit'
+      }
+    ]),
+    /NHI journey validation failed on Property circumstances: Please select an option\./,
+    ['NHI: selecting patio doors lock Multi-point lock on Property circumstances.'],
+    [
+      'NHI: selecting main entrance lock Multi-point lock on Property circumstances.',
+      'NHI: selecting other exits lock No other exit on Property circumstances.'
     ]
   ],
   [

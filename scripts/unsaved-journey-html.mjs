@@ -67,9 +67,15 @@ export const quoteSummaryHtml = nhiPagesHtml(summaryPageHtml, {
  * Builds the Property circumstances rebuilding cost question (markup trimmed from the live page): the cost field is
  * only shown once "Choose another amount" is selected. Needs {@link otherAmountScript} on the page.
  * @param {boolean} other Whether "Choose another amount" starts selected, rather than the BCIS estimate.
+ * @param {boolean} [estimate] Whether a BCIS estimate is offered (default true); without one, only the cost field is
+ * shown.
  * @returns {string} Question HTML.
  */
-export function rebuildingCostHtml(other) {
+export function rebuildingCostHtml(other, estimate = true) {
+  if (!estimate) {
+    return '<div id="rebuilding"><input inputmode="decimal" name="rebuildingCost" type="text" value=""></div>';
+  }
+
   return `<div id="rebuilding"><label id="Qrebuild~K424000" class="btn btn-primary${other ? '' : ' active'}"
     >Use £424,000 estimate</label><label id="Qrebuild~Kother" class="btn btn-primary${other ? ' active' : ''}"
     >Choose another amount</label><input inputmode="decimal" name="rebuildingCost" type="text"
@@ -263,6 +269,8 @@ export function questionErrorHtml(id, message, field) {
  * @param {boolean} [options.rebuildingCostError] Adds the rebuilding cost question (shown on Property circumstances
  * only), and reports the rebuilding cost as missing on Continue from Property circumstances until 249995 is entered.
  * @param {boolean} [options.rebuildingCostOther] Whether "Choose another amount" starts selected (default true).
+ * @param {boolean} [options.rebuildingCostEstimate] Whether a BCIS estimate is offered (default true); without one,
+ * the question has no "Choose another amount".
  * @param {boolean} [options.rebuildingCostFixable] Whether entering 249995 clears the rebuilding cost error (default
  * true).
  * @param {{ section: string, id: string, message: string, field: string, expected: string }[]} [options.questions]
@@ -285,6 +293,7 @@ export function unsavedJourneyHtml({
   rebuildingCostError = false,
   rebuildingCostFixable = true,
   rebuildingCostOther = true,
+  rebuildingCostEstimate = true,
   questions = []
 } = {}) {
   const timelineHtml =
@@ -299,7 +308,7 @@ export function unsavedJourneyHtml({
   const emailHtml = emailError
     ? '<input id="email" inputmode="email" name="email" type="text" class="form-control" value="first name.last@example.com">'
     : '';
-  const rebuildingHtml = rebuildingCostError ? rebuildingCostHtml(rebuildingCostOther) : '';
+  const rebuildingHtml = rebuildingCostError ? rebuildingCostHtml(rebuildingCostOther, rebuildingCostEstimate) : '';
   const questionsHtml = questions.map(({ id, message, field }) => questionErrorHtml(id, message, field)).join('');
   return `<h1></h1>${timelineHtml}${coverStartHtml}${emailHtml}${rebuildingHtml}${questionsHtml}<p id="lookup" hidden>Checking property details</p>
     <button id="continue">Continue</button><button id="quote" hidden>Get your quote</button><script>
