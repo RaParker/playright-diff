@@ -44,14 +44,25 @@ interface QuestionAnswer {
   question: string;
   /**
    * How the answer is given: `fill` types it into {@link field}, `click` clicks the {@link field} element showing it
-   * (a button or image), and `dropdown` clicks {@link field} (a dropdown toggle) and then the menu item showing it.
+   * (a button or image), `dropdown` clicks {@link field} (a dropdown toggle) and then the menu item showing it,
+   * `autocomplete` types it into {@link field} and then clicks the suggestion showing it, and `date` picks each part of
+   * a `D Month YYYY` answer from the question's day, month and year dropdowns.
    */
-  kind: 'fill' | 'click' | 'dropdown';
-  /** Selector of the field, buttons or dropdown toggle, within the question. */
+  kind: 'fill' | 'click' | 'dropdown' | 'autocomplete' | 'date';
+  /** Selector of the field, buttons, dropdown toggle (or, for `date`, the day dropdown toggle), within the question. */
   field: string;
   /** Answer given. */
   answer: string;
 }
+
+/** Parts of a date question, matching the `~K` suffix of each part's dropdown toggle id. */
+const dateParts = ['day', 'month', 'year'];
+
+/**
+ * Date given to a date question: 1 January two years ago. The year dropdown offers this year and the 25 before it, so
+ * the year is worked out from today rather than fixed.
+ */
+const replacementDate = `1 January ${new Date().getFullYear() - 2}`;
 
 /** Questions answered when the journey reports them; every question showing the message (e.g. each claim) is answered. */
 const questionAnswers: QuestionAnswer[] = [
@@ -158,6 +169,46 @@ const questionAnswers: QuestionAnswer[] = [
     kind: 'click',
     field: 'button[name="floodCause"]',
     answer: 'Flood'
+  },
+  {
+    message: 'Please select day, month and year.',
+    section: 'Property circumstances',
+    question: 'date',
+    kind: 'date',
+    field: 'button.dropdown-toggle[id$="~Kday"]',
+    answer: replacementDate
+  },
+  {
+    message: 'The Tree location field must contain a value',
+    section: 'Property circumstances',
+    question: 'tree location',
+    kind: 'click',
+    field: 'button[name="treeLocation"]',
+    answer: 'Your property'
+  },
+  {
+    message: 'The Tree distance field must contain a value',
+    section: 'Property circumstances',
+    question: 'tree distance',
+    kind: 'fill',
+    field: 'input[name="nearbyTreeDistance"]',
+    answer: '10'
+  },
+  {
+    message: 'The Damage caused by tree field must contain a value',
+    section: 'Property circumstances',
+    question: 'tree damage',
+    kind: 'click',
+    field: 'button[name="nearbyTreesCausedDamage"]',
+    answer: 'No'
+  },
+  {
+    message: 'Enter the criminal conviction that they were convicted of',
+    section: 'Household details',
+    question: 'criminal conviction',
+    kind: 'autocomplete',
+    field: 'input[name="criminalConvictionType"]',
+    answer: 'Theft'
   }
 ];
 
@@ -273,7 +324,8 @@ async function answerQuestions(page: Page, answer: QuestionAnswer): Promise<void
   // Ids are read first, as answering a question can clear its error and so drop it from the locator.
   const ids = await errorQuestions(page, answer).evaluateAll((elements) => elements.map((element) => element.id));
   for (const id of ids) {
-    const field = page.locator(`[id="${id}"]`).locator(answer.field);
+    const question = page.locator(`[id="${id}"]`);
+    const field = question.locator(answer.field);
     switch (answer.kind) {
       case 'fill':
         await field.fill(answer.answer);
@@ -283,12 +335,24 @@ async function answerQuestions(page: Page, answer: QuestionAnswer): Promise<void
         break;
       case 'dropdown':
         await field.click();
-        await page
-          .locator(dropdownItemSelector)
-          .filter({ hasText: exactText(answer.answer) })
-          .click();
+        await chooseDropdownItem(page, answer.answer);
+        break;
+      case 'autocomplete':
+        await field.fill(answer.answer);
+        await chooseDropdownItem(page, answer.answer);
+        break;
+      case 'date':
+        await chooseDate(page, question, answer.answer);
         break;
     }
+  }
+}
+
+async function chooseDate(page: Page, question: Locator, date: string): Promise<void> {
+  const values = date.split(' ');
+  for (const [index, part] of dateParts.entries()) {
+    await question.locator(`button.dropdown-toggle[id$="~K${part}"]`).click();
+    await chooseDropdownItem(page, values[index] ?? '');
   }
 }
 
@@ -322,6 +386,13 @@ function errorQuestions(page: Page, answer: QuestionAnswer): Locator {
   return page.locator(`div.av-input-error:has(${answer.field})`).filter({
     has: page.locator('div.av-error-message', { hasText: exactText(answer.message) })
   });
+}
+
+async function chooseDropdownItem(page: Page, text: string): Promise<void> {
+  await page
+    .locator(dropdownItemSelector)
+    .filter({ hasText: exactText(text) })
+    .click();
 }
 
 function dropdownToggle(name: string): string {

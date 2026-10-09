@@ -124,14 +124,55 @@ export const questionField = {
    * @returns {string} Dropdown HTML.
    */
   dropdown: (name, options) =>
-    `<div name="${name}" class="dropdown" data-options="${JSON.stringify(options).replaceAll('"', '&quot;')}"><button
-      type="button" class="dropdown-toggle btn">Please select</button></div>`
+    `<div name="${name}" class="dropdown" data-options="${optionsAttribute(options)}"><button
+      type="button" class="dropdown-toggle btn">Please select</button></div>`,
+  /**
+   * @param {string} name Input name.
+   * @param {string[]} options Suggestions; those containing the typed text (ignoring case) are shown as it is typed.
+   * @returns {string} Autocomplete HTML.
+   */
+  autocomplete: (name, options) =>
+    `<input autocomplete="off" name="${name}" type="text" class="form-control" value=""
+      data-options="${optionsAttribute(options)}">`,
+  /**
+   * @param {string} id Question id; each toggle's id is `Q` followed by it and `~Kday`, `~Kmonth` or `~Kyear`.
+   * @returns {string} Day, month and year dropdowns HTML, offering this year and the 25 before it.
+   */
+  date: (id) => {
+    const year = new Date().getFullYear();
+    const parts = {
+      day: Array.from({ length: 31 }, (_value, index) => String(index + 1)),
+      month: [
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December'
+      ],
+      year: Array.from({ length: 26 }, (_value, index) => String(year - index))
+    };
+    return `<div role="group">${Object.entries(parts)
+      .map(
+        ([part, options]) => `<div class="d-inline dropdown" data-options="${optionsAttribute(options)}"><button
+          id="Q${id}~K${part}" type="button" class="dropdown-toggle btn">${part}</button></div>`
+      )
+      .join('')}</div>`;
+  }
 };
 
 /**
- * Script giving {@link questionField} fields behaviour: a clicked button or image is marked `data-selected`, and a
- * dropdown toggle opens a menu whose items set the toggle text. Defines `answerOf(question)`, which reads a question's
- * text field value, selected button or image, or dropdown toggle text.
+ * Script giving {@link questionField} fields behaviour: a clicked button or image is marked `data-selected`, a
+ * dropdown toggle opens a menu whose items set the toggle text, and typing in an autocomplete opens a menu of matching
+ * suggestions whose items set (and mark `data-chosen`) its value. Defines `answerOf(question)`, which reads a
+ * question's chosen autocomplete value, text field value, selected button or image, or dropdown toggle texts (joined by
+ * spaces, for a date).
  */
 export const questionScript = `document.addEventListener('click', (event) => {
   const choice = event.target.closest('.btn-toolbar button, .hp-float > label');
@@ -143,7 +184,13 @@ export const questionScript = `document.addEventListener('click', (event) => {
 
   const item = event.target.closest('.dropdown-item');
   if (item !== null) {
-    item.parentElement.previousElementSibling.textContent = item.textContent;
+    const owner = item.parentElement.previousElementSibling;
+    if (owner.tagName === 'INPUT') {
+      owner.value = item.textContent;
+      owner.dataset.chosen = item.textContent;
+    } else {
+      owner.textContent = item.textContent;
+    }
     item.parentElement.remove();
     return;
   }
@@ -154,9 +201,32 @@ export const questionScript = `document.addEventListener('click', (event) => {
     toggle.insertAdjacentHTML('afterend', '<div class="dropdown-menu show">' + items.join('') + '</div>');
   }
 });
-const answerOf = (question) =>
-  question.querySelector('input[type="text"]')?.value ??
-  (question.querySelector('[data-selected]') ?? question.querySelector('.dropdown-toggle'))?.textContent.trim();`;
+document.addEventListener('input', (event) => {
+  const input = event.target;
+  if (input.dataset.options === undefined) return;
+  delete input.dataset.chosen;
+  input.nextElementSibling?.remove();
+  const typed = input.value.toLowerCase();
+  const items = JSON.parse(input.dataset.options)
+    .filter((option) => typed !== '' && option.toLowerCase().includes(typed))
+    .map((option) => '<button class="dropdown-item">' + option + '</button>');
+  input.insertAdjacentHTML('afterend', '<div class="dropdown-menu show">' + items.join('') + '</div>');
+});
+const answerOf = (question) => {
+  const input = question.querySelector('input[type="text"]');
+  if (input !== null) return input.dataset.options === undefined ? input.value : input.dataset.chosen;
+  const selected = question.querySelector('[data-selected]');
+  if (selected !== null) return selected.textContent.trim();
+  return [...question.querySelectorAll('.dropdown-toggle')].map((toggle) => toggle.textContent.trim()).join(' ');
+};`;
+
+/**
+ * @param {string[]} options Menu item texts.
+ * @returns {string} The texts as JSON, escaped for a double-quoted `data-options` attribute.
+ */
+function optionsAttribute(options) {
+  return JSON.stringify(options).replaceAll('"', '&quot;');
+}
 
 /**
  * Builds a journey question showing a validation error (markup trimmed from the live page).

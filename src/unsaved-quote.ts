@@ -6,8 +6,11 @@ import { extendWhileLoading, ValidationError } from './screenshot.js';
 import { readErrorSummary } from './tcas-quote.js';
 
 const errorSelector = 'div.av-card-error-summary';
-/** Upper bound on sections walked, so a journey that never offers Get your quote cannot loop forever. */
-const maxSections = 15;
+/**
+ * Upper bound on sections walked, so a journey that never offers Get your quote cannot loop forever. Sections walked
+ * again after a fix or a return count too, so this allows for several walks of the whole journey.
+ */
+const maxSections = 40;
 /**
  * Get your quote can return to a section whose lookups had not finished (e.g. the rebuild estimate); the journey
  * is walked again once after that, so a second return is reported.

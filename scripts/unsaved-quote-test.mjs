@@ -9,9 +9,10 @@ import { unsavedQuote } from '../dist/unsaved-quote.js';
 import { assertGreyLogsAbsent, assertGreyLogsInOrder } from './log-assertions.mjs';
 import { questionField, unsavedJourneyHtml } from './unsaved-journey-html.mjs';
 
-const manySections = Array.from({ length: 20 }, (_value, index) => `Section ${index + 1}`);
+const manySections = Array.from({ length: 45 }, (_value, index) => `Section ${index + 1}`);
 const rebuildingCostSections = ['Cover details', 'Property circumstances', 'Contact details'];
 const claimValueMessage = 'Must be between £1 and £10,000,000.';
+const replacementDate = `1 January ${new Date().getFullYear() - 2}`;
 
 /**
  * Builds a journey whose `section` (the second of three) shows `questions` with validation errors.
@@ -51,7 +52,7 @@ for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of
   [
     'stops when Get your quote is not reached within the section limit',
     { sections: manySections },
-    /did not reach Get your quote within 15 sections/
+    /did not reach Get your quote within 40 sections/
   ],
   [
     'fixes the cover start date when Continue on Cover details reports it out of range',
@@ -162,6 +163,61 @@ for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of
     ]),
     /NHI journey validation failed on Household details: Must be between £1 and £10,000,000\./,
     ['NHI: entering claim value 55782 on Household details.']
+  ],
+  [
+    'selects 1 January two years ago from the date dropdowns when Continue reports a date missing',
+    questionJourney('Property circumstances', [
+      {
+        id: 'flood~G01',
+        message: 'Please select day, month and year.',
+        field: questionField.date('flood~G01'),
+        expected: replacementDate
+      }
+    ]),
+    undefined,
+    [`NHI: selecting date ${replacementDate} on Property circumstances.`]
+  ],
+  [
+    'types the criminal conviction and chooses the matching suggestion when Continue reports it missing',
+    questionJourney('Household details', [
+      {
+        id: 'conviction~G01',
+        message: 'Enter the criminal conviction that they were convicted of',
+        field: questionField.autocomplete('criminalConvictionType', ['Handling stolen goods', 'Theft', 'Theft, shop']),
+        expected: 'Theft'
+      }
+    ]),
+    undefined,
+    ['NHI: selecting criminal conviction Theft on Household details.']
+  ],
+  [
+    'answers the tree location, distance and damage when Continue on Property circumstances reports them',
+    questionJourney('Property circumstances', [
+      {
+        id: 'treeLocation~G01',
+        message: 'The Tree location field must contain a value',
+        field: questionField.buttons('treeLocation', ['Your property', "A neighbour's property", 'Other']),
+        expected: 'Your property'
+      },
+      {
+        id: 'treeDistance~G01',
+        message: 'The Tree distance field must contain a value',
+        field: questionField.text('nearbyTreeDistance'),
+        expected: '10'
+      },
+      {
+        id: 'treeDamage~G01',
+        message: 'The Damage caused by tree field must contain a value',
+        field: questionField.buttons('nearbyTreesCausedDamage', ['Yes', 'No']),
+        expected: 'No'
+      }
+    ]),
+    undefined,
+    [
+      'NHI: selecting tree location Your property on Property circumstances.',
+      'NHI: entering tree distance 10 on Property circumstances.',
+      'NHI: selecting tree damage No on Property circumstances.'
+    ]
   ],
   [
     'leaves an error message shared by a question it has no answer for',

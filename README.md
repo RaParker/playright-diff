@@ -348,23 +348,30 @@ Some errors come from the test data rather than the quote, so the action fixes t
 Errors shown on a question (a `div.av-input-error` whose `div.av-error-message` has the text)
 are answered with a fixed value, on every question that shows the error and has the field
 (for example each claim). Dropdowns are answered by clicking the toggle and then the
-`.dropdown-menu.show button.dropdown-item` with the answer text.
+`.dropdown-menu.show button.dropdown-item` with the answer text; an autocomplete by typing
+the answer and then clicking the suggestion with that text; and a date by picking each
+part from the toggles whose ids end `~Kday`, `~Kmonth` and `~Kyear`.
 
-| Error message                                                | Field                                | Answer (on section)                                   |
-| ------------------------------------------------------------ | ------------------------------------ | ----------------------------------------------------- |
-| "Must be between £1 and £10,000,000."                        | `input[name="claimPaid"]`            | `55782` (**Household details**)                       |
-| "Please select a claim/loss from the list."                  | `div.dropdown[name="claimType"]`     | Escape of water - other cause (**Household details**) |
-| "Please select what your roof is made of."                   | `div.dropdown[name="roofMaterial"]`  | Slate (**Property construction**)                     |
-| "Please select what your external walls are made of."        | `div.hp-float > label`               | Brick (**Property construction**)                     |
-| "Please tell us what type of house it is."                   | `div.dropdown[name="houseType"]`     | Detached House (**Property type**)                    |
-| "Please answer this question."                               | `button[name="ownOrRent"]`           | Own (Mortgage) (**Property type**)                    |
-| "Please enter the year the property was built."              | `input[name="yearBuilt"]`            | `1990` (**Property type**)                            |
-| "Please select the number of bedrooms."                      | `button[name="bedrooms"]`            | 3 (**Property type**)                                 |
-| "Please select the number of bathrooms."                     | `button[name="bathrooms"]`           | 1 (**Property type**)                                 |
-| "Please enter how long you held this type of insurance for." | `button[name="insuranceTypeLength"]` | 5 (**Property type**)                                 |
-| "Enter the total replacement value of your contents"         | `input[name="contentsCost"]`         | `50000` (**Your contents**)                           |
-| "The Safe rating field must contain a value"                 | `button[name="safeRating"]`          | UK: £1k /£10k (**Your contents**)                     |
-| "The Flood cause field must contain a value"                 | `button[name="floodCause"]`          | Flood (**Property circumstances**)                    |
+| Error message                                                | Field                                    | Answer (on section)                                                                                                |
+| ------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| "Must be between £1 and £10,000,000."                        | `input[name="claimPaid"]`                | `55782` (**Household details**)                                                                                    |
+| "Please select a claim/loss from the list."                  | `div.dropdown[name="claimType"]`         | Escape of water - other cause (**Household details**)                                                              |
+| "Please select what your roof is made of."                   | `div.dropdown[name="roofMaterial"]`      | Slate (**Property construction**)                                                                                  |
+| "Please select what your external walls are made of."        | `div.hp-float > label`                   | Brick (**Property construction**)                                                                                  |
+| "Please tell us what type of house it is."                   | `div.dropdown[name="houseType"]`         | Detached House (**Property type**)                                                                                 |
+| "Please answer this question."                               | `button[name="ownOrRent"]`               | Own (Mortgage) (**Property type**)                                                                                 |
+| "Please enter the year the property was built."              | `input[name="yearBuilt"]`                | `1990` (**Property type**)                                                                                         |
+| "Please select the number of bedrooms."                      | `button[name="bedrooms"]`                | 3 (**Property type**)                                                                                              |
+| "Please select the number of bathrooms."                     | `button[name="bathrooms"]`               | 1 (**Property type**)                                                                                              |
+| "Please enter how long you held this type of insurance for." | `button[name="insuranceTypeLength"]`     | 5 (**Property type**)                                                                                              |
+| "Enter the total replacement value of your contents"         | `input[name="contentsCost"]`             | `50000` (**Your contents**)                                                                                        |
+| "The Safe rating field must contain a value"                 | `button[name="safeRating"]`              | UK: £1k /£10k (**Your contents**)                                                                                  |
+| "The Flood cause field must contain a value"                 | `button[name="floodCause"]`              | Flood (**Property circumstances**)                                                                                 |
+| "Please select day, month and year."                         | `button.dropdown-toggle[id$="~Kday"]`    | 1 January, two years before this year (any date question; the year dropdown offers this year and the 25 before it) |
+| "The Tree location field must contain a value"               | `button[name="treeLocation"]`            | Your property (**Property circumstances**)                                                                         |
+| "The Tree distance field must contain a value"               | `input[name="nearbyTreeDistance"]`       | `10` (**Property circumstances**)                                                                                  |
+| "The Damage caused by tree field must contain a value"       | `button[name="nearbyTreesCausedDamage"]` | No (**Property circumstances**)                                                                                    |
+| "Enter the criminal conviction that they were convicted of"  | `input[name="criminalConvictionType"]`   | Theft, chosen from the suggestions (**Household details**)                                                         |
 
 - A message other questions share (such as "Please answer this question.") is left alone
   when no question showing it has the field, so it is reported as usual.
@@ -467,7 +474,8 @@ Enter the year built`, unless it is one of the [journey error auto-fixes](#journ
   Otherwise the copied answers need changing before that policy can be quoted.
 - If Get your quote returns to a section (for example while the rebuild estimate is still
   being looked up), the journey is walked again once; a second return fails with the summary.
-- The journey stops after 15 sections without reaching Get your quote.
+- The journey stops after 40 sections (counting sections walked again after a fix or a
+  return) without reaching Get your quote.
 
 Later runs try the mapped GUID's NHI quote page first; if it shows Oops (not saved to NHI
 yet), the unsaved journey runs again with no further request. Delete the entry (or the whole
