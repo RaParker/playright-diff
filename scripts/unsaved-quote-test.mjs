@@ -110,6 +110,32 @@ for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of
     /NHI journey validation failed on Property circumstances: Enter the cost of rebuilding the property/
   ],
   [
+    'enters the rebuilding cost again when a Get your quote return drops it while its field still shows it',
+    {
+      sections: rebuildingCostSections,
+      rebuildingCostError: true,
+      rebuildingCostDropped: true,
+      bounceTo: 'Property circumstances'
+    },
+    undefined,
+    [
+      'NHI: entering rebuilding cost 249995 on Property circumstances.',
+      'NHI: Get your quote returned to Property circumstances; walking the journey again.',
+      'NHI: entering rebuilding cost 249995 on Property circumstances.'
+    ]
+  ],
+  [
+    'stops when Get your quote returns a second time after the rebuilding cost is entered again',
+    {
+      sections: rebuildingCostSections,
+      rebuildingCostError: true,
+      rebuildingCostDropped: true,
+      bounceTo: 'Property circumstances',
+      bounceTimes: 2
+    },
+    /NHI journey returned to Property circumstances after Get your quote 2 times: Enter the number of bedrooms/
+  ],
+  [
     'enters the claim value on every claim that Continue on Household details reports out of range',
     questionJourney('Household details', [
       { id: 'claim~G01', message: claimValueMessage, field: questionField.text('claimPaid', '0'), expected: '55782' },

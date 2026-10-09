@@ -1,6 +1,6 @@
 import type { Page, Request } from 'playwright';
 import { color } from './color.js';
-import { fixJourneyError } from './journey-fixes.js';
+import { fixJourneyError, rebuildingCostFixName } from './journey-fixes.js';
 import { quoteHeadingPattern } from './quote-summary.js';
 import { extendWhileLoading, ValidationError } from './screenshot.js';
 import { readErrorSummary } from './tcas-quote.js';
@@ -27,7 +27,8 @@ const lookupInProgressPattern = /^Checking property details$/i;
  * Clicks Continue through each section until Get your quote appears, clicks it, and waits for the quote heading.
  * If Get your quote returns to a section, that section's lookups are waited for and the journey is walked again.
  * Test data the journey rejects (reported by Continue or by a return), such as a cover start date out of range or an
- * invalid email address, is fixed once (see {@link fixJourneyError}) and the journey is walked again from there.
+ * invalid email address, is fixed once (see {@link fixJourneyError}) and the journey is walked again from there. The
+ * rebuilding cost can be fixed once more after each return that is not fixed, as the site can drop the saved cost.
  * @param page Page opened on the journey.
  * @throws A {@link ValidationError} when Continue leaves any other error summary (or an error already fixed once) on a
  * section, or Get your quote returns to a section more than {@link maxReturns} time(s); these name the section and
@@ -62,6 +63,8 @@ export async function unsavedQuote(page: Page): Promise<void> {
         );
       }
 
+      // The site can drop the saved rebuilding cost on a return while its field still shows it, so allow one more fix.
+      fixed.delete(rebuildingCostFixName);
       console.log(color.Gray(`NHI: Get your quote returned to ${returnedTo}; walking the journey again.`));
       continue;
     }

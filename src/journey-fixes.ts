@@ -12,6 +12,12 @@ export const replacementEmail = 'nobody.special@nhitest.com';
 
 /** Rebuilding cost entered when the journey rejects the test data's rebuilding cost. */
 export const replacementRebuildingCost = '249995';
+/**
+ * Name of the rebuilding cost fix in the `applied` set of {@link fixJourneyError}. The site can drop the saved cost
+ * when Get your quote returns to a section (while the field still shows it), so a flow may remove this name to let the
+ * fix be made again.
+ */
+export const rebuildingCostFixName = 'rebuilding cost';
 
 /** Open dropdown menu item, shown once a dropdown's toggle is clicked. */
 const dropdownItemSelector = '.dropdown-menu.show button.dropdown-item';
@@ -277,7 +283,7 @@ const journeyFixes: JourneyFix[] = [
     apply: (page) => page.locator('input[name="email"]').fill(replacementEmail)
   },
   {
-    name: 'rebuilding cost',
+    name: rebuildingCostFixName,
     pattern: /Enter the cost of rebuilding the property/i,
     section: 'Property circumstances',
     describe: () => `entering rebuilding cost ${replacementRebuildingCost}`,

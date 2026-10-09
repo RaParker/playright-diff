@@ -481,6 +481,8 @@ Enter the year built`, unless it is one of the [journey error auto-fixes](#journ
   Otherwise the copied answers need changing before that policy can be quoted.
 - If Get your quote returns to a section (for example while the rebuild estimate is still
   being looked up), the journey is walked again once; a second return fails with the summary.
+  The site can drop the saved rebuilding cost on such a return while its field still shows
+  `249,995`, so the rebuilding cost fix can be made once more on that walk.
 - The journey stops after 40 sections (counting sections walked again after a fix or a
   return) without reaching Get your quote.
 

@@ -273,6 +273,8 @@ export function questionErrorHtml(id, message, field) {
  * the question has no "Choose another amount".
  * @param {boolean} [options.rebuildingCostFixable] Whether entering 249995 clears the rebuilding cost error (default
  * true).
+ * @param {boolean} [options.rebuildingCostDropped] Whether a Get your quote return to bounceTo drops the entered
+ * rebuilding cost while its field still shows it, so it is reported again until it is entered again.
  * @param {{ section: string, id: string, message: string, field: string, expected: string }[]} [options.questions]
  * Questions (see {@link questionErrorHtml}) shown on their section only; Continue from a section reports each of its
  * questions whose answer (see {@link questionScript}) is not `expected`, with an error summary of their messages.
@@ -294,6 +296,7 @@ export function unsavedJourneyHtml({
   rebuildingCostFixable = true,
   rebuildingCostOther = true,
   rebuildingCostEstimate = true,
+  rebuildingCostDropped = false,
   questions = []
 } = {}) {
   const timelineHtml =
@@ -325,7 +328,10 @@ export function unsavedJourneyHtml({
     const emailValid = () => !emailError || (emailFixable && document.getElementById('email').value === 'nobody.special@nhitest.com');
     const rebuildingCostError = ${JSON.stringify(rebuildingCostError)};
     const rebuildingCostFixable = ${JSON.stringify(rebuildingCostFixable)};
+    const rebuildingCostDropped = ${JSON.stringify(rebuildingCostDropped)};
     const rebuildingCost = () => document.querySelector('input[name="rebuildingCost"]');
+    let rebuildingCostEntered = false;
+    rebuildingCost()?.addEventListener('input', () => { rebuildingCostEntered = true; });
     const questions = ${JSON.stringify(questions.map(({ section, id, message, expected }) => ({ section, id, message, expected })))};
     const unanswered = () =>
       questions.filter(({ section, id, expected }) => section === sections[index] && answerOf(document.getElementById('QP' + id)) !== expected);
@@ -368,7 +374,12 @@ export function unsavedJourneyHtml({
       if (
         rebuildingCostError &&
         sections[index] === 'Property circumstances' &&
-        !(rebuildingCostFixable && !rebuildingCost().hidden && rebuildingCost().value === '249995')
+        !(
+          rebuildingCostFixable &&
+          !rebuildingCost().hidden &&
+          rebuildingCost().value === '249995' &&
+          (!rebuildingCostDropped || rebuildingCostEntered)
+        )
       ) {
         document.querySelector('.av-card-error-summary')?.remove();
         document.body.insertAdjacentHTML('beforeend', summary('Enter the cost of rebuilding the property'));
@@ -409,6 +420,7 @@ export function unsavedJourneyHtml({
 
       if (bounceTo !== null && bouncesLeft > 0) {
         bouncesLeft--;
+        rebuildingCostEntered = false;
         index = sections.indexOf(bounceTo);
         show();
         document.querySelector('.av-card-error-summary')?.remove();
