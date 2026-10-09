@@ -318,7 +318,7 @@ page:
 - The flow stops after 5 clicks without reaching the quote.
 - If a click returns to the journey with an error the action can fix (see below), it fixes it
   once and clicks **Return to quote** (`button.hp-submit-form`, logged as for example
-  `NHI: cover details: clicking Return to quote.`), which goes straight to the quote page. An
+  `NHI: clicking Return to quote on Cover details.`), which goes straight to the quote page. An
   error shown again, or left on screen until the timeout, is reported as for example
   `NHI cover details errors: …`.
 

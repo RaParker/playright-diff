@@ -216,7 +216,7 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
       'NHI: entering rebuilding cost 249995 on Property circumstances.',
       'NHI: opening Property circumstances from the timeline.',
       'NHI: selecting Choose another amount.',
-      'NHI: property circumstances: clicking Return to quote.'
+      'NHI: clicking Return to quote on Property circumstances.'
     ]
   ],
   [

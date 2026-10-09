@@ -43,7 +43,7 @@ export async function unsavedQuote(page: Page): Promise<void> {
     // Lookups started by a section (e.g. the rebuild estimate) must finish before moving on.
     await waitForLookups(page, apiRequests);
     if (await quoteButton.isVisible()) {
-      console.log(color.Gray(`NHI journey: ${section}: clicking Get your quote.`));
+      console.log(color.Gray(`NHI: clicking Get your quote on ${section}.`));
       await quoteButton.click();
       if (await waitForQuote(page, section)) {
         return;
@@ -52,7 +52,7 @@ export async function unsavedQuote(page: Page): Promise<void> {
       const returnedTo = await readSection(page);
       const errors = await readErrorSummary(page, errorSelector);
       if ((await fixJourneyError(page, 'NHI', errors, fixed)) !== undefined) {
-        console.log(color.Gray(`NHI journey: Get your quote returned to ${returnedTo}; walking the journey again.`));
+        console.log(color.Gray(`NHI: Get your quote returned to ${returnedTo}; walking the journey again.`));
         continue;
       }
 
@@ -62,11 +62,11 @@ export async function unsavedQuote(page: Page): Promise<void> {
         );
       }
 
-      console.log(color.Gray(`NHI journey: Get your quote returned to ${returnedTo}; walking the journey again.`));
+      console.log(color.Gray(`NHI: Get your quote returned to ${returnedTo}; walking the journey again.`));
       continue;
     }
 
-    console.log(color.Gray(`NHI journey: ${section}: clicking Continue.`));
+    console.log(color.Gray(`NHI: clicking Continue on ${section}.`));
     const errors = await continueFrom(page, section);
     if (errors !== undefined && (await fixJourneyError(page, 'NHI', errors, fixed)) === undefined) {
       throw new ValidationError(`NHI journey validation failed on ${section}: ${errors}`);

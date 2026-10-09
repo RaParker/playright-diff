@@ -62,6 +62,8 @@ export function quoteSummary(label: string): (page: Page) => Promise<void> {
       }
 
       let step = quoteSteps.find(({ name }) => name === outcome);
+      // Logs name a journey section as its heading reads, like the journey fix logs; errors keep the lower case name.
+      let shownOn = step?.name ?? '';
       if (step === undefined) {
         const errors = await readErrorSummary(page, errorSelector);
         const section = await fixJourneyError(page, label, errors, fixed);
@@ -70,13 +72,14 @@ export function quoteSummary(label: string): (page: Page) => Promise<void> {
         }
 
         step = { ...returnToQuote, name: section.toLowerCase() };
+        shownOn = section;
       }
 
       if (clicks === maxClicks) {
         throw new Error(`${label} quote did not appear within ${maxClicks} clicks; last shown: ${step.name}.`);
       }
 
-      console.log(color.Gray(`${label}: ${step.name}: clicking ${step.button}.`));
+      console.log(color.Gray(`${label}: clicking ${step.button} on ${shownOn}.`));
       // Mark summaries already shown, so only a new one counts as the click's error.
       await page.evaluate(
         ({ errorSelector, seenErrorAttribute }) =>
