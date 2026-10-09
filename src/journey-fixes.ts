@@ -51,11 +51,15 @@ interface QuestionAnswer {
   /**
    * How the answer is given: `fill` types it into {@link field}, `click` clicks the {@link field} element showing it
    * (a button or image), `dropdown` clicks {@link field} (a dropdown toggle) and then the menu item showing it,
-   * `autocomplete` types it into {@link field} and then clicks the suggestion showing it, and `date` picks each part of
+   * `autocomplete` types it into {@link field} and then clicks the suggestion showing it, `check` ticks the checkbox in
+   * the {@link field} element whose label shows it (leaving it ticked if it already is), and `date` picks each part of
    * a `D Month YYYY` answer from the question's day, month and year dropdowns.
    */
-  kind: 'fill' | 'click' | 'dropdown' | 'autocomplete' | 'date';
-  /** Selector of the field, buttons, dropdown toggle (or, for `date`, the day dropdown toggle), within the question. */
+  kind: 'fill' | 'click' | 'dropdown' | 'autocomplete' | 'check' | 'date';
+  /**
+   * Selector of the field, buttons, dropdown toggle, checkbox wrappers (or, for `date`, the day dropdown toggle), within
+   * the question.
+   */
   field: string;
   /** Answer given. */
   answer: string;
@@ -263,6 +267,23 @@ const questionAnswers: QuestionAnswer[] = [
     kind: 'click',
     field: 'button[name="otherExitsLockType"]',
     answer: 'No other exit'
+  },
+  // Before who lives at the property: this usage ticks "You" there, which can clear that error.
+  {
+    message: 'Please select an option.',
+    section: 'Resident details',
+    question: 'property usage',
+    kind: 'dropdown',
+    field: dropdownToggle('howIsThePropertyUsed'),
+    answer: 'I live here permanently (inc. rented homes)'
+  },
+  {
+    message: 'The Who lives at the property field must contain a value',
+    section: 'Resident details',
+    question: 'who lives at the property',
+    kind: 'check',
+    field: 'div.form-check',
+    answer: 'You'
   }
 ];
 
@@ -395,6 +416,12 @@ async function answerQuestions(page: Page, answer: QuestionAnswer): Promise<void
       case 'autocomplete':
         await field.fill(answer.answer);
         await chooseDropdownItem(page, answer.answer);
+        break;
+      case 'check':
+        await field
+          .filter({ has: page.locator('label', { hasText: exactText(answer.answer) }) })
+          .locator('input[type="checkbox"]')
+          .check();
         break;
       case 'date':
         await chooseDate(page, question, answer.answer);

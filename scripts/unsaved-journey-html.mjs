@@ -125,6 +125,20 @@ export const questionField = {
       )
       .join('')}</div>`,
   /**
+   * @param {string} name Checkbox name.
+   * @param {string[]} options Checkbox labels.
+   * @param {string[]} [checked] Labels whose checkboxes start ticked.
+   * @returns {string} Checkbox list HTML.
+   */
+  checkboxes: (name, options, checked = []) =>
+    `<div role="group">${options
+      .map(
+        (option, index) => `<div class="form-check hp-checkbox-list"><input id="${name}~K${index}" name="${name}"
+          type="checkbox"${checked.includes(option) ? ' checked' : ''}><label class="form-check-label"
+          for="${name}~K${index}"><span>${option}</span></label></div>`
+      )
+      .join('')}</div>`,
+  /**
    * @param {string} name Dropdown name.
    * @param {string[]} options Menu item texts, shown when the toggle is clicked.
    * @returns {string} Dropdown HTML.
@@ -177,8 +191,8 @@ export const questionField = {
  * Script giving {@link questionField} fields behaviour: a clicked button or image is marked `data-selected`, a
  * dropdown toggle opens a menu whose items set the toggle text, and typing in an autocomplete opens a menu of matching
  * suggestions whose items set (and mark `data-chosen`) its value. Defines `answerOf(question)`, which reads a
- * question's chosen autocomplete value, text field value, selected button or image, or dropdown toggle texts (joined by
- * spaces, for a date).
+ * question's chosen autocomplete value, text field value, ticked checkbox labels (joined by commas), selected button or
+ * image, or dropdown toggle texts (joined by spaces, for a date).
  */
 export const questionScript = `document.addEventListener('click', (event) => {
   const choice = event.target.closest('.btn-toolbar button, .hp-float > label');
@@ -221,6 +235,8 @@ document.addEventListener('input', (event) => {
 const answerOf = (question) => {
   const input = question.querySelector('input[type="text"]');
   if (input !== null) return input.dataset.options === undefined ? input.value : input.dataset.chosen;
+  const boxes = [...question.querySelectorAll('.form-check')];
+  if (boxes.length > 0) return boxes.filter((box) => box.querySelector('input').checked).map((box) => box.textContent.trim()).join(', ');
   const selected = question.querySelector('[data-selected]');
   if (selected !== null) return selected.textContent.trim();
   return [...question.querySelectorAll('.dropdown-toggle')].map((toggle) => toggle.textContent.trim()).join(' ');

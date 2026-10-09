@@ -338,6 +338,44 @@ for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of
     ]
   ],
   [
+    'answers the property usage and ticks You when Continue on Resident details reports both',
+    questionJourney('Resident details', [
+      {
+        id: 'usage',
+        message: 'Please select an option.',
+        field: questionField.dropdown('howIsThePropertyUsed', [
+          'I live here permanently (inc. rented homes)',
+          'I let to tenants – contracts over 12 months'
+        ]),
+        expected: 'I live here permanently (inc. rented homes)'
+      },
+      {
+        id: 'whoLives',
+        message: 'The Who lives at the property field must contain a value',
+        field: questionField.checkboxes('whoLivesAtProperty', ['You', 'Other family members']),
+        expected: 'You'
+      }
+    ]),
+    undefined,
+    [
+      'NHI: selecting property usage I live here permanently (inc. rented homes) on Resident details.',
+      'NHI: selecting who lives at the property You on Resident details.'
+    ]
+  ],
+  [
+    'keeps ticked boxes and ticks You when Continue reports who lives at the property',
+    questionJourney('Resident details', [
+      {
+        id: 'whoLives',
+        message: 'The Who lives at the property field must contain a value',
+        field: questionField.checkboxes('whoLivesAtProperty', ['You', 'Other family members', 'Lodgers'], ['Lodgers']),
+        expected: 'You, Lodgers'
+      }
+    ]),
+    undefined,
+    ['NHI: selecting who lives at the property You on Resident details.']
+  ],
+  [
     'leaves an error message shared by a question it has no answer for',
     questionJourney('Property type', [
       {

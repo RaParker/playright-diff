@@ -349,8 +349,11 @@ Errors shown on a question (a `div.av-input-error` whose `div.av-error-message` 
 are answered with a fixed value, on every question that shows the error and has the field
 (for example each claim). Dropdowns are answered by clicking the toggle and then the
 `.dropdown-menu.show button.dropdown-item` with the answer text; an autocomplete by typing
-the answer and then clicking the suggestion with that text; and a date by picking each
-part from the toggles whose ids end `~Kday`, `~Kmonth` and `~Kyear`.
+the answer and then clicking the suggestion with that text; a checkbox list by ticking the
+`input[type="checkbox"]` whose label has the answer text (other ticked boxes are kept, and a
+box already ticked stays ticked); and a date by picking each part from the toggles whose ids
+end `~Kday`, `~Kmonth` and `~Kyear`. Property usage is answered before who lives at the
+property, as "I live here permanently" ticks You there, which can clear that error.
 
 | Error message                                                | Field                                                   | Answer (on section)                                                                                                |
 | ------------------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -378,6 +381,8 @@ part from the toggles whose ids end `~Kday`, `~Kmonth` and `~Kyear`.
 | "Please select an option."                                   | `div.hp-float > label:has(img[alt="Multi-point lock"])` | Multi-point lock, on the main entrance lock (**Property circumstances**)                                           |
 | "Please select an option."                                   | `button[name="patioLockType"]`                          | Multi-point lock (**Property circumstances**)                                                                      |
 | "Please select an option."                                   | `button[name="otherExitsLockType"]`                     | No other exit (**Property circumstances**)                                                                         |
+| "Please select an option."                                   | `div.dropdown[name="howIsThePropertyUsed"]`             | I live here permanently (inc. rented homes) (**Resident details**)                                                 |
+| "The Who lives at the property field must contain a value"   | `div.form-check`                                        | You, ticked (**Resident details**)                                                                                 |
 
 - A message other questions share (such as "Please answer this question." or "Please
   select an option.") is left alone
