@@ -35,6 +35,12 @@ export interface QuotePageOptions {
   quoteGuidFallback?: QuoteGuidFallbackOptions;
 }
 
+/**
+ * Elements masked in both flows' screenshots. The footer is the same on NHI and TCAS, but OCR reads its separators
+ * (`»`, `=`, `+`) differently from one capture to the next, which reported false text changes.
+ */
+const maskedSelectors = ['.hp-footer'];
+
 /** How one quote-page run ended: both sides quoted and were compared, or both declined (nothing to compare). */
 export type QuotePageResult = 'compared' | 'declined';
 
@@ -345,7 +351,7 @@ async function captureNhi(
 async function captureAt(label: string, url: string, options: ScreenshotOptions): Promise<CaptureOutcome> {
   console.log(`${label}: opening ${url}`);
   try {
-    await screenshot(url, options);
+    await screenshot(url, { ...options, mask: maskedSelectors });
     return 'captured';
   } catch (error) {
     if (error instanceof DeclinedError) {

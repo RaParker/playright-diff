@@ -10,7 +10,15 @@ export interface ScreenshotOptions {
   wait?: number;
   timeout?: number;
   beforeCapture?: (page: Page) => Promise<void>;
+  /**
+   * CSS selectors of elements painted over in the saved screenshot (not in failure screenshots), so content that
+   * differs only in ways that do not matter, such as a footer, cannot show up as a difference.
+   */
+  mask?: string[];
 }
+
+/** Colour painted over masked elements: a flat grey, so masked areas are easy to spot in the images. */
+const maskColor = '#808080';
 
 /** Decline heading, e.g. "We're sorry..." or "Welcome Mr. A, we're sorry...", with any apostrophe style. */
 const declinedHeadingPattern = "we['’‘ʼ]re\\s+sorry";
@@ -118,7 +126,10 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
     page.setDefaultNavigationTimeout(timeout);
     loadingTimeouts.set(page, timeout * loadingTimeoutMultiplier);
     const { failure } = await watchForStops(page);
-    await Promise.race([capturePage(page, url.href, output, extension, wait, options.beforeCapture), failure]);
+    await Promise.race([
+      capturePage(page, url.href, output, extension, wait, options.beforeCapture, options.mask),
+      failure
+    ]);
     console.log(`Screenshot saved to ${output}`);
   } catch (error) {
     if (page !== undefined && !(await isQuoteLoading(page))) {
@@ -154,7 +165,8 @@ async function capturePage(
   output: string,
   extension: string,
   wait: number,
-  beforeCapture?: (page: Page) => Promise<void>
+  beforeCapture?: (page: Page) => Promise<void>,
+  mask: string[] = []
 ): Promise<void> {
   const response = await page.goto(url, { waitUntil: 'load' });
   if (response !== null && !response.ok()) {
@@ -174,7 +186,9 @@ async function capturePage(
   const image = await page.screenshot({
     type: extension === '.png' ? 'png' : 'jpeg',
     fullPage: true,
-    animations: 'disabled'
+    animations: 'disabled',
+    mask: mask.map((selector) => page.locator(selector)),
+    maskColor
   });
   await checkForStops(page);
   await writeFile(output, image);

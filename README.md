@@ -167,6 +167,12 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   writes only this file and leaves the previous screenshots alone. If the file cannot be
   written, a yellow `Could not save the result of …` warning is shown and the run still passes
   or fails on its own result.
+- **Masked areas:** the footer (`.hp-footer`) is painted over in flat grey in both screenshots
+  (not in `-failed`/`-declined` ones), so it is never compared. It is the same on both sides,
+  but OCR read its separators (`»`, `=`, `+`) differently between captures, reporting false text
+  changes. Real footer differences, such as a build version, are therefore not caught. Add
+  selectors to `maskedSelectors` in `src/quote-page.ts` to mask other areas. Existing
+  comparisons change only when their policies are rerun.
 
 See [How quote-page works](#how-quote-page-works) for the journey, error handling and the
 NHI Oops fallback.
