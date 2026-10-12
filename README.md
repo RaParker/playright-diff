@@ -266,7 +266,7 @@ Oops pages: NHI 957 (953 later compared or declined), TCAS 10 (1 later compared 
 
 ## Configuration
 
-`quote-page` and `quote-pages` read settings from `.env` in the current working directory.
+`quote-page`, `quote-pages` and `summarise` read settings from `.env` in the current working directory.
 The committed `.env` targets the feature-dev environment.
 
 | Variable                                      | Used by       | Purpose                                                                  |
@@ -282,7 +282,8 @@ The committed `.env` targets the feature-dev environment.
 | `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both          | Fallback request `callMediaUser`                                         |
 | `QUOTE_GUID_LIST_PATH`                        | `quote-pages` | GUID list file, one policy ID per line (also used by `retry-failed`)     |
 
-All variables listed for a command are required.
+All variables listed for a command are required. `summarise` also reads `QUOTE_GUID_LIST_PATH` and
+`MRP_AND_QUOTE_OUTPUT_DIR`, but both are optional there (see [summarise](#summarise)).
 
 Rules:
 

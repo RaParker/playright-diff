@@ -41,11 +41,14 @@ retry-failed reruns only those.
   -h, --help     Show help`;
 
 const summariseHelp = `Usage: npm run summarise -- [options]   (or npm run summarize)
-Summarises every comparisons/<policyDetailsId>-<historyId> folder: the visual and text differences of each
-compared policy, the most common text changes, failed policies with their issues, failures by reason, and
-the MRP records not retrieved, and the totals: the GUID list size (QUOTE_GUID_LIST_PATH, optional), the
-policies compared, declined and failed, and Oops pages in screenshots/. Failures are read from the
-result.json each quote-page run saves; folders with only a report.json (from older runs) count as compared.
+Summarises every comparisons/<policyDetailsId>-<historyId> folder. It prints the visual and text differences
+of each compared policy, the most common text changes, failed policies with their issues, failures by
+reason and the MRP records not retrieved, then the totals: the GUID list size and how many policies have a
+result, the policies compared, declined and failed, and the Oops pages in screenshots/.
+Outcomes come from the result.json each quote-page run saves; folders with only a report.json (from older
+runs) count as compared. Oops pages saved before a policy's last run started are not counted.
+The GUID list and MRP records need QUOTE_GUID_LIST_PATH and MRP_AND_QUOTE_OUTPUT_DIR (.env or environment);
+without them that part is skipped. The exit code is 0 whatever the results.
   -h, --help     Show help`;
 
 async function main(): Promise<void> {
