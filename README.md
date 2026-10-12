@@ -34,6 +34,7 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 | `npm run compare`     | Compare two images and report changed regions and text      |
 | `npm run quote-page`  | Capture NHI and TCAS versions of one quote and compare them |
 | `npm run quote-pages` | Run `quote-page` for every policy in a GUID list            |
+| `npm run summarise`   | Summarise every quote-page result (alias `summarize`)       |
 
 Add `-- --help` to any command for its options (for example `npm run compare -- --help`).
 
@@ -53,6 +54,7 @@ running it; with no arguments it shows its help (`Get-Help ./Run-Project.ps1 -Ex
 ./Run-Project.ps1 -QuotePages -MaxCount 10
 ./Run-Project.ps1 -QuotePages -Guid 6819e30c2058490b8d1d9e25d267b002
 ./Run-Project.ps1 -RetryFailed
+./Run-Project.ps1 -Summarise                                     # or -Summarize
 ./Run-Project.ps1 -Task Verify   # Install, InstallBrowser, Build, Typecheck, Lint, Test,
                                  # TestCompare, TestQuotePage, Verify, CleanUp
 ```
@@ -158,6 +160,11 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   screenshots and HTML (including `-failed` and `-declined`), `comparisons/<ID>-<historyId>`,
   and every other `comparisons/` report whose `report.json` compares them (such as
   `run-<timestamp>` reports from older versions). `quote-guid-mapping.json` is kept.
+- **Result:** every run with a valid policy and history ID ends by writing
+  `comparisons/<ID>-<historyId>/result.json` — `outcome` (`compared`, `declined` or `failed`),
+  `validation`, the failure `issues` (one line each) and `finishedAt` — for
+  [summarise](#summarise). A run that stops before capturing (for example with no saved MRP)
+  writes only this file and leaves the previous screenshots alone.
 
 See [How quote-page works](#how-quote-page-works) for the journey, error handling and the
 NHI Oops fallback.
@@ -213,6 +220,45 @@ already in `quote-guid-mapping.json` are reused. With no file it prints
 
 One-off runs — a single `<guid>` or a `maxCount` of 1 — leave the file untouched, as does a run
 stopped with Ctrl+C.
+
+### summarise
+
+Summarises every `comparisons/<ID>-<historyId>` folder, so you can review a whole run (or
+several) at once. `npm run summarize` does the same. Other folders, such as `.ocr-cache` and
+`run-<timestamp>` reports, are skipped. The exit code is 0 whatever the results.
+
+```sh
+npm run summarise
+```
+
+Each folder's `result.json` gives its outcome. A folder with only a `report.json` (from a run
+before results were saved) counts as compared, since a report exists only when both sides were
+captured; failures from those older runs were not recorded, so rerun them to see their reasons.
+In order, it prints:
+
+| Section                   | Contents                                                                                                                                                                                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Visual-only differences   | Compared policies whose images differ with no text change, largest change first, with the changed percent and any difference in page size                                                                                                     |
+| Text differences          | Each policy with text changes, then each region's changed OCR lines (`- £137.63`, `+ £137.62`); whole lines are compared rather than words, so the change has context. A region with OCR confidence below 60 is marked `(low OCR confidence)` |
+| Most common text changes  | The 10 most frequent changes seen in more than one region, for example `25× £137.63 → £137.62`                                                                                                                                                |
+| Failed policies           | Each failed policy with its issues, coloured as in [quote-pages](#quote-pages)                                                                                                                                                                |
+| Failures by reason        | Each issue with the number of policies reporting it; URLs, file paths and IDs are ignored so the same error groups together                                                                                                                   |
+| MRP records not retrieved | GUID list entries with no `<ID>-1-mrp.json` in `MRP_AND_QUOTE_OUTPUT_DIR`                                                                                                                                                                     |
+| Totals                    | The GUID list size, how many have a result and how many have not run; the compared, identical, different, declined and failed counts; and the Oops pages                                                                                      |
+
+```text
+Totals
+GUID list: 1264 policies (…/quoteGuids.txt); 1236 with a result, 28 not run; 10 MRP records not retrieved.
+1237 policies: 1237 compared (833 identical, 404 different, 67 with text changes), 0 both declined, 0 failed.
+Oops pages: NHI 957 (953 later compared or declined), TCAS 10 (1 later compared or declined).
+```
+
+- **GUID list:** read from `QUOTE_GUID_LIST_PATH` and `MRP_AND_QUOTE_OUTPUT_DIR` in `.env`.
+  Unlike for the other commands, both are optional; without them the GUID list line and MRP
+  section are skipped.
+- **Oops pages:** counts the `screenshots/<ID>-<historyId>-nhi-failed.html` and
+  `-tcas-failed.html` pages that show the Oops heading. A policy that "later compared or
+  declined" recovered, usually through the [NHI Oops fallback](#nhi-oops-fallback).
 
 ## Configuration
 

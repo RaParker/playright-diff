@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Page } from 'playwright';
-import { color } from './color.js';
+import { color, failureColor } from './color.js';
 import { compare } from './compare.js';
 import { writeFailedQuotePages, type FailedQuotePage } from './failed-quote-pages.js';
 import {
@@ -12,6 +12,7 @@ import {
 } from './quote-guid.js';
 import { selectAnnualPayment } from './payment.js';
 import { removeQuoteOutput } from './quote-output.js';
+import { writeQuoteResult } from './quote-result.js';
 import { quoteSummary } from './quote-summary.js';
 import {
   DeclinedError,
@@ -84,6 +85,86 @@ export async function quotePage(
     throw new Error('historyId must be a non-negative safe integer.');
   }
 
+  const result = { policyDetailsId, historyId, validation: false, issues: [] as string[] };
+  try {
+    const outcome = await captureAndCompare(policyDetailsId, historyId, options);
+    await writeQuoteResult({ ...result, outcome, finishedAt: new Date().toISOString() });
+    return outcome;
+  } catch (error) {
+    // Saved for the summarise command; the error itself is still reported by the caller.
+    await writeQuoteResult({
+      ...result,
+      outcome: 'failed',
+      validation: error instanceof ValidationError,
+      issues: (error instanceof Error ? error.message : String(error)).split('\n'),
+      finishedAt: new Date().toISOString()
+    });
+    throw error;
+  }
+}
+
+/**
+ * Runs {@link quotePage} for each policy in turn, continuing past failures.
+ * @param policyDetailsIds Policy details IDs to capture and compare.
+ * @param historyId History ID used for every policy.
+ * @param options Options passed to each {@link quotePage} run.
+ * @param failedPath File that the run's failed policies replace, for `quote-pages -- retry-failed`; not written when omitted.
+ * After all runs, saves the failed policies (an empty list when none failed), then prints a summary: the counts,
+ * then each failed policy with its issues.
+ * @throws After all runs when any policy failed. Policies where both sides declined are not failures.
+ */
+export async function quotePages(
+  policyDetailsIds: string[],
+  historyId: number,
+  options: QuotePageOptions,
+  failedPath?: string
+): Promise<void> {
+  const failures: FailedQuotePage[] = [];
+  const validationFailures = new Set<string>();
+  let declined = 0;
+  for (const [index, policyDetailsId] of policyDetailsIds.entries()) {
+    console.log(color.Cyan(`[${index + 1}/${policyDetailsIds.length}] ${policyDetailsId}-${historyId}`));
+    try {
+      if ((await quotePage(policyDetailsId, historyId, options)) === 'declined') {
+        declined++;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof ValidationError) {
+        validationFailures.add(policyDetailsId);
+      }
+
+      console.error(failureColor(error instanceof ValidationError)(message));
+      failures.push({ policyDetailsId, issues: message.split('\n') });
+    }
+  }
+
+  if (failedPath !== undefined) {
+    await writeFailedQuotePages(failedPath, { historyId, failed: failures });
+  }
+
+  printSummary(policyDetailsIds.length, historyId, declined, failures, validationFailures);
+  if (failures.length > 0 && failedPath !== undefined) {
+    console.log(
+      color.Gray(`Failed policies saved to ${failedPath}; retry them with npm run quote-pages -- retry-failed`)
+    );
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`${failures.length} of ${policyDetailsIds.length} quote pages failed; see the summary above.`);
+  }
+}
+
+/**
+ * Captures both flows for a policy whose ID is valid, then compares them unless a side failed or declined.
+ * @returns `'compared'`, or `'declined'` when both sides declined.
+ * @throws As {@link quotePage}.
+ */
+async function captureAndCompare(
+  policyDetailsId: string,
+  historyId: number,
+  options: QuotePageOptions
+): Promise<QuotePageResult> {
   const basename = `${policyDetailsId}-${historyId}`;
   const artemisQuoteGuid = await readQuoteGuid(resolve(options.mrpAndQuoteOutputDir, `${basename}-mrp.json`));
   const fallback = options.quoteGuidFallback;
@@ -154,58 +235,6 @@ export async function quotePage(
 
   await compare(nhiPath, tcasPath, { output: resolve('comparisons', basename), useOcr: options.useOcr });
   return 'compared';
-}
-
-/**
- * Runs {@link quotePage} for each policy in turn, continuing past failures.
- * @param policyDetailsIds Policy details IDs to capture and compare.
- * @param historyId History ID used for every policy.
- * @param options Options passed to each {@link quotePage} run.
- * @param failedPath File that the run's failed policies replace, for `quote-pages -- retry-failed`; not written when omitted.
- * After all runs, saves the failed policies (an empty list when none failed), then prints a summary: the counts,
- * then each failed policy with its issues.
- * @throws After all runs when any policy failed. Policies where both sides declined are not failures.
- */
-export async function quotePages(
-  policyDetailsIds: string[],
-  historyId: number,
-  options: QuotePageOptions,
-  failedPath?: string
-): Promise<void> {
-  const failures: FailedQuotePage[] = [];
-  const validationFailures = new Set<string>();
-  let declined = 0;
-  for (const [index, policyDetailsId] of policyDetailsIds.entries()) {
-    console.log(color.Cyan(`[${index + 1}/${policyDetailsIds.length}] ${policyDetailsId}-${historyId}`));
-    try {
-      if ((await quotePage(policyDetailsId, historyId, options)) === 'declined') {
-        declined++;
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (error instanceof ValidationError) {
-        validationFailures.add(policyDetailsId);
-      }
-
-      console.error(failureColor(error instanceof ValidationError)(message));
-      failures.push({ policyDetailsId, issues: message.split('\n') });
-    }
-  }
-
-  if (failedPath !== undefined) {
-    await writeFailedQuotePages(failedPath, { historyId, failed: failures });
-  }
-
-  printSummary(policyDetailsIds.length, historyId, declined, failures, validationFailures);
-  if (failures.length > 0 && failedPath !== undefined) {
-    console.log(
-      color.Gray(`Failed policies saved to ${failedPath}; retry them with npm run quote-pages -- retry-failed`)
-    );
-  }
-
-  if (failures.length > 0) {
-    throw new Error(`${failures.length} of ${policyDetailsIds.length} quote pages failed; see the summary above.`);
-  }
 }
 
 async function readQuoteGuid(mrpPath: string): Promise<string> {
@@ -348,11 +377,6 @@ function printSummary(
       console.log(`  ${failureColor(validationFailures.has(policyDetailsId))(issue)}`);
     }
   }
-}
-
-/** Yellow for a journey validation failure (the site rejected the answers), otherwise red. */
-function failureColor(validation: boolean): (text: string) => string {
-  return validation ? color.Yellow : color.Red;
 }
 
 /** Follows a journey to the quote page, then selects annual payments so both flows capture the same price. */

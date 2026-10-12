@@ -30,6 +30,10 @@ Describe 'Run-Project.ps1 command lines' {
 
         @{ Name = 'retry-failed reruns saved failures'; Arguments = @('-RetryFailed'); Expected = '{cli} quote-pages retry-failed' }
 
+        @{ Name = 'summarise runs the summary'; Arguments = @('-Summarise'); Expected = '{cli} summarise' }
+
+        @{ Name = 'summarize is an alias for summarise'; Arguments = @('-Summarize'); Expected = '{cli} summarise' }
+
         @{ Name = 'npm task runs its npm script'; Arguments = @('-Task', 'TestQuotePage'); Expected = 'npm run test:quote-page' }
 
         @{ Name = 'Verify task runs VerifyProject.ps1'; Arguments = @('-Task', 'Verify'); Expected = '{root}\VerifyProject.ps1' }
@@ -67,6 +71,8 @@ Describe 'Run-Project.ps1 validation' {
         @{ Name = 'MaxCount together with Guid'; Arguments = @('-QuotePages', '-MaxCount', '3', '-Guid', '6819e30c2058490b8d1d9e25d267b002'); Message = '*Parameter set cannot be resolved*' }
 
         @{ Name = 'an option from another command'; Arguments = @('-QuotePage', '-PolicyDetailsId', 'ABCDEF1234567890ABCDEF1234567890', '-HistoryId', '1', '-Threshold', '5'); Message = '*Parameter set cannot be resolved*' }
+
+        @{ Name = 'NoOcr with Summarise'; Arguments = @('-Summarise', '-NoOcr'); Message = '*Parameter set cannot be resolved*' }
 
         @{ Name = 'an unknown task'; Arguments = @('-Task', 'Deploy'); Message = "*parameter 'Task'*" }
     ) {

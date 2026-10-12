@@ -45,6 +45,13 @@ async function fixture() {
   return { directory, env };
 }
 
+/** Reads the failed result quote-page saved for a policy, as the summarise command does. */
+async function readFailedResult(directory, basename = 'ABCDEF1234567890ABCDEF1234567890-42') {
+  const result = JSON.parse(await readFile(join(directory, 'comparisons', basename, 'result.json'), 'utf8'));
+  assert.equal(result.outcome, 'failed');
+  return result;
+}
+
 async function run(directory, env, args = ['ABCDEF1234567890ABCDEF1234567890', '42', '--no-ocr']) {
   const child = spawn(process.execPath, [script, 'quote-page', ...args], { cwd: directory, env });
   let output = '';
@@ -66,8 +73,7 @@ const cases = [
   ['non-hexadecimal UUID', ['ZBCDEF1234567890ABCDEF1234567890', '42'], /policyDetailsId must/],
   ['fractional history', ['ABCDEF1234567890ABCDEF1234567890', '1.5'], /historyId must/],
   ['negative history', ['--', 'ABCDEF1234567890ABCDEF1234567890', '-1'], /historyId must/],
-  ['unsafe history', ['ABCDEF1234567890ABCDEF1234567890', '9007199254740992'], /historyId must/],
-  ['missing MRP file', ['11111111111111111111111111111111', '42'], /No saved MRP for this quote/]
+  ['unsafe history', ['ABCDEF1234567890ABCDEF1234567890', '9007199254740992'], /historyId must/]
 ];
 for (const [name, args, expected] of cases) {
   test(`quote-page rejects ${name} before writing output`, async () => {
@@ -78,6 +84,22 @@ for (const [name, args, expected] of cases) {
     assert.deepEqual(await readdir(directory), ['ABCDEF1234567890ABCDEF1234567890-42-mrp.json']);
   });
 }
+
+test('quote-page saves a failed result for a missing MRP file without taking screenshots', async () => {
+  // arrange
+  const { directory, env } = await fixture();
+
+  // act
+  const result = await run(directory, env, ['11111111111111111111111111111111', '42']);
+
+  // assert
+  assert.notEqual(result.code, 0);
+  assert.match(result.output, /No saved MRP for this quote/);
+  assert.deepEqual((await readdir(directory)).sort(), ['ABCDEF1234567890ABCDEF1234567890-42-mrp.json', 'comparisons']);
+  const saved = await readFailedResult(directory, '11111111111111111111111111111111-42');
+  assert.equal(saved.validation, false);
+  assert.match(saved.issues[0], /No saved MRP for this quote/);
+});
 
 for (const name of settings) {
   test(`quote-page reports missing ${name}`, async () => {
@@ -104,7 +126,12 @@ for (const [name, content, expected] of [
     const result = await run(directory, env);
     assert.notEqual(result.code, 0);
     assert.match(result.output, expected);
-    assert.deepEqual(await readdir(directory), ['ABCDEF1234567890ABCDEF1234567890-42-mrp.json']);
+    // Only the failed result is saved; no screenshots are taken.
+    assert.deepEqual((await readdir(directory)).sort(), [
+      'ABCDEF1234567890ABCDEF1234567890-42-mrp.json',
+      'comparisons'
+    ]);
+    assert.match((await readFailedResult(directory)).issues.join('\n'), expected);
   });
 }
 
@@ -125,7 +152,12 @@ for (const [name, template, expected, setting = 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_UR
     const result = await run(directory, env);
     assert.notEqual(result.code, 0);
     assert.match(result.output, expected);
-    assert.deepEqual(await readdir(directory), ['ABCDEF1234567890ABCDEF1234567890-42-mrp.json']);
+    // Only the failed result is saved; no screenshots are taken.
+    assert.deepEqual((await readdir(directory)).sort(), [
+      'ABCDEF1234567890ABCDEF1234567890-42-mrp.json',
+      'comparisons'
+    ]);
+    assert.match((await readFailedResult(directory)).issues.join('\n'), expected);
   });
 }
 
@@ -169,7 +201,10 @@ for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].ma
         requests.some((path) => path.startsWith('/tcas/')),
         true
       );
-      assert.ok(!(await readdir(directory)).includes('comparisons'));
+      assert.deepEqual(await readdir(join(directory, 'comparisons', 'ABCDEF1234567890ABCDEF1234567890-42')), [
+        'result.json'
+      ]);
+      assert.match((await readFailedResult(directory)).issues.join('\n'), /Website displayed <h2>Oops<\/h2>/);
       assert.doesNotMatch(result.output, /Report:/);
       assert.deepEqual(
         (await readdir(join(directory, 'screenshots'))).sort(),
@@ -207,12 +242,15 @@ test('quote-page stops after an HTTP failure and respects environment over .env'
     assert.ok(requests.some((path) => path.startsWith('/tcas/')));
     assert.match(result.output, /NHI: Website returned HTTP 503/);
     assert.match(result.output, /TCAS: Website returned HTTP 503/);
-    assert.ok(!(await readdir(directory)).includes('comparisons'));
     assert.deepEqual((await readdir(directory)).sort(), [
       '.env',
       'ABCDEF1234567890ABCDEF1234567890-42-mrp.json',
+      'comparisons',
       'screenshots'
     ]);
+    const saved = await readFailedResult(directory);
+    assert.equal(saved.issues[0], 'Quote capture failed; comparison skipped.');
+    assert.equal(saved.validation, false);
     assert.deepEqual((await readdir(join(directory, 'screenshots'))).sort(), [
       'ABCDEF1234567890ABCDEF1234567890-42-nhi-failed.html',
       'ABCDEF1234567890ABCDEF1234567890-42-nhi-failed.png',

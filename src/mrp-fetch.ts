@@ -73,6 +73,24 @@ export async function prefetchMissingMrpFiles(
 }
 
 /**
+ * Finds the policies whose MRP record mrp-and-quote has not saved.
+ * @param policyDetailsIds Policies to check.
+ * @param mrpAndQuoteOutputDir mrp-and-quote's output folder.
+ * @returns The policies with no `<policyDetailsId>-1-mrp.json` in the output folder, in the given order.
+ */
+export async function filterMissingMrpFiles(
+  policyDetailsIds: string[],
+  mrpAndQuoteOutputDir: string
+): Promise<string[]> {
+  const present = await Promise.all(
+    policyDetailsIds.map((policyDetailsId) =>
+      exists(resolve(mrpAndQuoteOutputDir, `${policyDetailsId}-${fetchedHistoryId}-mrp.json`))
+    )
+  );
+  return policyDetailsIds.filter((_, index) => present[index] !== true);
+}
+
+/**
  * Writes the policies to a temporary GUID file (one per line) and runs `go run . fetch --guid-file <file> --keep-output`
  * in the mrp-and-quote project, showing its output. The file keeps long lists off the command line and is always
  * removed afterwards. Rejects on a non-zero exit.
@@ -98,16 +116,6 @@ async function runMrpFetch(projectDir: string, policyDetailsIds: string[]): Prom
   } finally {
     await rm(guidFileDir, { recursive: true, force: true });
   }
-}
-
-/** Returns the policies with no `<policyDetailsId>-1-mrp.json` in the output folder. */
-async function filterMissingMrpFiles(policyDetailsIds: string[], mrpAndQuoteOutputDir: string): Promise<string[]> {
-  const present = await Promise.all(
-    policyDetailsIds.map((policyDetailsId) =>
-      exists(resolve(mrpAndQuoteOutputDir, `${policyDetailsId}-${fetchedHistoryId}-mrp.json`))
-    )
-  );
-  return policyDetailsIds.filter((_, index) => present[index] !== true);
 }
 
 async function exists(path: string): Promise<boolean> {

@@ -15,3 +15,8 @@ export const color = {
     return `\u001b[36m${text}\u001b[0m`;
   }
 };
+
+/** Yellow for a journey validation failure (the site rejected the answers), otherwise red. */
+export function failureColor(validation: boolean): (text: string) => string {
+  return validation ? color.Yellow : color.Red;
+}

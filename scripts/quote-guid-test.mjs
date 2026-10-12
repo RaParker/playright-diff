@@ -9,6 +9,17 @@ import { defaultQuoteGuidCount, readQuoteGuidList, selectQuoteGuids } from '../d
 import { readQuoteGuidMapping, requestQuoteGuid, saveQuoteGuidMapping } from '../dist/quote-guid.js';
 import { declinedPageHtml, quotePageHtml, quoteSummaryHtml, unsavedJourneyHtml } from './unsaved-journey-html.mjs';
 
+/**
+ * Reads the saved result of a policy A run that skipped the comparison, checking it is the only file in its
+ * comparisons folder (no report was written).
+ */
+async function readOnlyResult(directory) {
+  const folder = join(directory, 'comparisons', `${policyA}-1`);
+  assert.deepEqual(await readdir(folder), ['result.json']);
+  const { outcome, validation } = JSON.parse(await readFile(join(folder, 'result.json'), 'utf8'));
+  return { outcome, validation };
+}
+
 const script = resolve('dist/main.js');
 const policyA = 'ABCDEF1234567890ABCDEF1234567890';
 const policyB = '11111111111111111111111111111111';
@@ -383,7 +394,7 @@ describe('quote-page NHI Oops fallback', () => {
         result.output
       );
       assert.ok(result.output.includes(`${red}Quote capture failed; comparison skipped.`), result.output);
-      assert.ok(!(await readdir(directory)).includes('comparisons'));
+      assert.deepEqual(await readOnlyResult(directory), { outcome: 'failed', validation: false });
     });
   });
 
@@ -523,7 +534,10 @@ describe('quote-page declined quotes', () => {
         assert.match(result.output, expectedOutput);
         // Failures are shown in red; a both-declined success is not.
         assert.equal(result.output.includes('\u001b[31m'), !expectedSuccess, result.output);
-        assert.ok(!(await readdir(directory)).includes('comparisons'));
+        assert.deepEqual(await readOnlyResult(directory), {
+          outcome: expectedSuccess ? 'declined' : 'failed',
+          validation: false
+        });
         assert.deepEqual(
           (await readdir(join(directory, 'screenshots'))).sort(),
           expectedScreenshots.map((suffix) => `${policyA}-1-${suffix}`)

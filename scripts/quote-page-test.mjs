@@ -114,6 +114,9 @@ try {
 
   const [reportDirectory] = await readdir(join(directory, 'comparisons'));
   assert.equal(reportDirectory, 'ABCDEF1234567890ABCDEF1234567890-42');
+  const result = JSON.parse(await readFile(join(directory, 'comparisons', reportDirectory, 'result.json'), 'utf8'));
+  assert.equal(result.outcome, 'compared');
+  assert.deepEqual(result.issues, []);
   const report = JSON.parse(await readFile(join(directory, 'comparisons', reportDirectory, 'report.json'), 'utf8'));
   assert.equal(report.changedPixels, 0);
   assert.equal(report.ocrEnabled, false);

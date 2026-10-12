@@ -7,8 +7,9 @@ import { isQuoteGuid, readQuoteGuidList, selectQuoteGuids } from './quote-guid-l
 import { prefetchMissingMrpFiles } from './mrp-fetch.js';
 import { screenshot, ValidationError } from './screenshot.js';
 import { loadEnvironment } from './environment.js';
+import { summariseQuoteResults } from './summarise.js';
 
-const help = `Usage: npm start -- <screenshot|compare|quote-page|quote-pages> [arguments] [options]
+const help = `Usage: npm start -- <screenshot|compare|quote-page|quote-pages|summarise> [arguments] [options]
 Use npm run <action> -- --help for action options.`;
 
 const screenshotHelp = `Usage: npm run screenshot -- <url> [options]
@@ -39,6 +40,14 @@ retry-failed reruns only those.
   --no-ocr       Compare pixels without extracting text
   -h, --help     Show help`;
 
+const summariseHelp = `Usage: npm run summarise -- [options]   (or npm run summarize)
+Summarises every comparisons/<policyDetailsId>-<historyId> folder: the visual and text differences of each
+compared policy, the most common text changes, failed policies with their issues, failures by reason, and
+the MRP records not retrieved, and the totals: the GUID list size (QUOTE_GUID_LIST_PATH, optional), the
+policies compared, declined and failed, and Oops pages in screenshots/. Failures are read from the
+result.json each quote-page run saves; folders with only a report.json (from older runs) count as compared.
+  -h, --help     Show help`;
+
 async function main(): Promise<void> {
   const [action, ...args] = process.argv.slice(2);
   if (action === '--help' || action === '-h') {
@@ -63,6 +72,11 @@ async function main(): Promise<void> {
 
   if (action === 'quote-pages') {
     await runQuotePages(args);
+    return;
+  }
+
+  if (action === 'summarise' || action === 'summarize') {
+    await runSummarise(args);
     return;
   }
 
@@ -192,6 +206,21 @@ async function runQuotePages(args: string[]): Promise<void> {
   await quotePages(policyDetailsIds, 1, options, isOneOffSelector(positionals[0]) ? undefined : failedQuotePagesPath);
 }
 
+async function runSummarise(args: string[]): Promise<void> {
+  const { values } = parseArgs({ args, options: { help: { type: 'boolean', short: 'h' } } });
+  if (values.help === true) {
+    console.log(summariseHelp);
+    return;
+  }
+
+  // Unlike quote-pages, the GUID list and MRP folder are optional: without them the GUID list totals are skipped.
+  const environment = await loadEnvironment();
+  await summariseQuoteResults({
+    guidListPath: optional(environment, 'QUOTE_GUID_LIST_PATH'),
+    mrpAndQuoteOutputDir: optional(environment, 'MRP_AND_QUOTE_OUTPUT_DIR')
+  });
+}
+
 /**
  * A one-off run (one GUID, or a maxCount of 1 or less) leaves the saved failures of the last list run untouched.
  */
@@ -231,6 +260,11 @@ function quotePageOptions(environment: Record<string, string | undefined>, useOc
       tcasReplacementUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE')
     }
   };
+}
+
+function optional(environment: Record<string, string | undefined>, name: string): string | undefined {
+  const value = environment[name];
+  return value === undefined || value.trim().length === 0 ? undefined : value;
 }
 
 function required(environment: Record<string, string | undefined>, name: string): string {

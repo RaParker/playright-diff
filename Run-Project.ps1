@@ -3,7 +3,7 @@
 Runs any of this project's commands or development tasks with validated parameters.
 
 .DESCRIPTION
-One entry point for the playwright-diff CLI (screenshot, compare, quote-page, quote-pages) and its
+One entry point for the playwright-diff CLI (screenshot, compare, quote-page, quote-pages, summarise) and its
 development tasks. Each command is a switch with its own parameter set, so tab completion only offers
 options that apply, and inputs are validated before Node starts.
 
@@ -74,6 +74,10 @@ One GUID list entry to run (32 hex characters, case-insensitive).
 .PARAMETER RetryFailed
 Rerun only the policies saved in quote-pages-failed.json by the last quote-pages run.
 
+.PARAMETER Summarise
+Summarise every comparisons folder: differences and their text, failures and their reasons, MRP records not
+retrieved, and totals including the GUID list size and Oops pages. Alias: -Summarize.
+
 .PARAMETER NoOcr
 Compare pixels without extracting text.
 
@@ -98,6 +102,9 @@ Test (all suites), TestCompare, TestQuotePage, Verify (VerifyProject.ps1) or Cle
 
 .EXAMPLE
 ./Run-Project.ps1 -RetryFailed
+
+.EXAMPLE
+./Run-Project.ps1 -Summarise
 
 .EXAMPLE
 ./Run-Project.ps1 -Task Verify
@@ -181,6 +188,10 @@ param(
     [Parameter(Mandatory, ParameterSetName = 'RetryFailed')]
     [switch]$RetryFailed,
 
+    [Parameter(Mandatory, ParameterSetName = 'Summarise')]
+    [Alias('Summarize')]
+    [switch]$Summarise,
+
     [Parameter(ParameterSetName = 'Compare')]
     [Parameter(ParameterSetName = 'QuotePage')]
     [Parameter(ParameterSetName = 'QuotePages')]
@@ -258,6 +269,10 @@ function Get-CliArguments {
 
         'RetryFailed' {
             return @('quote-pages', 'retry-failed') + (Get-NoOcrArgument)
+        }
+
+        'Summarise' {
+            return @('summarise')
         }
     }
 }
