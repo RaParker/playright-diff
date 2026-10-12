@@ -211,7 +211,7 @@ npm run quote-pages -- 1300 --concurrency 5                 # five policies at a
 npm run quote-pages -- 20000 --no-fetch                     # only policies whose MRP is already saved
 ```
 
-Policies run three at a time by default; `-c, --concurrency <n>` changes that (`1` runs them one
+Policies run three at a time by default; `-c, --concurrency <n>` (1 to 100) changes that (`1` runs them one
 at a time, as before) for list runs, `retry-failed` and `retry-different`. Policies start in
 list order. With more than one at a time, every line a policy logs starts with its position
 and the first 8 characters of its ID, such as `[42/1300 ABCD1234]`, so interleaved output can
@@ -219,10 +219,13 @@ be told apart. Each policy needs two Chromium browsers and possibly an OCR worke
 0.5–0.7 GB, and puts its own load on the NHI and TCAS test environments, so raise the
 concurrency with care.
 
-Running policies at the same time is safe: each one writes only its own screenshots,
-`comparisons/<policyDetailsId>-<historyId>` folder and result, reads and updates of
-`quote-guid-mapping.json` run one at a time and replace the file in one step, and the first
-OCR worker loads alone so the shared language-data cache is written only once.
+Running policies at the same time is safe: a policy listed more than once (in any case) runs
+once, at its first position, so each run writes only its own screenshots,
+`comparisons/<policyDetailsId>-<historyId>` folder and result. Reads and updates of
+`quote-guid-mapping.json` run one at a time and replace the file in one step (retrying for
+up to about 1.5 s while another program, such as a virus scanner, holds it open). OCR workers
+load one at a time until one has loaded, so the shared language-data cache is written once
+even when a download fails.
 
 A failed policy is reported and the run continues. At the end,
 after a blank line, a summary lists the counts and then each failed policy with its issues
