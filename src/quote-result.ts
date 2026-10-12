@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { readOptionalTextFile } from './fs-helpers.js';
 
 /** File name of the result each quote-page run writes into its `comparisons/<policyDetailsId>-<historyId>` folder. */
 export const quoteResultFileName = 'result.json';
@@ -16,6 +17,8 @@ export interface QuoteResult {
   validation: boolean;
   /** The failure message, one line per entry; empty unless the run failed. */
   issues: string[];
+  /** ISO 8601 time the run started; failure pages older than this are from an earlier run. */
+  startedAt: string;
   /** ISO 8601 time the run finished. */
   finishedAt: string;
 }
@@ -41,21 +44,15 @@ export async function writeQuoteResult(result: QuoteResult, root = 'comparisons'
  */
 export async function readQuoteResult(directory: string): Promise<QuoteResult | undefined> {
   const path = join(directory, quoteResultFileName);
-  let content: string;
-  try {
-    content = await readFile(path, 'utf8');
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      return undefined;
-    }
-
-    throw error;
+  const content = await readOptionalTextFile(path);
+  if (content === undefined) {
+    return undefined;
   }
 
   const result: unknown = JSON.parse(content);
   if (!isQuoteResult(result)) {
     throw new Error(
-      `Quote result must be {"policyDetailsId", "historyId", "outcome": "compared"|"declined"|"failed", "validation", "issues", "finishedAt"}: ${path}`
+      `Quote result must be {"policyDetailsId", "historyId", "outcome": "compared"|"declined"|"failed", "validation", "issues", "startedAt", "finishedAt"}: ${path}`
     );
   }
 
@@ -77,6 +74,8 @@ function isQuoteResult(value: unknown): value is QuoteResult {
     'issues' in value &&
     Array.isArray(value.issues) &&
     value.issues.every((issue) => typeof issue === 'string') &&
+    'startedAt' in value &&
+    typeof value.startedAt === 'string' &&
     'finishedAt' in value &&
     typeof value.finishedAt === 'string'
   );

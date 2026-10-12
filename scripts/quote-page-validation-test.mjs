@@ -101,6 +101,21 @@ test('quote-page saves a failed result for a missing MRP file without taking scr
   assert.match(saved.issues[0], /No saved MRP for this quote/);
 });
 
+test('quote-page reports its own error when the result cannot be saved', async () => {
+  // arrange
+  const { directory, env } = await fixture();
+  // A file where the comparisons folder belongs, so the result cannot be written.
+  await writeFile(join(directory, 'comparisons'), '');
+
+  // act
+  const result = await run(directory, env, ['11111111111111111111111111111111', '42']);
+
+  // assert
+  assert.notEqual(result.code, 0);
+  assert.match(result.output, /Could not save the result of 11111111111111111111111111111111-42: /);
+  assert.match(result.output, /No saved MRP for this quote/);
+});
+
 for (const name of settings) {
   test(`quote-page reports missing ${name}`, async () => {
     const { directory, env } = await fixture();

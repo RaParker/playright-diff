@@ -1,6 +1,7 @@
-import { readdir, readFile, rm, unlink } from 'node:fs/promises';
+import { readFile, rm, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { color } from './color.js';
+import { isMissing, readDirectoryNames } from './fs-helpers.js';
 
 /** Files a quote-page run can write for each flow: the screenshot, and on failure or decline its HTML too. */
 const outputSuffixes = ['.png', '-failed.png', '-failed.html', '-declined.png', '-declined.html'];
@@ -38,7 +39,7 @@ export async function removeQuoteOutput(
 async function removeComparisons(basename: string, screenshotPaths: Set<string>): Promise<number> {
   const root = resolve('comparisons');
   let removed = 0;
-  for (const entry of await readDirectories(root)) {
+  for (const entry of await readDirectoryNames(root)) {
     const directory = join(root, entry);
     const images = entry === basename ? [] : await readReportImages(join(directory, 'report.json'));
     if (entry === basename || images.some((image) => screenshotPaths.has(image))) {
@@ -63,20 +64,6 @@ async function removeFile(path: string): Promise<boolean> {
   }
 }
 
-async function readDirectories(path: string): Promise<string[]> {
-  try {
-    return (await readdir(path, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch (error) {
-    if (isMissing(error)) {
-      return [];
-    }
-
-    throw error;
-  }
-}
-
 /** @returns The report's `before` and `after` paths, or none when it is missing or unreadable (so it is kept). */
 async function readReportImages(path: string): Promise<string[]> {
   try {
@@ -91,8 +78,4 @@ async function readReportImages(path: string): Promise<string[]> {
   } catch {
     return [];
   }
-}
-
-function isMissing(error: unknown): boolean {
-  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }

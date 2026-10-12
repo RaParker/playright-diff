@@ -1,7 +1,8 @@
 import { diffArrays } from 'diff';
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { color, failureColor } from './color.js';
+import { readDirectoryNames, readFileNames, readOptionalTextFile } from './fs-helpers.js';
 import { fetchedHistoryId, filterMissingMrpFiles } from './mrp-fetch.js';
 import { readQuoteGuidList } from './quote-guid-list.js';
 import { readQuoteResult, type QuoteResult } from './quote-result.js';
@@ -29,7 +30,10 @@ export interface TextDifference {
   regionId: number;
   removed: string[];
   added: string[];
-  /** True when either side's OCR confidence is below 60, so the change may be a misreading. */
+  /**
+   * True when a side with text has OCR confidence below 60, so the change may be a misreading. A side with no text
+   * (for example a region below the end of the shorter page) is not counted.
+   */
   lowConfidence: boolean;
 }
 
@@ -51,6 +55,8 @@ export interface QuoteResultsSummary {
   failed: (QuoteResult & { name: string })[];
   /** Policy folders with neither a `result.json` nor a `report.json`. */
   unrecorded: string[];
+  /** When each policy's last run started, from its `result.json`; failure pages older than this are stale. */
+  runStarts: Map<string, string>;
 }
 
 /** Where the summarise command looks; relative paths resolve from the current working directory. */
@@ -77,8 +83,8 @@ export interface OopsCount {
 export interface GuidListStatus {
   path: string;
   total: number;
-  /** Listed policies with no `comparisons/<policyDetailsId>-1` folder. */
-  notRun: string[];
+  /** Listed policies with no recorded result: no `comparisons/<policyDetailsId>-1` folder, or one without a result. */
+  withoutResult: string[];
   /** Listed policies with no `<policyDetailsId>-1-mrp.json` in mrp-and-quote's output folder. */
   missingMrp: string[];
 }
@@ -110,22 +116,30 @@ export async function summariseQuoteResults(options: SummariseOptions = {}): Pro
  * @throws When a `result.json` or `report.json` cannot be read or parsed.
  */
 export async function collectQuoteResults(root: string): Promise<QuoteResultsSummary> {
-  const summary: QuoteResultsSummary = { root: resolve(root), compared: [], declined: [], failed: [], unrecorded: [] };
-  const names = (await readDirectories(summary.root)).filter((name) => policyFolderPattern.test(name));
-  for (const name of names) {
-    const directory = join(summary.root, name);
-    const result = await readQuoteResult(directory);
+  const summary: QuoteResultsSummary = {
+    root: resolve(root),
+    compared: [],
+    declined: [],
+    failed: [],
+    unrecorded: [],
+    runStarts: new Map()
+  };
+  const names = (await readDirectoryNames(summary.root)).filter((name) => policyFolderPattern.test(name));
+  // Read in parallel (there can be over a thousand folders), then sort in folder order.
+  const folders = await Promise.all(names.map((name) => readPolicyFolder(summary.root, name)));
+  for (const { name, result, report } of folders) {
+    if (result !== undefined) {
+      summary.runStarts.set(name, result.startedAt);
+    }
+
     if (result?.outcome === 'failed') {
       summary.failed.push({ ...result, name });
     } else if (result?.outcome === 'declined') {
       summary.declined.push(name);
+    } else if (report === undefined) {
+      summary.unrecorded.push(name);
     } else {
-      const report = await readComparisonReport(join(directory, 'report.json'));
-      if (report === undefined) {
-        summary.unrecorded.push(name);
-      } else {
-        summary.compared.push(summariseReport(name, report));
-      }
+      summary.compared.push(summariseReport(name, report));
     }
   }
 
@@ -135,8 +149,10 @@ export async function collectQuoteResults(root: string): Promise<QuoteResultsSum
 /**
  * Counts each flow's saved failure pages (`-nhi-failed.html`, `-tcas-failed.html`) that show the Oops heading, and
  * how many of those policies still compared or declined, for example after NHI retried with a replacement quote GUID.
+ * A page saved before its policy's last recorded run started is left over from an earlier run (one that stopped
+ * before clearing old output, such as for a missing MRP), so it is not counted.
  * @param screenshots Screenshots folder.
- * @param summary The comparisons summary, to tell which policies recovered.
+ * @param summary The comparisons summary, to tell which policies recovered and when each last run started.
  * @returns One count for NHI, then one for TCAS.
  * @throws When a failure page cannot be read.
  */
@@ -147,12 +163,22 @@ export async function countOopsPages(screenshots: string, summary: QuoteResultsS
     nhi: { flow: 'NHI', total: 0, recovered: 0 },
     tcas: { flow: 'TCAS', total: 0, recovered: 0 }
   };
-  for (const file of await readFileNames(folder)) {
-    const [, name = '', flow = ''] = failurePagePattern.exec(file) ?? [];
-    const count = counts[flow.toLowerCase()];
-    if (count !== undefined && oopsHeadingPattern.test(await readFile(join(folder, file), 'utf8'))) {
+  const pages = (await readFileNames(folder)).flatMap((file) => {
+    const [, name, flow] = failurePagePattern.exec(file) ?? [];
+    return name === undefined || flow === undefined
+      ? []
+      : [{ path: join(folder, file), name: name.toUpperCase(), flow: flow.toLowerCase() }];
+  });
+  const oopsPages = await Promise.all(
+    pages.map(async (page) =>
+      (await isCurrentOopsPage(page.path, summary.runStarts.get(page.name))) ? page : undefined
+    )
+  );
+  for (const page of oopsPages) {
+    const count = page === undefined ? undefined : counts[page.flow];
+    if (page !== undefined && count !== undefined) {
       count.total++;
-      count.recovered += recoveredNames.has(name.toUpperCase()) ? 1 : 0;
+      count.recovered += recoveredNames.has(page.name) ? 1 : 0;
     }
   }
 
@@ -164,7 +190,7 @@ export async function countOopsPages(screenshots: string, summary: QuoteResultsS
  * @param guidListPath GUID list file, one policy ID per line.
  * @param mrpAndQuoteOutputDir mrp-and-quote's output folder.
  * @param summary The comparisons summary, to tell which listed policies have run.
- * @returns The list's size, its policies with no result, and those whose MRP record was not retrieved.
+ * @returns The list's size, its policies with no recorded result, and those whose MRP record was not retrieved.
  * @throws When the GUID list cannot be read or has an invalid line.
  */
 export async function collectGuidListStatus(
@@ -176,13 +202,12 @@ export async function collectGuidListStatus(
   const names = new Set([
     ...summary.compared.map(({ name }) => name),
     ...summary.declined,
-    ...summary.failed.map(({ name }) => name),
-    ...summary.unrecorded
+    ...summary.failed.map(({ name }) => name)
   ]);
   return {
     path: resolve(guidListPath),
     total: guids.length,
-    notRun: guids.filter((guid) => !names.has(`${guid}-${fetchedHistoryId}`)),
+    withoutResult: guids.filter((guid) => !names.has(`${guid}-${fetchedHistoryId}`)),
     missingMrp: await filterMissingMrpFiles(guids, mrpAndQuoteOutputDir)
   };
 }
@@ -227,7 +252,8 @@ export function countFailureReasons(failed: QuoteResult[]): { reason: string; co
 
 /**
  * Removes what differs between policies from a failure issue: URLs (with their parentheses), file paths, and
- * policy or quote GUIDs, with or without dashes.
+ * policy or quote GUIDs, with or without dashes. A POSIX path must start with `/` and end in a file name with an
+ * extension, so dates (`DD/MM/YYYY`) and slash-separated words are kept.
  * @param issue One line of a failure message.
  * @returns The issue with those parts replaced by `<url>`, `<path>` and `<id>`.
  */
@@ -235,7 +261,7 @@ export function normaliseIssue(issue: string): string {
   return issue
     .replace(/\s*\(https?:\/\/[^)\s]*\)/g, '')
     .replace(/https?:\/\/\S+/g, '<url>')
-    .replace(/[A-Za-z]:\\\S+|(?:\/[\w.-]+){2,}/g, '<path>')
+    .replace(/[A-Za-z]:\\\S+|(?<![\w/])(?:\/[\w.-]+)+\/[\w-]+\.\w+/g, '<path>')
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '<id>')
     .replace(/\b[0-9a-f]{32}\b/gi, '<id>')
     .trim();
@@ -384,12 +410,12 @@ function printGuidListTotals(guidList: GuidListStatus | undefined): void {
     return;
   }
 
-  const { path, total, notRun, missingMrp } = guidList;
+  const { path, total, withoutResult, missingMrp } = guidList;
   const notRetrieved = `${missingMrp.length} MRP records not retrieved`;
   console.log(
-    `GUID list: ${total} policies (${path}); ${total - notRun.length} with a result, ${notRun.length} not run; ${
-      missingMrp.length > 0 ? color.Yellow(notRetrieved) : notRetrieved
-    }.`
+    `GUID list: ${total} policies (${path}); ${total - withoutResult.length} with a result, ${
+      withoutResult.length
+    } without; ${missingMrp.length > 0 ? color.Yellow(notRetrieved) : notRetrieved}.`
   );
 }
 
@@ -440,8 +466,8 @@ function diffRegionLines(region: ReportRegion): TextDifference {
     regionId: region.id,
     removed,
     added,
-    lowConfidence: [region.before.confidence, region.after.confidence].some(
-      (confidence) => confidence === null || confidence < lowOcrConfidence
+    lowConfidence: [region.before, region.after].some(
+      ({ text, confidence }) => text.trim().length > 0 && (confidence === null || confidence < lowOcrConfidence)
     )
   };
 }
@@ -453,16 +479,29 @@ function textLines(text: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-async function readComparisonReport(path: string): Promise<ComparisonReport | undefined> {
-  let content: string;
-  try {
-    content = await readFile(path, 'utf8');
-  } catch (error) {
-    if (isMissing(error)) {
-      return undefined;
-    }
+async function readPolicyFolder(
+  root: string,
+  name: string
+): Promise<{ name: string; result: QuoteResult | undefined; report: ComparisonReport | undefined }> {
+  const directory = join(root, name);
+  const result = await readQuoteResult(directory);
+  const needsReport = result === undefined || result.outcome === 'compared';
+  return { name, result, report: needsReport ? await readComparisonReport(join(directory, 'report.json')) : undefined };
+}
 
-    throw error;
+/** True when the page shows Oops and was saved during the policy's last recorded run (or no run was recorded). */
+async function isCurrentOopsPage(path: string, runStartedAt: string | undefined): Promise<boolean> {
+  if (runStartedAt !== undefined && (await stat(path)).mtimeMs < Date.parse(runStartedAt)) {
+    return false;
+  }
+
+  return oopsHeadingPattern.test(await readFile(path, 'utf8'));
+}
+
+async function readComparisonReport(path: string): Promise<ComparisonReport | undefined> {
+  const content = await readOptionalTextFile(path);
+  if (content === undefined) {
+    return undefined;
   }
 
   const report: unknown = JSON.parse(content);
@@ -471,36 +510,6 @@ async function readComparisonReport(path: string): Promise<ComparisonReport | un
   }
 
   return report;
-}
-
-async function readFileNames(path: string): Promise<string[]> {
-  try {
-    return (await readdir(path, { withFileTypes: true }))
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name)
-      .sort();
-  } catch (error) {
-    if (isMissing(error)) {
-      return [];
-    }
-
-    throw error;
-  }
-}
-
-async function readDirectories(path: string): Promise<string[]> {
-  try {
-    return (await readdir(path, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
-  } catch (error) {
-    if (isMissing(error)) {
-      return [];
-    }
-
-    throw error;
-  }
 }
 
 function isComparisonReport(value: unknown): value is ComparisonReport {
@@ -517,8 +526,4 @@ function isComparisonReport(value: unknown): value is ComparisonReport {
     'regions' in value &&
     Array.isArray(value.regions)
   );
-}
-
-function isMissing(error: unknown): boolean {
-  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }

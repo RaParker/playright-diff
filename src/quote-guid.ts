@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { readOptionalTextFile } from './fs-helpers.js';
 
 export interface QuoteGuidRequestOptions {
   quoteGuidUrl: string;
@@ -64,15 +65,9 @@ export async function requestQuoteGuid(
  * @throws When the file cannot be read or is not a JSON object of strings.
  */
 export async function readQuoteGuidMapping(path: string): Promise<Record<string, string>> {
-  let content: string;
-  try {
-    content = await readFile(path, 'utf8');
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      return {};
-    }
-
-    throw error;
+  const content = await readOptionalTextFile(path);
+  if (content === undefined) {
+    return {};
   }
 
   const mapping: unknown = JSON.parse(content);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, test } from 'node:test';
@@ -30,7 +30,8 @@ function failedResult(policyDetailsId, issues, validation = false) {
     outcome: 'failed',
     validation,
     issues,
-    finishedAt: '2026-10-12T09:00:00.000Z'
+    startedAt: '2000-01-01T00:00:00.000Z',
+    finishedAt: '2000-01-01T00:01:00.000Z'
   };
 }
 
@@ -159,6 +160,7 @@ describe('quote result file', () => {
 
   for (const [name, content] of [
     ['an array', []],
+    ['a missing startedAt', { ...failedResult(failedPolicy, []), startedAt: undefined }],
     ['an unknown outcome', { ...failedResult(failedPolicy, []), outcome: 'skipped' }],
     ['non-string issues', { ...failedResult(failedPolicy, []), issues: [1] }],
     ['a missing finishedAt', { ...failedResult(failedPolicy, []), finishedAt: undefined }]
@@ -193,6 +195,13 @@ describe('normaliseIssue', () => {
     ['a POSIX path', 'No saved MRP for this quote: /work/output/ABC-1-mrp.json', 'No saved MRP for this quote: <path>'],
     ['a policy ID', `Policy ${failedPolicy.toLowerCase()} failed`, 'Policy <id> failed'],
     ['a dashed GUID', 'GUID 6819e30c-2058-490b-8d1d-9e25d267b002 expired', 'GUID <id> expired'],
+    [
+      'no date format',
+      'NHI cover details errors: Enter a date in DD/MM/YYYY format',
+      'NHI cover details errors: Enter a date in DD/MM/YYYY format'
+    ],
+    ['no numeric date', 'Cover must start after 01/01/2020', 'Cover must start after 01/01/2020'],
+    ['no slash-separated words', 'Select yes/no/unsure', 'Select yes/no/unsure'],
     ['plain text', 'Please select an option.', 'Please select an option.']
   ]) {
     test(`replaces ${name}`, () => {
@@ -294,6 +303,36 @@ describe('collectQuoteResults', () => {
     ]);
   });
 
+  test('does not flag a side with no text, such as a region below the end of the shorter page', async () => {
+    // arrange
+    const root = await mkdtemp(join(tmpdir(), 'summarise-'));
+    await writeReport(root, `${textPolicy}-1`, {
+      changedPixels: 10,
+      afterHeight: 120,
+      regions: [region(1, '', 'Added block', [null, 90])]
+    });
+
+    // act
+    const summary = await collectQuoteResults(root);
+
+    // assert
+    assert.deepEqual(summary.compared[0].textDifferences, [
+      { regionId: 1, removed: [], added: ['Added block'], lowConfidence: false }
+    ]);
+  });
+
+  test('flags a side whose text has no OCR confidence', async () => {
+    // arrange
+    const root = await mkdtemp(join(tmpdir(), 'summarise-'));
+    await writeReport(root, `${textPolicy}-1`, { changedPixels: 10, regions: [region(1, 'Old', 'New', [null, 90])] });
+
+    // act
+    const summary = await collectQuoteResults(root);
+
+    // assert
+    assert.equal(summary.compared[0].textDifferences[0].lowConfidence, true);
+  });
+
   test('reports a difference in page size', async () => {
     // arrange
     const { comparisons } = await projectFixture();
@@ -336,6 +375,39 @@ describe('countOopsPages', () => {
   });
 });
 
+describe('countOopsPages with earlier runs', () => {
+  test("skips an Oops page saved before the policy's last run started", async () => {
+    // arrange
+    const { comparisons, screenshots } = await projectFixture();
+    const stale = new Date('1999-12-31T00:00:00.000Z');
+    await utimes(join(screenshots, `${failedPolicy}-1-tcas-failed.html`), stale, stale);
+    const summary = await collectQuoteResults(comparisons);
+
+    // act
+    const counts = await countOopsPages(screenshots, summary);
+
+    // assert
+    assert.deepEqual(counts, [
+      { flow: 'NHI', total: 2, recovered: 1 },
+      { flow: 'TCAS', total: 0, recovered: 0 }
+    ]);
+  });
+
+  test('counts an old Oops page when the policy has no recorded run', async () => {
+    // arrange
+    const { comparisons, screenshots } = await projectFixture();
+    const stale = new Date('1999-12-31T00:00:00.000Z');
+    await utimes(join(screenshots, `${identicalPolicy}-1-nhi-failed.html`), stale, stale);
+    const summary = await collectQuoteResults(comparisons);
+
+    // act
+    const counts = await countOopsPages(screenshots, summary);
+
+    // assert
+    assert.deepEqual(counts[0], { flow: 'NHI', total: 2, recovered: 1 });
+  });
+});
+
 describe('collectGuidListStatus', () => {
   test('counts the list, the policies not run and the MRP records not retrieved', async () => {
     // arrange
@@ -347,7 +419,7 @@ describe('collectGuidListStatus', () => {
 
     // assert
     assert.equal(status.total, 7);
-    assert.deepEqual(status.notRun, [notRunPolicy]);
+    assert.deepEqual(status.withoutResult, [unrecordedPolicy, notRunPolicy]);
     assert.deepEqual(status.missingMrp, [failedPolicy, notRunPolicy]);
   });
 });
@@ -381,7 +453,7 @@ describe('summarise command', () => {
       assert.match(output, /MRP records not retrieved \(2\)\n {2}C{32}\n {2}1{32}\n/);
       assert.match(
         output,
-        /GUID list: 7 policies \(.*guids\.txt\); 6 with a result, 1 not run; 2 MRP records not retrieved\./
+        /GUID list: 7 policies \(.*guids\.txt\); 5 with a result, 2 without; 2 MRP records not retrieved\./
       );
       assert.match(
         output,

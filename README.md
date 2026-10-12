@@ -162,9 +162,11 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   `run-<timestamp>` reports from older versions). `quote-guid-mapping.json` is kept.
 - **Result:** every run with a valid policy and history ID ends by writing
   `comparisons/<ID>-<historyId>/result.json` — `outcome` (`compared`, `declined` or `failed`),
-  `validation`, the failure `issues` (one line each) and `finishedAt` — for
+  `validation`, the failure `issues` (one line each), `startedAt` and `finishedAt` — for
   [summarise](#summarise). A run that stops before capturing (for example with no saved MRP)
-  writes only this file and leaves the previous screenshots alone.
+  writes only this file and leaves the previous screenshots alone. If the file cannot be
+  written, a yellow `Could not save the result of …` warning is shown and the run still passes
+  or fails on its own result.
 
 See [How quote-page works](#how-quote-page-works) for the journey, error handling and the
 NHI Oops fallback.
@@ -236,19 +238,19 @@ before results were saved) counts as compared, since a report exists only when b
 captured; failures from those older runs were not recorded, so rerun them to see their reasons.
 In order, it prints:
 
-| Section                   | Contents                                                                                                                                                                                                                                      |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Visual-only differences   | Compared policies whose images differ with no text change, largest change first, with the changed percent and any difference in page size                                                                                                     |
-| Text differences          | Each policy with text changes, then each region's changed OCR lines (`- £137.63`, `+ £137.62`); whole lines are compared rather than words, so the change has context. A region with OCR confidence below 60 is marked `(low OCR confidence)` |
-| Most common text changes  | The 10 most frequent changes seen in more than one region, for example `25× £137.63 → £137.62`                                                                                                                                                |
-| Failed policies           | Each failed policy with its issues, coloured as in [quote-pages](#quote-pages)                                                                                                                                                                |
-| Failures by reason        | Each issue with the number of policies reporting it; URLs, file paths and IDs are ignored so the same error groups together                                                                                                                   |
-| MRP records not retrieved | GUID list entries with no `<ID>-1-mrp.json` in `MRP_AND_QUOTE_OUTPUT_DIR`                                                                                                                                                                     |
-| Totals                    | The GUID list size, how many have a result and how many have not run; the compared, identical, different, declined and failed counts; and the Oops pages                                                                                      |
+| Section                   | Contents                                                                                                                                                                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Visual-only differences   | Compared policies whose images differ with no text change, largest change first, with the changed percent and any difference in page size                                                                                                                           |
+| Text differences          | Each policy with text changes, then each region's changed OCR lines (`- £137.63`, `+ £137.62`); whole lines are compared rather than words, so the change has context. A region where a side with text has OCR confidence below 60 is marked `(low OCR confidence)` |
+| Most common text changes  | The 10 most frequent changes seen in more than one region, for example `25× £137.63 → £137.62`                                                                                                                                                                      |
+| Failed policies           | Each failed policy with its issues, coloured as in [quote-pages](#quote-pages)                                                                                                                                                                                      |
+| Failures by reason        | Each issue with the number of policies reporting it; URLs, file paths and IDs are ignored so the same error groups together (dates such as `DD/MM/YYYY` are kept)                                                                                                   |
+| MRP records not retrieved | GUID list entries with no `<ID>-1-mrp.json` in `MRP_AND_QUOTE_OUTPUT_DIR`                                                                                                                                                                                           |
+| Totals                    | The GUID list size, how many have a result and how many do not (not run, or an empty folder); the compared, identical, different, declined and failed counts; and the Oops pages                                                                                    |
 
 ```text
 Totals
-GUID list: 1264 policies (…/quoteGuids.txt); 1236 with a result, 28 not run; 10 MRP records not retrieved.
+GUID list: 1264 policies (…/quoteGuids.txt); 1236 with a result, 28 without; 10 MRP records not retrieved.
 1237 policies: 1237 compared (833 identical, 404 different, 67 with text changes), 0 both declined, 0 failed.
 Oops pages: NHI 957 (953 later compared or declined), TCAS 10 (1 later compared or declined).
 ```
@@ -258,7 +260,9 @@ Oops pages: NHI 957 (953 later compared or declined), TCAS 10 (1 later compared 
   section are skipped.
 - **Oops pages:** counts the `screenshots/<ID>-<historyId>-nhi-failed.html` and
   `-tcas-failed.html` pages that show the Oops heading. A policy that "later compared or
-  declined" recovered, usually through the [NHI Oops fallback](#nhi-oops-fallback).
+  declined" recovered, usually through the [NHI Oops fallback](#nhi-oops-fallback). A page
+  saved before the policy's last recorded run started (`startedAt`) is left over from an earlier
+  run and is not counted.
 
 ## Configuration
 

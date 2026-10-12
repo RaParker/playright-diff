@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readOptionalTextFile } from './fs-helpers.js';
 import { parseEnv } from 'node:util';
 
 type Environment = Record<string, string | undefined>;
@@ -15,15 +15,8 @@ export async function loadEnvironment(path = '.env', environment: Environment = 
 }
 
 async function readEnvironmentFile(path: string): Promise<Environment | undefined> {
-  try {
-    return parseEnv(await readFile(path, 'utf8'));
-  } catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
-      throw error;
-    }
-
-    return undefined;
-  }
+  const content = await readOptionalTextFile(path);
+  return content === undefined ? undefined : parseEnv(content);
 }
 
 function mergeEnvironment(fileValues: Environment, environment: Environment): Environment {

@@ -1,4 +1,5 @@
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
+import { readOptionalTextFile } from './fs-helpers.js';
 
 /** File, in the current working directory, listing the policies that failed in the last quote-pages run. */
 export const failedQuotePagesPath = 'quote-pages-failed.json';
@@ -37,15 +38,9 @@ export async function writeFailedQuotePages(path: string, failures: FailedQuoteP
  * @throws When the file cannot be read or is not a failed-policies list.
  */
 export async function readFailedQuotePages(path: string): Promise<FailedQuotePages | undefined> {
-  let content: string;
-  try {
-    content = await readFile(path, 'utf8');
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      return undefined;
-    }
-
-    throw error;
+  const content = await readOptionalTextFile(path);
+  if (content === undefined) {
+    return undefined;
   }
 
   const saved: unknown = JSON.parse(content);

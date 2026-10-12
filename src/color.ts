@@ -16,7 +16,11 @@ export const color = {
   }
 };
 
-/** Yellow for a journey validation failure (the site rejected the answers), otherwise red. */
+/**
+ * Picks the colour for a failure message.
+ * @param validation True when the failure is a journey validation failure (the site rejected the answers).
+ * @returns A function that colours text yellow for a validation failure, otherwise red.
+ */
 export function failureColor(validation: boolean): (text: string) => string {
   return validation ? color.Yellow : color.Red;
 }

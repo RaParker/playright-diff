@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import type { Page } from 'playwright';
 import { color, failureColor } from './color.js';
 import { compare } from './compare.js';
+import { isMissing } from './fs-helpers.js';
 import { writeFailedQuotePages, type FailedQuotePage } from './failed-quote-pages.js';
 import {
   readQuoteGuidMapping,
@@ -12,7 +13,7 @@ import {
 } from './quote-guid.js';
 import { selectAnnualPayment } from './payment.js';
 import { removeQuoteOutput } from './quote-output.js';
-import { writeQuoteResult } from './quote-result.js';
+import { writeQuoteResult, type QuoteResult } from './quote-result.js';
 import { quoteSummary } from './quote-summary.js';
 import {
   DeclinedError,
@@ -85,15 +86,13 @@ export async function quotePage(
     throw new Error('historyId must be a non-negative safe integer.');
   }
 
-  const result = { policyDetailsId, historyId, validation: false, issues: [] as string[] };
+  const run = { policyDetailsId, historyId, startedAt: new Date().toISOString() };
+  let outcome: QuotePageResult;
   try {
-    const outcome = await captureAndCompare(policyDetailsId, historyId, options);
-    await writeQuoteResult({ ...result, outcome, finishedAt: new Date().toISOString() });
-    return outcome;
+    outcome = await captureAndCompare(policyDetailsId, historyId, options);
   } catch (error) {
-    // Saved for the summarise command; the error itself is still reported by the caller.
-    await writeQuoteResult({
-      ...result,
+    await saveQuoteResult({
+      ...run,
       outcome: 'failed',
       validation: error instanceof ValidationError,
       issues: (error instanceof Error ? error.message : String(error)).split('\n'),
@@ -101,6 +100,9 @@ export async function quotePage(
     });
     throw error;
   }
+
+  await saveQuoteResult({ ...run, outcome, validation: false, issues: [], finishedAt: new Date().toISOString() });
+  return outcome;
 }
 
 /**
@@ -237,12 +239,25 @@ async function captureAndCompare(
   return 'compared';
 }
 
+/**
+ * Saves a run's result for the summarise command. Only warns when it cannot, so a successful run still succeeds and a
+ * failed run still reports its own error rather than the write's.
+ */
+async function saveQuoteResult(result: QuoteResult): Promise<void> {
+  try {
+    await writeQuoteResult(result);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.log(color.Yellow(`Could not save the result of ${result.policyDetailsId}-${result.historyId}: ${reason}`));
+  }
+}
+
 async function readQuoteGuid(mrpPath: string): Promise<string> {
   let content: string;
   try {
     content = await readFile(mrpPath, 'utf8');
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+    if (isMissing(error)) {
       throw new Error(`No saved MRP for this quote: ${mrpPath}`, { cause: error });
     }
 
