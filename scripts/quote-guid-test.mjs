@@ -354,7 +354,7 @@ describe('quote GUID mapping file', () => {
     assert.deepEqual(await readdir(dirname(path)), ['mapping.json']);
   });
 
-  test('reads made while entries are being saved never see a partly written file', async () => {
+  test('reads and saves made at the same time all succeed and keep every entry', async () => {
     // arrange
     const path = join(await mkdtemp(join(tmpdir(), 'quote-guid-map-')), 'mapping.json');
     await saveQuoteGuidMapping(path, 'first', 'one');
@@ -826,7 +826,7 @@ ${policyB}
     });
   }
 
-  for (const value of ['0', 'three', '-1']) {
+  for (const value of ['0', 'three', '-1', '101']) {
     test(`rejects a concurrency of ${value}`, async () => {
       // arrange
       const { directory, env } = await fixture('http://127.0.0.1:1');
@@ -837,7 +837,7 @@ ${policyB}
 
       // assert
       assert.notEqual(result.code, 0);
-      assert.match(result.output, /--concurrency must be a positive integer/);
+      assert.match(result.output, /--concurrency must be an integer from 1 to 100/);
     });
   }
 
@@ -872,6 +872,23 @@ ${policyB}
       assert.doesNotMatch(result.plain, /\[\d\/2 [0-9A-F]{8}\]/);
       const firstPolicyDone = result.plain.indexOf('Screenshot saved to', result.plain.indexOf(`[1/2] ${policyA}-1`));
       assert.ok(firstPolicyDone < result.plain.indexOf(`[2/2] ${policyB}-1`), result.plain);
+    });
+  });
+
+  test('runs a policy repeated in the list (in any case) only once', async () => {
+    await withServer(quoteJourneyHandler([]), async (base, requests) => {
+      // arrange
+      const { directory, env } = await fixture(base, { [`${policyA}-1`]: 'guid-a', [`${policyB}-1`]: 'guid-b' });
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n${policyA.toLowerCase()}\n`);
+
+      // act
+      const result = await run(directory, env, ['quote-pages', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.match(result.plain, /Skipping 1 repeated policy ID; each policy runs once\./);
+      assert.match(result.plain, /Quote pages summary\n2 passed \(0 both declined\), 0 failed\.\n/);
+      assert.equal(requests.filter((path) => path === `/tcas/${policyA}/1`).length, 1);
     });
   });
 

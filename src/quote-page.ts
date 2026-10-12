@@ -116,6 +116,9 @@ export async function quotePage(
 /** Default number of policies {@link quotePages} runs at once. */
 export const defaultQuotePagesConcurrency = 3;
 
+/** Characters of the policy details ID shown in each log line's prefix when policies run at once. */
+const logPrefixIdLength = 8;
+
 /** Options for {@link quotePages}: those of each {@link quotePage} run, plus how many run at once. */
 export interface QuotePagesOptions extends QuotePageOptions {
   /** Most policies run at once (default: {@link defaultQuotePagesConcurrency}); 1 runs them one after another. */
@@ -126,25 +129,27 @@ export interface QuotePagesOptions extends QuotePageOptions {
 type PolicyRunOutcome = { status: QuotePageResult } | { status: 'failed'; message: string; validation: boolean };
 
 /**
- * Runs {@link quotePage} for each policy, several at once, continuing past failures. Policies start in list order;
+ * Runs {@link quotePage} for each policy, several at once, continuing past failures. Repeated IDs (in any case) run
+ * once, at their first position, since every run of a policy writes the same files. Policies start in list order;
  * when more than one runs at once, each line a policy logs is prefixed with its position and the start of its ID.
- * @param policyDetailsIds Policy details IDs to capture and compare.
+ * @param requestedIds Policy details IDs to capture and compare.
  * @param historyId History ID used for every policy.
  * @param options Options passed to each {@link quotePage} run, and the concurrency.
  * @param failedPath File that the run's failed policies replace, for `quote-pages -- retry-failed`; not written when omitted.
  * After all runs, saves the failed policies in list order (an empty list when none failed), then prints a summary:
  * the counts, then each failed policy with its issues.
- * @throws When the concurrency is not a positive integer, or after all runs when any policy failed. Policies where
+ * @throws When the concurrency is out of range, or after all runs when any policy failed. Policies where
  * both sides declined are not failures.
  */
 export async function quotePages(
-  policyDetailsIds: string[],
+  requestedIds: string[],
   historyId: number,
   options: QuotePagesOptions,
   failedPath?: string
 ): Promise<void> {
   const concurrency = options.concurrency ?? defaultQuotePagesConcurrency;
   validateConcurrency(concurrency);
+  const policyDetailsIds = removeRepeatedIds(requestedIds);
   const outcomes: PolicyRunOutcome[] = [];
   const runAll = () =>
     runConcurrently(policyDetailsIds, concurrency, async (policyDetailsId, index) => {
@@ -152,7 +157,9 @@ export async function quotePages(
       console.log(color.Cyan(`[${position}] ${policyDetailsId}-${historyId}`));
       const run = () => runPolicy(policyDetailsId, historyId, options);
       outcomes[index] =
-        concurrency === 1 ? await run() : await runWithLogPrefix(`[${position} ${policyDetailsId.slice(0, 8)}]`, run);
+        concurrency === 1
+          ? await run()
+          : await runWithLogPrefix(`[${position} ${policyDetailsId.slice(0, logPrefixIdLength)}]`, run);
     });
   await (concurrency === 1 ? runAll() : withPrefixedConsole(runAll));
 
@@ -186,6 +193,30 @@ export async function quotePages(
   if (failures.length > 0) {
     throw new Error(`${failures.length} of ${policyDetailsIds.length} quote pages failed; see the summary above.`);
   }
+}
+
+/**
+ * Drops repeated policy details IDs (compared case-insensitively), keeping each one's first position, and reports how
+ * many were dropped.
+ */
+function removeRepeatedIds(policyDetailsIds: string[]): string[] {
+  const seen = new Set<string>();
+  const unique = policyDetailsIds.filter((policyDetailsId) => {
+    const key = policyDetailsId.toUpperCase();
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+  const repeated = policyDetailsIds.length - unique.length;
+  if (repeated > 0) {
+    const ids = repeated === 1 ? 'ID' : 'IDs';
+    console.log(color.Yellow(`Skipping ${repeated} repeated policy ${ids}; each policy runs once.`));
+  }
+
+  return unique;
 }
 
 /**

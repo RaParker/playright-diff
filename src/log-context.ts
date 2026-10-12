@@ -4,6 +4,11 @@ import { format } from 'node:util';
 /** Console methods that get a line prefix while {@link withPrefixedConsole} runs. */
 const prefixedMethods = ['log', 'error', 'warn'] as const;
 
+/** ANSI colour (SGR) escape sequences, as `color.*` writes them. */
+const colourCodePattern = new RegExp(`${String.fromCharCode(27)}\\[\\d+(?:;\\d+)*m`, 'g');
+/** ANSI sequence that ends any colour. */
+const colourReset = '\u001b[0m';
+
 /** The prefix of the task whose asynchronous work is running, if any. */
 const prefixStorage = new AsyncLocalStorage<string>();
 
@@ -48,9 +53,21 @@ export function runWithLogPrefix<T>(prefix: string, task: () => Promise<T>): Pro
   return prefixStorage.run(prefix, task);
 }
 
+/**
+ * Puts the prefix before each line. A colour left open from an earlier line (as `color.*` wraps a whole multi-line
+ * message) is reset before the prefix and reopened after it, so the prefix itself is never coloured.
+ */
 function prefixLines(prefix: string, text: string): string {
+  let openColour: string | undefined;
   return text
     .split('\n')
-    .map((line) => `${prefix} ${line}`)
+    .map((line) => {
+      const prefixed = openColour === undefined ? `${prefix} ${line}` : `${colourReset}${prefix} ${openColour}${line}`;
+      for (const [code] of line.matchAll(colourCodePattern)) {
+        openColour = code === colourReset ? undefined : code;
+      }
+
+      return prefixed;
+    })
     .join('\n');
 }

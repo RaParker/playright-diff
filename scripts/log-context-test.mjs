@@ -47,6 +47,36 @@ describe('log prefixes', () => {
     assert.deepEqual(lines(logged.error), ['[3/9] first\n[3/9] second']);
   });
 
+  test('keeps the prefix out of a colour that spans several lines', async (t) => {
+    // arrange
+    const logged = mockConsole(t);
+    const red = '\u001b[31m';
+    const reset = '\u001b[0m';
+
+    // act
+    await withPrefixedConsole(() =>
+      runWithLogPrefix('[2/5]', async () => console.error(`${red}first\nsecond\nthird${reset}`))
+    );
+
+    // assert
+    assert.deepEqual(lines(logged.error), [
+      `[2/5] ${red}first\n${reset}[2/5] ${red}second\n${reset}[2/5] ${red}third${reset}`
+    ]);
+  });
+
+  test('does not reopen a colour closed on an earlier line', async (t) => {
+    // arrange
+    const logged = mockConsole(t);
+    const red = '\u001b[31m';
+    const reset = '\u001b[0m';
+
+    // act
+    await withPrefixedConsole(() => runWithLogPrefix('[2/5]', async () => console.log(`${red}first${reset}\nsecond`)));
+
+    // assert
+    assert.deepEqual(lines(logged.log), [`[2/5] ${red}first${reset}\n[2/5] second`]);
+  });
+
   test('keeps each concurrent task its own prefix across awaits', async (t) => {
     // arrange
     const logged = mockConsole(t);

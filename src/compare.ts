@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import sharp from 'sharp';
 import { createWorker, PSM } from 'tesseract.js';
 import { color } from './color.js';
+import { createSerialisedUntilSuccess } from './concurrency.js';
 
 export interface CompareOptions {
   output?: string;
@@ -60,8 +61,8 @@ async function load(path: string) {
     .toBuffer({ resolveWithObject: true });
 }
 
-/** Settles once the first OCR worker in this process has loaded (or failed to), caching its language data. */
-let firstOcrWorkerLoaded: Promise<void> | undefined;
+/** Loads OCR workers one at a time per language until one has loaded, and so cached its language data. */
+const loadOcrLanguage = createSerialisedUntilSuccess();
 
 type LoadedImage = Awaited<ReturnType<typeof load>>;
 type OcrWorker = Awaited<ReturnType<typeof createWorker>>;
@@ -280,21 +281,11 @@ async function processRegions(
 }
 
 /**
- * Creates an OCR worker. The first one in the process loads alone, and later ones wait for it, so concurrent
- * comparisons never download the language data into the shared cache at the same time.
+ * Creates an OCR worker. Until one worker for the language has loaded, they load one at a time (a failed load lets the
+ * next try alone), so concurrent comparisons never download its language data into the shared cache at the same time.
  */
 async function createOcrWorker(language: string, cachePath: string): Promise<OcrWorker> {
-  if (firstOcrWorkerLoaded !== undefined) {
-    await firstOcrWorkerLoaded;
-    return createWorker(language, undefined, { cachePath });
-  }
-
-  const worker = createWorker(language, undefined, { cachePath });
-  firstOcrWorkerLoaded = worker.then(
-    () => undefined,
-    () => undefined
-  );
-  return worker;
+  return loadOcrLanguage(language, () => createWorker(language, undefined, { cachePath }));
 }
 
 function printRegionCount(total: number, withTextChanges: number, useOcr: boolean): void {

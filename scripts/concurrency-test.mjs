@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { describe, test } from 'node:test';
-import { runConcurrently, validateConcurrency } from '../dist/concurrency.js';
+import {
+  createSerialisedUntilSuccess,
+  maxConcurrency,
+  runConcurrently,
+  validateConcurrency
+} from '../dist/concurrency.js';
 
 /** Runs items through the pool, recording the most tasks in flight and the order tasks finished. */
 async function runRecording(items, concurrency, durationOf) {
@@ -105,7 +110,7 @@ describe('runConcurrently', () => {
     assert.deepEqual(finished, [2]);
   });
 
-  for (const concurrency of [0, -1, 1.5, Number.NaN]) {
+  for (const concurrency of [0, -1, 1.5, Number.NaN, maxConcurrency + 1]) {
     test(`rejects a concurrency of ${concurrency}`, async () => {
       // arrange
       const items = [1];
@@ -114,8 +119,115 @@ describe('runConcurrently', () => {
       const run = runConcurrently(items, concurrency, async () => undefined);
 
       // assert
-      await assert.rejects(run, /concurrency must be a positive integer/);
-      assert.throws(() => validateConcurrency(concurrency), /concurrency must be a positive integer/);
+      await assert.rejects(run, /concurrency must be an integer from 1 to 100/);
+      assert.throws(() => validateConcurrency(concurrency), /concurrency must be an integer from 1 to 100/);
     });
   }
+
+  test(`accepts a concurrency of ${maxConcurrency}`, () => {
+    // arrange
+    const concurrency = maxConcurrency;
+
+    // act
+    const validate = () => validateConcurrency(concurrency);
+
+    // assert
+    assert.doesNotThrow(validate);
+  });
+});
+
+/** A task that records how many tasks run at once, then waits and resolves or rejects. */
+function trackedTask(tracker, { fail = false, duration = 10 } = {}) {
+  return async () => {
+    tracker.running++;
+    tracker.mostRunning = Math.max(tracker.mostRunning, tracker.running);
+    tracker.started++;
+    await delay(duration);
+    tracker.running--;
+    if (fail) {
+      throw new Error('load failed');
+    }
+
+    return tracker.started;
+  };
+}
+
+function createTracker() {
+  return { running: 0, mostRunning: 0, started: 0 };
+}
+
+describe('createSerialisedUntilSuccess', () => {
+  test('runs tasks for a key one at a time until one succeeds, then all at once', async () => {
+    // arrange
+    const run = createSerialisedUntilSuccess();
+    const beforeSuccess = createTracker();
+    const afterSuccess = createTracker();
+
+    // act
+    await Promise.all([1, 2, 3].map(() => run('eng', trackedTask(beforeSuccess))));
+    await Promise.all([1, 2, 3].map(() => run('eng', trackedTask(afterSuccess))));
+
+    // assert
+    assert.equal(beforeSuccess.started, 3);
+    assert.equal(afterSuccess.mostRunning, 3);
+  });
+
+  test('releases waiting tasks together once the first task succeeds', async () => {
+    // arrange
+    const run = createSerialisedUntilSuccess();
+    const tracker = createTracker();
+
+    // act
+    await Promise.all([
+      run('eng', trackedTask(tracker, { duration: 20 })),
+      ...[1, 2, 3].map(() => run('eng', trackedTask(tracker)))
+    ]);
+
+    // assert
+    assert.equal(tracker.started, 4);
+    assert.equal(tracker.mostRunning, 3);
+  });
+
+  test('lets the next task try alone after the first task fails', async () => {
+    // arrange
+    const run = createSerialisedUntilSuccess();
+    const tracker = createTracker();
+
+    // act
+    const results = await Promise.allSettled([
+      run('eng', trackedTask(tracker, { fail: true })),
+      run('eng', trackedTask(tracker, { fail: true })),
+      run('eng', trackedTask(tracker))
+    ]);
+
+    // assert
+    assert.deepEqual(
+      results.map((result) => result.status),
+      ['rejected', 'rejected', 'fulfilled']
+    );
+    assert.equal(tracker.mostRunning, 1);
+  });
+
+  test('keeps each key separate', async () => {
+    // arrange
+    const run = createSerialisedUntilSuccess();
+    const tracker = createTracker();
+
+    // act
+    await Promise.all([run('eng', trackedTask(tracker)), run('fra', trackedTask(tracker))]);
+
+    // assert
+    assert.equal(tracker.mostRunning, 2);
+  });
+
+  test('returns the task result', async () => {
+    // arrange
+    const run = createSerialisedUntilSuccess();
+
+    // act
+    const result = await run('eng', async () => 'worker');
+
+    // assert
+    assert.equal(result, 'worker');
+  });
 });

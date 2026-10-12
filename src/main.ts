@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util';
 import { color } from './color.js';
 import { compare } from './compare.js';
+import { maxConcurrency } from './concurrency.js';
 import {
   defaultQuotePagesConcurrency,
   quotePage,
@@ -46,7 +47,7 @@ MRP_AND_QUOTE_PROJECT_DIR (default: the output folder's parent) with OUTPUT_DIR 
 policies to ${failedQuotePagesPath} (except one-off runs: a guid or a maxCount of 1);
 retry-failed reruns only those. retry-different reruns every policy in comparisons/ whose
 screenshots differed (the summarise "different" count) and leaves ${failedQuotePagesPath} untouched.
-  -c, --concurrency <n>  Policies run at once (default: ${defaultQuotePagesConcurrency}; 1 runs them in turn)
+  -c, --concurrency <n>  Policies run at once, 1-${maxConcurrency} (default: ${defaultQuotePagesConcurrency}; 1 runs them in turn)
   --no-fetch             Use only the -mrp.json files already saved; policies without one fail
   --no-ocr               Compare pixels without extracting text
   -h, --help             Show help`;
@@ -327,8 +328,8 @@ function parseConcurrency(value: string | undefined): number {
     return defaultQuotePagesConcurrency;
   }
 
-  if (!/^\d+$/.test(value) || Number(value) < 1 || !Number.isSafeInteger(Number(value))) {
-    throw new Error('--concurrency must be a positive integer.');
+  if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > maxConcurrency) {
+    throw new Error(`--concurrency must be an integer from 1 to ${maxConcurrency}.`);
   }
 
   return Number(value);
