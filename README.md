@@ -54,6 +54,7 @@ running it; with no arguments it shows its help (`Get-Help ./Run-Project.ps1 -Ex
 ./Run-Project.ps1 -QuotePages -MaxCount 10
 ./Run-Project.ps1 -QuotePages -Guid 6819e30c2058490b8d1d9e25d267b002
 ./Run-Project.ps1 -RetryFailed
+./Run-Project.ps1 -RetryDifferent
 ./Run-Project.ps1 -Summarise                                     # or -Summarize
 ./Run-Project.ps1 -Task Verify   # Install, InstallBrowser, Build, Typecheck, Lint, Test,
                                  # TestCompare, TestQuotePage, Verify, CleanUp
@@ -183,7 +184,7 @@ Runs `quote-page` (with `historyId` 1) for each entry in `QUOTE_GUID_LIST_PATH` 
 list of TCAS-format policy IDs that drives `mrp-and-quote`'s `fetch`/`compare`/`diff`
 commands, one per line.
 
-Before any policy runs (including `retry-failed`), policies with no `-1-mrp.json` in
+Before any policy runs (including `retry-failed` and `retry-different`), policies with no `-1-mrp.json` in
 `MRP_AND_QUOTE_OUTPUT_DIR` are written to a temporary file (one per line, removed afterwards) and
 fetched by running `go run . fetch --guid-file <file> --keep-output` once in its parent folder
 (the mrp-and-quote project), so only the missing policies are fetched and every existing file is
@@ -198,6 +199,7 @@ npm run quote-pages -- 10                                   # first 10 entries
 npm run quote-pages -- 6819e30c2058490b8d1d9e25d267b002     # one entry (case-insensitive)
 npm run quote-pages -- 10 --no-ocr
 npm run quote-pages -- retry-failed                         # only the last run's failures
+npm run quote-pages -- retry-different                      # every policy whose screenshots differed
 ```
 
 Policies run one at a time. A failed policy is reported and the run continues. At the end,
@@ -228,6 +230,17 @@ already in `quote-guid-mapping.json` are reused. With no file it prints
 
 One-off runs — a single `<guid>` or a `maxCount` of 1 — leave the file untouched, as does a run
 stopped with Ctrl+C.
+
+#### Retrying differences
+
+`npm run quote-pages -- retry-different` reruns every policy in `comparisons/` whose
+`report.json` has changed pixels — the policies [summarise](#summarise) counts as different —
+each with the history ID from its folder name. Identical, both-declined, failed and unrecorded
+policies are left alone (use `retry-failed` for failures). Use it after changing how pages are
+captured, such as [masking an area](#quote-page), to refresh the existing comparisons.
+`quote-pages-failed.json` is left untouched, so earlier failures stay available to
+`retry-failed`; a policy that now fails records why in its `result.json`. With nothing
+different it prints `No different quote pages to retry` and exits successfully.
 
 ### summarise
 

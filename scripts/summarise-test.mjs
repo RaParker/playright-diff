@@ -11,6 +11,7 @@ import {
   countFailureReasons,
   countOopsPages,
   countTextChanges,
+  listDifferentPolicies,
   normaliseIssue
 } from '../dist/summarise.js';
 
@@ -405,6 +406,36 @@ describe('countOopsPages with earlier runs', () => {
 
     // assert
     assert.deepEqual(counts[0], { flow: 'NHI', total: 2, recovered: 1 });
+  });
+});
+
+describe('listDifferentPolicies', () => {
+  test('lists only compared policies with changed pixels, skipping identical, declined, failed and unrecorded ones', async () => {
+    // arrange
+    const { comparisons } = await projectFixture();
+    const summary = await collectQuoteResults(comparisons);
+
+    // act
+    const different = listDifferentPolicies(summary);
+
+    // assert
+    assert.deepEqual(different, [
+      { policyDetailsId: textPolicy, historyId: 1 },
+      { policyDetailsId: visualPolicy, historyId: 1 }
+    ]);
+  });
+
+  test('takes the history ID from the folder name', async () => {
+    // arrange
+    const root = await mkdtemp(join(tmpdir(), 'summarise-'));
+    await writeReport(root, `${textPolicy}-42`, { changedPixels: 1 });
+    const summary = await collectQuoteResults(root);
+
+    // act
+    const different = listDifferentPolicies(summary);
+
+    // assert
+    assert.deepEqual(different, [{ policyDetailsId: textPolicy, historyId: 42 }]);
   });
 });
 

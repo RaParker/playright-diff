@@ -30,6 +30,8 @@ Describe 'Run-Project.ps1 command lines' {
 
         @{ Name = 'retry-failed reruns saved failures'; Arguments = @('-RetryFailed'); Expected = '{cli} quote-pages retry-failed' }
 
+        @{ Name = 'retry-different reruns different policies'; Arguments = @('-RetryDifferent', '-NoOcr'); Expected = '{cli} quote-pages retry-different --no-ocr' }
+
         @{ Name = 'summarise runs the summary'; Arguments = @('-Summarise'); Expected = '{cli} summarise' }
 
         @{ Name = 'summarize is an alias for summarise'; Arguments = @('-Summarize'); Expected = '{cli} summarise' }

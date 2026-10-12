@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -121,6 +121,17 @@ async function run(directory, env, args) {
   // ANSI colour codes removed, for asserting on the text alone.
   const plain = output.replace(new RegExp(`${String.fromCharCode(27)}\\[\\d+m`, 'g'), '');
   return { code, output, plain };
+}
+
+/** Writes a comparison report for a policy's earlier run, with the given number of changed pixels. */
+async function writeComparison(directory, name, changedPixels) {
+  const folder = join(directory, 'comparisons', name);
+  await mkdir(folder, { recursive: true });
+  const size = { width: 1440, height: 100 };
+  await writeFile(
+    join(folder, 'report.json'),
+    JSON.stringify({ dimensions: { before: size, after: size }, changedPixels, changedPercent: 0, regions: [] })
+  );
 }
 
 async function readFailed(directory) {
@@ -677,6 +688,48 @@ describe('quote-pages', () => {
     // assert
     assert.equal(result.code, 0, result.output);
     assert.match(result.plain, /No failed quote pages to retry \(quote-pages-failed\.json\)\./);
+  });
+
+  test('retry-different reruns only the policies whose screenshots differed', async () => {
+    await withServer(quoteJourneyHandler([]), async (base, requests) => {
+      // arrange
+      const { directory, env } = await fixture(base, { [`${policyA}-1`]: 'guid-a', [`${policyB}-1`]: 'guid-b' });
+      await writeFile(
+        env.QUOTE_GUID_LIST_PATH,
+        `${policyA}
+${policyB}
+`
+      );
+      await writeComparison(directory, `${policyA}-1`, 25);
+      await writeComparison(directory, `${policyB}-1`, 0);
+      const saved = `${JSON.stringify({ historyId: 1, failed: [{ policyDetailsId: policyC, issues: ['earlier'] }] })}
+`;
+      await writeFile(join(directory, 'quote-pages-failed.json'), saved);
+
+      // act
+      const result = await run(directory, env, ['quote-pages', 'retry-different', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.match(result.plain, /Retrying 1 different policies from comparisons/);
+      assert.ok(requests.includes(`/tcas/${policyA}/1`));
+      assert.ok(!requests.some((path) => path.includes(policyB) || path.includes('guid-b')));
+      assert.equal(await readFile(join(directory, 'quote-pages-failed.json'), 'utf8'), saved);
+    });
+  });
+
+  test('retry-different reports when there is nothing to retry', async () => {
+    // arrange
+    const { directory, env } = await fixture('http://127.0.0.1:1');
+    delete env.QUOTE_GUID_LIST_PATH;
+    await writeComparison(directory, `${policyA}-1`, 0);
+
+    // act
+    const result = await run(directory, env, ['quote-pages', 'retry-different']);
+
+    // assert
+    assert.equal(result.code, 0, result.output);
+    assert.match(result.plain, /No different quote pages to retry \(comparisons\)\./);
   });
 
   for (const [name, selector] of [

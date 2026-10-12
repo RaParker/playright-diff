@@ -213,6 +213,21 @@ export async function collectGuidListStatus(
 }
 
 /**
+ * Lists the compared policies whose NHI and TCAS screenshots differ (any changed pixel), the policies the summary
+ * counts as different, for `quote-pages -- retry-different`.
+ * @param summary The comparisons summary.
+ * @returns Each different policy's ID and history ID, taken from its folder name, in folder order.
+ */
+export function listDifferentPolicies(summary: QuoteResultsSummary): { policyDetailsId: string; historyId: number }[] {
+  return summary.compared
+    .filter(({ changedPixels }) => changedPixels > 0)
+    .map(({ name }) => {
+      const separator = name.lastIndexOf('-');
+      return { policyDetailsId: name.slice(0, separator), historyId: Number(name.slice(separator + 1)) };
+    });
+}
+
+/**
  * Groups the text differences of all compared policies by the lines removed and added, most common first.
  * @param compared Compared policies.
  * @returns Each distinct change, for example `£137.63 → £137.62`, with the number of regions showing it.

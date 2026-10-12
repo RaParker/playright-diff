@@ -7,7 +7,7 @@ import { isQuoteGuid, readQuoteGuidList, selectQuoteGuids } from './quote-guid-l
 import { prefetchMissingMrpFiles } from './mrp-fetch.js';
 import { screenshot, ValidationError } from './screenshot.js';
 import { loadEnvironment } from './environment.js';
-import { summariseQuoteResults } from './summarise.js';
+import { collectQuoteResults, listDifferentPolicies, summariseQuoteResults } from './summarise.js';
 
 const help = `Usage: npm start -- <screenshot|compare|quote-page|quote-pages|summarise> [arguments] [options]
 Use npm run <action> -- --help for action options.`;
@@ -31,12 +31,13 @@ const quoteHelp = `Usage: npm run quote-page -- <policyDetailsId> <historyId> [o
   --no-ocr       Compare pixels without extracting text
   -h, --help     Show help`;
 
-const quotePagesHelp = `Usage: npm run quote-pages -- [maxCount|guid|retry-failed] [options]
+const quotePagesHelp = `Usage: npm run quote-pages -- [maxCount|guid|retry-failed|retry-different] [options]
 Runs quote-page with historyId 1 for each GUID in QUOTE_GUID_LIST_PATH
 (default: the first 250; maxCount limits the count; guid selects one entry).
 Missing -mrp.json files are first fetched with mrp-and-quote's fetch. Runs save their failed
 policies to ${failedQuotePagesPath} (except one-off runs: a guid or a maxCount of 1);
-retry-failed reruns only those.
+retry-failed reruns only those. retry-different reruns every policy in comparisons/ whose
+screenshots differed (the summarise "different" count) and leaves ${failedQuotePagesPath} untouched.
   --no-ocr       Compare pixels without extracting text
   -h, --help     Show help`;
 
@@ -201,6 +202,11 @@ async function runQuotePages(args: string[]): Promise<void> {
     return;
   }
 
+  if (positionals[0] === 'retry-different') {
+    await retryDifferentQuotePages(environment, options);
+    return;
+  }
+
   const listPath = required(environment, 'QUOTE_GUID_LIST_PATH');
   const guidList = await readQuoteGuidList(listPath);
   const policyDetailsIds = selectQuoteGuids(guidList, positionals[0]);
@@ -246,6 +252,41 @@ async function retryFailedQuotePages(
   const guidList = await readQuoteGuidList(required(environment, 'QUOTE_GUID_LIST_PATH'));
   await prefetchMissingMrpFiles(policyDetailsIds, saved.historyId, guidList, options.mrpAndQuoteOutputDir);
   await quotePages(policyDetailsIds, saved.historyId, options, failedQuotePagesPath);
+}
+
+/**
+ * Reruns every compared policy whose screenshots differed, one batch per history ID. The saved failures are left
+ * untouched, so earlier failures not rerun here stay available to retry-failed.
+ */
+async function retryDifferentQuotePages(
+  environment: Record<string, string | undefined>,
+  options: QuotePageOptions
+): Promise<void> {
+  const root = 'comparisons';
+  const different = listDifferentPolicies(await collectQuoteResults(root));
+  if (different.length === 0) {
+    console.log(`No different quote pages to retry (${root}).`);
+    return;
+  }
+
+  console.log(`Retrying ${different.length} different policies from ${root}`);
+  const guidList = await readQuoteGuidList(required(environment, 'QUOTE_GUID_LIST_PATH'));
+  const failures: string[] = [];
+  for (const historyId of new Set(different.map((policy) => policy.historyId))) {
+    const policyDetailsIds = different
+      .filter((policy) => policy.historyId === historyId)
+      .map(({ policyDetailsId }) => policyDetailsId);
+    await prefetchMissingMrpFiles(policyDetailsIds, historyId, guidList, options.mrpAndQuoteOutputDir);
+    try {
+      await quotePages(policyDetailsIds, historyId, options);
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(failures.join('\n'));
+  }
 }
 
 function quotePageOptions(environment: Record<string, string | undefined>, useOcr: boolean): QuotePageOptions {

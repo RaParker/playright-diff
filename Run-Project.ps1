@@ -74,6 +74,10 @@ One GUID list entry to run (32 hex characters, case-insensitive).
 .PARAMETER RetryFailed
 Rerun only the policies saved in quote-pages-failed.json by the last quote-pages run.
 
+.PARAMETER RetryDifferent
+Rerun every policy in comparisons whose screenshots differed (the summarise "different" count). Leaves
+quote-pages-failed.json untouched.
+
 .PARAMETER Summarise
 Summarise every comparisons folder: differences and their text, failures and their reasons, MRP records not
 retrieved, and totals including the GUID list size and Oops pages. Alias: -Summarize.
@@ -102,6 +106,9 @@ Test (all suites), TestCompare, TestQuotePage, Verify (VerifyProject.ps1) or Cle
 
 .EXAMPLE
 ./Run-Project.ps1 -RetryFailed
+
+.EXAMPLE
+./Run-Project.ps1 -RetryDifferent
 
 .EXAMPLE
 ./Run-Project.ps1 -Summarise
@@ -188,6 +195,9 @@ param(
     [Parameter(Mandatory, ParameterSetName = 'RetryFailed')]
     [switch]$RetryFailed,
 
+    [Parameter(Mandatory, ParameterSetName = 'RetryDifferent')]
+    [switch]$RetryDifferent,
+
     [Parameter(Mandatory, ParameterSetName = 'Summarise')]
     [Alias('Summarize')]
     [switch]$Summarise,
@@ -198,6 +208,7 @@ param(
     [Parameter(ParameterSetName = 'QuotePagesCount')]
     [Parameter(ParameterSetName = 'QuotePagesGuid')]
     [Parameter(ParameterSetName = 'RetryFailed')]
+    [Parameter(ParameterSetName = 'RetryDifferent')]
     [switch]$NoOcr,
 
     [Parameter(Mandatory, ParameterSetName = 'Task')]
@@ -269,6 +280,10 @@ function Get-CliArguments {
 
         'RetryFailed' {
             return @('quote-pages', 'retry-failed') + (Get-NoOcrArgument)
+        }
+
+        'RetryDifferent' {
+            return @('quote-pages', 'retry-different') + (Get-NoOcrArgument)
         }
 
         'Summarise' {
