@@ -10,7 +10,7 @@ import {
 } from './quote-page.js';
 import { failedQuotePagesPath, readFailedQuotePages } from './failed-quote-pages.js';
 import { isQuoteGuid, readQuoteGuidList, selectQuoteGuids } from './quote-guid-list.js';
-import { prefetchMissingMrpFiles } from './mrp-fetch.js';
+import { prefetchMissingMrpFiles, reportMissingMrpFiles } from './mrp-fetch.js';
 import { screenshot, ValidationError } from './screenshot.js';
 import { loadEnvironment } from './environment.js';
 import { collectQuoteResults, listDifferentPolicies, summariseQuoteResults } from './summarise.js';
@@ -40,11 +40,13 @@ const quoteHelp = `Usage: npm run quote-page -- <policyDetailsId> <historyId> [o
 const quotePagesHelp = `Usage: npm run quote-pages -- [maxCount|guid|retry-failed|retry-different] [options]
 Runs quote-page with historyId 1 for each GUID in QUOTE_GUID_LIST_PATH
 (default: the first 250; maxCount limits the count; guid selects one entry).
-Missing -mrp.json files are first fetched with mrp-and-quote's fetch. Runs save their failed
+Missing -mrp.json files are first fetched with mrp-and-quote's fetch (existing files are always reused;
+--no-fetch skips the fetch). Runs save their failed
 policies to ${failedQuotePagesPath} (except one-off runs: a guid or a maxCount of 1);
 retry-failed reruns only those. retry-different reruns every policy in comparisons/ whose
 screenshots differed (the summarise "different" count) and leaves ${failedQuotePagesPath} untouched.
   -c, --concurrency <n>  Policies run at once (default: ${defaultQuotePagesConcurrency}; 1 runs them in turn)
+  --no-fetch             Use only the -mrp.json files already saved; policies without one fail
   --no-ocr               Compare pixels without extracting text
   -h, --help             Show help`;
 
@@ -58,6 +60,14 @@ runs) count as compared. Oops pages saved before a policy's last run started are
 The GUID list and MRP records need QUOTE_GUID_LIST_PATH and MRP_AND_QUOTE_OUTPUT_DIR (.env or environment);
 without them that part is skipped. The exit code is 0 whatever the results.
   -h, --help     Show help`;
+
+/**
+ * Gets the MRP files of the policies about to run ready: fetches the missing ones, or with `--no-fetch` only reports them.
+ * @param policyDetailsIds Policies about to run.
+ * @param historyId History ID of the run.
+ * @param guidList mrp-and-quote's GUID list, which limits what can be fetched.
+ */
+type PrepareMrpFiles = (policyDetailsIds: string[], historyId: number, guidList: string[]) => Promise<void>;
 
 async function main(): Promise<void> {
   const [action, ...args] = process.argv.slice(2);
@@ -190,6 +200,7 @@ async function runQuotePages(args: string[]): Promise<void> {
     allowPositionals: true,
     options: {
       concurrency: { type: 'string', short: 'c' },
+      'no-fetch': { type: 'boolean' },
       'no-ocr': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' }
     }
@@ -208,13 +219,17 @@ async function runQuotePages(args: string[]): Promise<void> {
     ...quotePageOptions(environment, values['no-ocr'] !== true),
     concurrency: parseConcurrency(values.concurrency)
   };
+  const prepareMrpFiles: PrepareMrpFiles = (policyDetailsIds, historyId, guidList) =>
+    values['no-fetch'] === true
+      ? reportMissingMrpFiles(policyDetailsIds, historyId, options.mrpAndQuoteOutputDir)
+      : prefetchMissingMrpFiles(policyDetailsIds, historyId, guidList, options.mrpAndQuoteOutputDir);
   if (positionals[0] === 'retry-failed') {
-    await retryFailedQuotePages(environment, options);
+    await retryFailedQuotePages(environment, options, prepareMrpFiles);
     return;
   }
 
   if (positionals[0] === 'retry-different') {
-    await retryDifferentQuotePages(environment, options);
+    await retryDifferentQuotePages(environment, options, prepareMrpFiles);
     return;
   }
 
@@ -222,7 +237,7 @@ async function runQuotePages(args: string[]): Promise<void> {
   const guidList = await readQuoteGuidList(listPath);
   const policyDetailsIds = selectQuoteGuids(guidList, positionals[0]);
   console.log(`Running quote-page for ${policyDetailsIds.length} policies from ${listPath}`);
-  await prefetchMissingMrpFiles(policyDetailsIds, 1, guidList, options.mrpAndQuoteOutputDir);
+  await prepareMrpFiles(policyDetailsIds, 1, guidList);
   await quotePages(policyDetailsIds, 1, options, isOneOffSelector(positionals[0]) ? undefined : failedQuotePagesPath);
 }
 
@@ -250,7 +265,8 @@ function isOneOffSelector(selector: string | undefined): boolean {
 
 async function retryFailedQuotePages(
   environment: Record<string, string | undefined>,
-  options: QuotePagesOptions
+  options: QuotePagesOptions,
+  prepareMrpFiles: PrepareMrpFiles
 ): Promise<void> {
   const saved = await readFailedQuotePages(failedQuotePagesPath);
   if (saved === undefined || saved.failed.length === 0) {
@@ -261,7 +277,7 @@ async function retryFailedQuotePages(
   console.log(`Retrying ${saved.failed.length} failed policies from ${failedQuotePagesPath}`);
   const policyDetailsIds = saved.failed.map(({ policyDetailsId }) => policyDetailsId);
   const guidList = await readQuoteGuidList(required(environment, 'QUOTE_GUID_LIST_PATH'));
-  await prefetchMissingMrpFiles(policyDetailsIds, saved.historyId, guidList, options.mrpAndQuoteOutputDir);
+  await prepareMrpFiles(policyDetailsIds, saved.historyId, guidList);
   await quotePages(policyDetailsIds, saved.historyId, options, failedQuotePagesPath);
 }
 
@@ -271,7 +287,8 @@ async function retryFailedQuotePages(
  */
 async function retryDifferentQuotePages(
   environment: Record<string, string | undefined>,
-  options: QuotePagesOptions
+  options: QuotePagesOptions,
+  prepareMrpFiles: PrepareMrpFiles
 ): Promise<void> {
   const root = 'comparisons';
   const different = listDifferentPolicies(await collectQuoteResults(root));
@@ -287,7 +304,7 @@ async function retryDifferentQuotePages(
     const policyDetailsIds = different
       .filter((policy) => policy.historyId === historyId)
       .map(({ policyDetailsId }) => policyDetailsId);
-    await prefetchMissingMrpFiles(policyDetailsIds, historyId, guidList, options.mrpAndQuoteOutputDir);
+    await prepareMrpFiles(policyDetailsIds, historyId, guidList);
     try {
       await quotePages(policyDetailsIds, historyId, options);
     } catch (error) {

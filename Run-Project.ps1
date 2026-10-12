@@ -85,6 +85,10 @@ retrieved, and totals including the GUID list size and Oops pages. Alias: -Summa
 .PARAMETER NoOcr
 Compare pixels without extracting text.
 
+.PARAMETER NoFetch
+QuotePages, RetryFailed and RetryDifferent: use only the MRP files already saved, without running mrp-and-quote's
+fetch for missing ones (those policies fail). Without it, only missing MRP files are fetched; existing ones are reused.
+
 .PARAMETER Concurrency
 Quote pages, RetryFailed and RetryDifferent: number of policies run at once (default: 3; 1 runs them in turn).
 
@@ -225,6 +229,13 @@ param(
     [ValidateRange(1, 100)]
     [int]$Concurrency,
 
+    [Parameter(ParameterSetName = 'QuotePages')]
+    [Parameter(ParameterSetName = 'QuotePagesCount')]
+    [Parameter(ParameterSetName = 'QuotePagesGuid')]
+    [Parameter(ParameterSetName = 'RetryFailed')]
+    [Parameter(ParameterSetName = 'RetryDifferent')]
+    [switch]$NoFetch,
+
     [Parameter(Mandatory, ParameterSetName = 'Task')]
     [ValidateSet('Install', 'InstallBrowser', 'Build', 'Typecheck', 'Lint', 'Test', 'TestCompare', 'TestQuotePage', 'Verify', 'CleanUp')]
     [string]$Task
@@ -289,15 +300,15 @@ function Get-CliArguments {
         }
 
         'QuotePages*' {
-            return @('quote-pages') + (Get-QuotePagesSelector) + (Get-ConcurrencyArgument) + (Get-NoOcrArgument)
+            return @('quote-pages') + (Get-QuotePagesSelector) + (Get-QuotePagesOptionArguments) + (Get-NoOcrArgument)
         }
 
         'RetryFailed' {
-            return @('quote-pages', 'retry-failed') + (Get-ConcurrencyArgument) + (Get-NoOcrArgument)
+            return @('quote-pages', 'retry-failed') + (Get-QuotePagesOptionArguments) + (Get-NoOcrArgument)
         }
 
         'RetryDifferent' {
-            return @('quote-pages', 'retry-different') + (Get-ConcurrencyArgument) + (Get-NoOcrArgument)
+            return @('quote-pages', 'retry-different') + (Get-QuotePagesOptionArguments) + (Get-NoOcrArgument)
         }
 
         'Summarise' {
@@ -329,8 +340,14 @@ function Get-OptionArguments([hashtable]$optionValues) {
     return $arguments
 }
 
-function Get-ConcurrencyArgument {
-    return Get-OptionArguments @{ concurrency = $Concurrency }
+function Get-QuotePagesOptionArguments {
+    $arguments = Get-OptionArguments @{ concurrency = $Concurrency }
+
+    if ($NoFetch) {
+        $arguments += @('--no-fetch')
+    }
+
+    return $arguments
 }
 
 function Get-NoOcrArgument {

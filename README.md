@@ -193,6 +193,11 @@ not in the list are reported in yellow and not fetched, as is an output folder w
 no `go.mod`. A failed fetch (e.g. quotes without saved MRPs) is reported in yellow and the run
 continues; policies still missing an MRP file then fail individually.
 
+`--no-fetch` skips that fetch and uses only the MRP files already saved: it reports how many
+policies have none (in yellow), and those policies fail with "No saved MRP for this quote", so
+`retry-failed` can rerun them once they are fetched. Without it, existing MRP files are still
+always reused; only missing ones are fetched.
+
 ```sh
 npm run quote-pages                                         # first 250 entries
 npm run quote-pages -- 10                                   # first 10 entries
@@ -201,6 +206,7 @@ npm run quote-pages -- 10 --no-ocr
 npm run quote-pages -- retry-failed                         # only the last run's failures
 npm run quote-pages -- retry-different                      # every policy whose screenshots differed
 npm run quote-pages -- 1300 --concurrency 5                 # five policies at a time
+npm run quote-pages -- 20000 --no-fetch                     # only policies whose MRP is already saved
 ```
 
 Policies run three at a time by default; `-c, --concurrency <n>` changes that (`1` runs them one

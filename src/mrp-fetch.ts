@@ -73,6 +73,33 @@ export async function prefetchMissingMrpFiles(
 }
 
 /**
+ * Reports, without fetching, how many of the given policies have no saved MRP file (`quote-pages -- --no-fetch`), so
+ * the failures they will cause are expected.
+ * @param policyDetailsIds Policies about to run.
+ * @param historyId History ID of the run; nothing is checked unless it is {@link fetchedHistoryId}, as with
+ * {@link prefetchMissingMrpFiles}.
+ * @param mrpAndQuoteOutputDir mrp-and-quote's output folder.
+ */
+export async function reportMissingMrpFiles(
+  policyDetailsIds: string[],
+  historyId: number,
+  mrpAndQuoteOutputDir: string
+): Promise<void> {
+  if (historyId !== fetchedHistoryId) {
+    return;
+  }
+
+  const missing = await filterMissingMrpFiles(policyDetailsIds, mrpAndQuoteOutputDir);
+  if (missing.length > 0) {
+    console.log(
+      color.Yellow(
+        `${missing.length} of ${policyDetailsIds.length} policies have no MRP file and will fail; not fetching (--no-fetch).`
+      )
+    );
+  }
+}
+
+/**
  * Finds the policies whose MRP record mrp-and-quote has not saved.
  * @param policyDetailsIds Policies to check.
  * @param mrpAndQuoteOutputDir mrp-and-quote's output folder.

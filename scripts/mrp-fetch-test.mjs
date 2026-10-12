@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
-import { prefetchMissingMrpFiles } from '../dist/mrp-fetch.js';
+import { prefetchMissingMrpFiles, reportMissingMrpFiles } from '../dist/mrp-fetch.js';
 
 const policyA = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const policyB = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
@@ -126,4 +126,38 @@ describe('prefetchMissingMrpFiles', () => {
     // assert
     await assert.doesNotReject(prefetch);
   });
+});
+
+describe('reportMissingMrpFiles', () => {
+  test('reports how many policies have no MRP file', async (t) => {
+    // arrange
+    const { outputDir } = await createOutputDir([policyA]);
+    const log = t.mock.method(console, 'log', () => undefined);
+
+    // act
+    await reportMissingMrpFiles([policyA, policyB, policyC], 1, outputDir);
+
+    // assert
+    assert.deepEqual(
+      log.mock.calls.map((call) => String(call.arguments[0])),
+      ['\u001b[33m2 of 3 policies have no MRP file and will fail; not fetching (--no-fetch).\u001b[0m']
+    );
+  });
+
+  for (const [name, fetchedPolicies, historyId] of [
+    ['every policy has an MRP file', [policyA, policyB], 1],
+    ['the history ID is not 1', [], 2]
+  ]) {
+    test(`reports nothing when ${name}`, async (t) => {
+      // arrange
+      const { outputDir } = await createOutputDir(fetchedPolicies);
+      const log = t.mock.method(console, 'log', () => undefined);
+
+      // act
+      await reportMissingMrpFiles([policyA, policyB], historyId, outputDir);
+
+      // assert
+      assert.equal(log.mock.callCount(), 0);
+    });
+  }
 });

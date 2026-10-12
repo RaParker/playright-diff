@@ -895,6 +895,40 @@ ${policyB}
     });
   });
 
+  test('--no-fetch runs with the saved MRP files without trying to fetch the missing ones', async () => {
+    await withServer(quoteJourneyHandler([]), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base, { [`${policyB}-1`]: 'guid-b' });
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n`);
+
+      // act
+      const result = await run(directory, env, ['quote-pages', '--no-fetch', '--no-ocr']);
+
+      // assert
+      assert.notEqual(result.code, 0);
+      assert.match(result.plain, /1 of 2 policies have no MRP file and will fail; not fetching \(--no-fetch\)\./);
+      assert.doesNotMatch(result.plain, /not the mrp-and-quote project/);
+      assert.match(result.plain, /Quote pages summary\n1 passed \(0 both declined\), 1 failed\.\n/);
+      assert.match(result.plain, new RegExp(`\n${policyA}-1\n  No saved MRP for this quote`));
+    });
+  });
+
+  test('without --no-fetch, tries to fetch the missing MRP files', async () => {
+    // arrange
+    const { directory, env } = await fixture('http://127.0.0.1:1', {});
+    await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n`);
+
+    // act
+    const result = await run(directory, env, ['quote-pages', '--no-ocr']);
+
+    // assert
+    assert.match(
+      result.plain,
+      /MRP files missing, but .* is not the mrp-and-quote project \(no go\.mod\); not fetching\./
+    );
+    assert.doesNotMatch(result.plain, /--no-fetch/);
+  });
+
   test('reports a missing QUOTE_GUID_LIST_PATH', async () => {
     // arrange
     const { directory, env } = await fixture('http://127.0.0.1:1');
