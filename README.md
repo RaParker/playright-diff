@@ -383,6 +383,10 @@ property, as "I live here permanently" ticks You there, which can clear that err
 | "Please select an option."                                   | `button[name="otherExitsLockType"]`                     | No other exit (**Property circumstances**)                                                                         |
 | "Please select an option."                                   | `div.dropdown[name="howIsThePropertyUsed"]`             | I live here permanently (inc. rented homes) (**Resident details**)                                                 |
 | "The Who lives at the property field must contain a value"   | `div.form-check`                                        | You, ticked (**Resident details**)                                                                                 |
+| "Please tell us how many adults live at the property."       | `button[name="adults"]`                                 | 1 (**Resident details**)                                                                                           |
+| "Please tell us how many children live at the property."     | `button[name="children"]`                               | 0 (**Resident details**)                                                                                           |
+| "Please select an option."                                   | `button[name="whenIsOccupied"]`                         | Day and night (**Resident details**)                                                                               |
+| "Please select an option."                                   | `button[name="consecutiveDaysUnoccupied"]`              | 0-30 (**Resident details**)                                                                                        |
 
 - A message other questions share (such as "Please answer this question." or "Please
   select an option.") is left alone

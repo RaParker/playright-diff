@@ -284,6 +284,38 @@ const questionAnswers: QuestionAnswer[] = [
     kind: 'check',
     field: 'div.form-check',
     answer: 'You'
+  },
+  {
+    message: 'Please tell us how many adults live at the property.',
+    section: 'Resident details',
+    question: 'adults',
+    kind: 'click',
+    field: 'button[name="adults"]',
+    answer: '1'
+  },
+  {
+    message: 'Please tell us how many children live at the property.',
+    section: 'Resident details',
+    question: 'children',
+    kind: 'click',
+    field: 'button[name="children"]',
+    answer: '0'
+  },
+  {
+    message: 'Please select an option.',
+    section: 'Resident details',
+    question: 'when occupied',
+    kind: 'click',
+    field: 'button[name="whenIsOccupied"]',
+    answer: 'Day and night'
+  },
+  {
+    message: 'Please select an option.',
+    section: 'Resident details',
+    question: 'consecutive days unoccupied',
+    kind: 'click',
+    field: 'button[name="consecutiveDaysUnoccupied"]',
+    answer: '0-30'
   }
 ];
 

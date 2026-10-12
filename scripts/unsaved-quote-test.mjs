@@ -376,6 +376,42 @@ for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of
     ['NHI: selecting who lives at the property You on Resident details.']
   ],
   [
+    'answers the adults, children and occupancy questions when Continue on Resident details reports them',
+    questionJourney('Resident details', [
+      {
+        id: 'adults',
+        message: 'Please tell us how many adults live at the property.',
+        field: questionField.buttons('adults', ['0', '1', '2', 'More than 10']),
+        expected: '1'
+      },
+      {
+        id: 'children',
+        message: 'Please tell us how many children live at the property.',
+        field: questionField.buttons('children', ['0', '1', '2', 'More than 10']),
+        expected: '0'
+      },
+      {
+        id: 'whenOccupied',
+        message: 'Please select an option.',
+        field: questionField.buttons('whenIsOccupied', ['Day and night', 'At night', 'During the day']),
+        expected: 'Day and night'
+      },
+      {
+        id: 'daysUnoccupied',
+        message: 'Please select an option.',
+        field: questionField.buttons('consecutiveDaysUnoccupied', ['0-30', '31-45', '2 years+']),
+        expected: '0-30'
+      }
+    ]),
+    undefined,
+    [
+      'NHI: selecting adults 1 on Resident details.',
+      'NHI: selecting children 0 on Resident details.',
+      'NHI: selecting when occupied Day and night on Resident details.',
+      'NHI: selecting consecutive days unoccupied 0-30 on Resident details.'
+    ]
+  ],
+  [
     'leaves an error message shared by a question it has no answer for',
     questionJourney('Property type', [
       {
