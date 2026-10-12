@@ -7,36 +7,48 @@ import { color } from './color.js';
 /** History ID of every policy that mrp-and-quote's `fetch` saves (it reads one TCAS ID per line, at history 1). */
 export const fetchedHistoryId = 1;
 
+/** Where mrp-and-quote's files are saved, and the project that saves them. */
+export interface MrpAndQuoteFolders {
+  /** Output folder the `-mrp.json` files are read from, and that `fetch` saves into (`MRP_AND_QUOTE_OUTPUT_DIR`). */
+  outputDir: string;
+  /**
+   * mrp-and-quote project folder `fetch` runs in (`MRP_AND_QUOTE_PROJECT_DIR`); defaults to the output folder's parent,
+   * which suits mrp-and-quote's default `./output`.
+   */
+  projectDir?: string;
+}
+
 /**
  * Runs mrp-and-quote's `fetch` for the given GUID list entries, keeping the files already in its output folder.
  * @param projectDir mrp-and-quote project folder.
+ * @param outputDir Folder the fetched files must be saved in.
  * @param policyDetailsIds GUID list entries to fetch.
  */
-export type MrpFetchRunner = (projectDir: string, policyDetailsIds: string[]) => Promise<void>;
+export type MrpFetchRunner = (projectDir: string, outputDir: string, policyDetailsIds: string[]) => Promise<void>;
 
 /**
  * Fetches any missing `-mrp.json` files for the given policies with one mrp-and-quote `fetch --keep-output` run, so
  * only those policies are fetched and every existing file is kept. Policies not in the GUID list cannot be fetched and
- * are only reported, as is an output folder whose parent has no `go.mod` (not the mrp-and-quote project).
+ * are only reported, as is a project folder with no `go.mod` (not the mrp-and-quote project).
  * @param policyDetailsIds Policies about to run.
  * @param historyId History ID of the run; nothing is fetched unless it is {@link fetchedHistoryId}.
  * @param guidList mrp-and-quote's GUID list (uppercase), in file order.
- * @param mrpAndQuoteOutputDir mrp-and-quote's output folder; its parent is the project folder `fetch` runs in.
- * @param runner Runs the fetch (default: `go run . fetch --guid-file <file> --keep-output`). A failed fetch is only
- * reported, so the run continues.
+ * @param folders mrp-and-quote's output folder, and the project folder `fetch` runs in.
+ * @param runner Runs the fetch (default: `go run . fetch --guid-file <file> --keep-output`, with `OUTPUT_DIR` set to
+ * the output folder). A failed fetch is only reported, so the run continues.
  */
 export async function prefetchMissingMrpFiles(
   policyDetailsIds: string[],
   historyId: number,
   guidList: string[],
-  mrpAndQuoteOutputDir: string,
+  folders: MrpAndQuoteFolders,
   runner: MrpFetchRunner = runMrpFetch
 ): Promise<void> {
   if (historyId !== fetchedHistoryId) {
     return;
   }
 
-  const missing = await filterMissingMrpFiles(policyDetailsIds, mrpAndQuoteOutputDir);
+  const missing = await filterMissingMrpFiles(policyDetailsIds, folders.outputDir);
   if (missing.length === 0) {
     return;
   }
@@ -53,7 +65,8 @@ export async function prefetchMissingMrpFiles(
     return;
   }
 
-  const projectDir = dirname(resolve(mrpAndQuoteOutputDir));
+  const outputDir = resolve(folders.outputDir);
+  const projectDir = resolve(folders.projectDir ?? dirname(outputDir));
   if (!(await exists(resolve(projectDir, 'go.mod')))) {
     console.log(
       color.Yellow(`MRP files missing, but ${projectDir} is not the mrp-and-quote project (no go.mod); not fetching.`)
@@ -63,7 +76,7 @@ export async function prefetchMissingMrpFiles(
 
   console.log(color.Gray(`Fetching ${fetchable.length} missing MRP files with mrp-and-quote in ${projectDir}`));
   try {
-    await runner(projectDir, fetchable);
+    await runner(projectDir, outputDir, fetchable);
   } catch (error) {
     // A quote without a saved MRP fails the whole fetch; warn and carry on so the other policies still run, while
     // those without an MRP file fail individually.
@@ -118,17 +131,30 @@ export async function filterMissingMrpFiles(
 }
 
 /**
+ * Builds the environment of a `fetch` run: this process's, with `OUTPUT_DIR` set to the output folder. mrp-and-quote
+ * loads its own `.env` without overriding variables already set, so the files are saved where they are read from
+ * whatever its `.env` says.
+ * @param outputDir Folder the fetched files must be saved in.
+ * @param environment Environment to start from (default: this process's).
+ * @returns A new environment; the given one is not changed.
+ */
+export function mrpFetchEnvironment(outputDir: string, environment = process.env): NodeJS.ProcessEnv {
+  return { ...environment, OUTPUT_DIR: resolve(outputDir) };
+}
+
+/**
  * Writes the policies to a temporary GUID file (one per line) and runs `go run . fetch --guid-file <file> --keep-output`
- * in the mrp-and-quote project, showing its output. The file keeps long lists off the command line and is always
+ * in the mrp-and-quote project, with {@link mrpFetchEnvironment}, showing its output. The file keeps long lists off the command line and is always
  * removed afterwards. Rejects on a non-zero exit.
  */
-async function runMrpFetch(projectDir: string, policyDetailsIds: string[]): Promise<void> {
+async function runMrpFetch(projectDir: string, outputDir: string, policyDetailsIds: string[]): Promise<void> {
   const guidFileDir = await mkdtemp(join(tmpdir(), 'mrp-fetch-guids-'));
   try {
     const guidFile = join(guidFileDir, 'missing-guids.txt');
     await writeFile(guidFile, `${policyDetailsIds.join('\n')}\n`);
     const child = spawn('go', ['run', '.', 'fetch', '--guid-file', guidFile, '--keep-output'], {
       cwd: projectDir,
+      env: mrpFetchEnvironment(outputDir),
       stdio: 'inherit'
     });
     const code = await new Promise<number | null>((resolveExit, reject) => {

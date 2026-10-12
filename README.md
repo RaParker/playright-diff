@@ -186,11 +186,13 @@ commands, one per line.
 
 Before any policy runs (including `retry-failed` and `retry-different`), policies with no `-1-mrp.json` in
 `MRP_AND_QUOTE_OUTPUT_DIR` are written to a temporary file (one per line, removed afterwards) and
-fetched by running `go run . fetch --guid-file <file> --keep-output` once in its parent folder
-(the mrp-and-quote project), so only the missing policies are fetched and every existing file is
-kept (this needs an mrp-and-quote with `--guid-file` and `--keep-output` support). Policies
-not in the list are reported in yellow and not fetched, as is an output folder whose parent has
-no `go.mod`. A failed fetch (e.g. quotes without saved MRPs) is reported in yellow and the run
+fetched by running `go run . fetch --guid-file <file> --keep-output` once in the mrp-and-quote
+project (`MRP_AND_QUOTE_PROJECT_DIR`, or the output folder's parent when that is not set), so only
+the missing policies are fetched and every existing file is kept (this needs an mrp-and-quote
+with `--guid-file` and `--keep-output` support). The fetch runs with `OUTPUT_DIR` set to
+`MRP_AND_QUOTE_OUTPUT_DIR`, which mrp-and-quote's own `.env` does not override, so the files are
+always saved where they are read from. Policies not in the list are reported in yellow and not
+fetched, as is a project folder with no `go.mod`. A failed fetch (e.g. quotes without saved MRPs) is reported in yellow and the run
 continues; policies still missing an MRP file then fail individually.
 
 `--no-fetch` skips that fetch and uses only the MRP files already saved: it reports how many
@@ -311,6 +313,7 @@ The committed `.env` targets the feature-dev environment.
 | Variable                                      | Used by       | Purpose                                                                  |
 | --------------------------------------------- | ------------- | ------------------------------------------------------------------------ |
 | `MRP_AND_QUOTE_OUTPUT_DIR`                    | both          | Folder containing `<ID>-<historyId>-mrp.json` files                      |
+| `MRP_AND_QUOTE_PROJECT_DIR`                   | `quote-pages` | Optional mrp-and-quote project folder the MRP fetch runs in              |
 | `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE`   | both          | NHI quote URL, with `{artemisQuoteGuid}`                                 |
 | `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE`      | both          | Unsaved replacement journey URL (`nhi=false`)                            |
 | `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE`  | both          | TCAS quote URL, with `{policyDetailsId}` and `{historyId}`               |
@@ -321,7 +324,8 @@ The committed `.env` targets the feature-dev environment.
 | `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both          | Fallback request `callMediaUser`                                         |
 | `QUOTE_GUID_LIST_PATH`                        | `quote-pages` | GUID list file, one policy ID per line (also used by `retry-failed`)     |
 
-All variables listed for a command are required. `summarise` also reads `QUOTE_GUID_LIST_PATH` and
+All variables listed for a command are required, except `MRP_AND_QUOTE_PROJECT_DIR` (default: the
+output folder's parent). `summarise` also reads `QUOTE_GUID_LIST_PATH` and
 `MRP_AND_QUOTE_OUTPUT_DIR`, but both are optional there (see [summarise](#summarise)).
 
 Rules:
@@ -340,7 +344,7 @@ Rules:
 
 ```dotenv
 REPO_BASE_PATH=D:/Richard/Projects/github
-MRP_AND_QUOTE_OUTPUT_DIR="${REPO_BASE_PATH}/GoPackages/internal/mrp-and-quote/output"
+MRP_AND_QUOTE_PROJECT_DIR="${REPO_BASE_PATH}/GoPackages/internal/mrp-and-quote"
 ```
 
 ## How quote-page works

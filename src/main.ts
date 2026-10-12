@@ -40,8 +40,9 @@ const quoteHelp = `Usage: npm run quote-page -- <policyDetailsId> <historyId> [o
 const quotePagesHelp = `Usage: npm run quote-pages -- [maxCount|guid|retry-failed|retry-different] [options]
 Runs quote-page with historyId 1 for each GUID in QUOTE_GUID_LIST_PATH
 (default: the first 250; maxCount limits the count; guid selects one entry).
-Missing -mrp.json files are first fetched with mrp-and-quote's fetch (existing files are always reused;
---no-fetch skips the fetch). Runs save their failed
+Missing -mrp.json files in MRP_AND_QUOTE_OUTPUT_DIR are first fetched with mrp-and-quote's fetch, run in
+MRP_AND_QUOTE_PROJECT_DIR (default: the output folder's parent) with OUTPUT_DIR set to the output folder
+(existing files are always reused; --no-fetch skips the fetch). Runs save their failed
 policies to ${failedQuotePagesPath} (except one-off runs: a guid or a maxCount of 1);
 retry-failed reruns only those. retry-different reruns every policy in comparisons/ whose
 screenshots differed (the summarise "different" count) and leaves ${failedQuotePagesPath} untouched.
@@ -222,7 +223,10 @@ async function runQuotePages(args: string[]): Promise<void> {
   const prepareMrpFiles: PrepareMrpFiles = (policyDetailsIds, historyId, guidList) =>
     values['no-fetch'] === true
       ? reportMissingMrpFiles(policyDetailsIds, historyId, options.mrpAndQuoteOutputDir)
-      : prefetchMissingMrpFiles(policyDetailsIds, historyId, guidList, options.mrpAndQuoteOutputDir);
+      : prefetchMissingMrpFiles(policyDetailsIds, historyId, guidList, {
+          outputDir: options.mrpAndQuoteOutputDir,
+          projectDir: optional(environment, 'MRP_AND_QUOTE_PROJECT_DIR')
+        });
   if (positionals[0] === 'retry-failed') {
     await retryFailedQuotePages(environment, options, prepareMrpFiles);
     return;
