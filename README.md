@@ -200,9 +200,23 @@ npm run quote-pages -- 6819e30c2058490b8d1d9e25d267b002     # one entry (case-in
 npm run quote-pages -- 10 --no-ocr
 npm run quote-pages -- retry-failed                         # only the last run's failures
 npm run quote-pages -- retry-different                      # every policy whose screenshots differed
+npm run quote-pages -- 1300 --concurrency 5                 # five policies at a time
 ```
 
-Policies run one at a time. A failed policy is reported and the run continues. At the end,
+Policies run three at a time by default; `-c, --concurrency <n>` changes that (`1` runs them one
+at a time, as before) for list runs, `retry-failed` and `retry-different`. Policies start in
+list order. With more than one at a time, every line a policy logs starts with its position
+and the first 8 characters of its ID, such as `[42/1300 ABCD1234]`, so interleaved output can
+be told apart. Each policy needs two Chromium browsers and possibly an OCR worker, roughly
+0.5–0.7 GB, and puts its own load on the NHI and TCAS test environments, so raise the
+concurrency with care.
+
+Running policies at the same time is safe: each one writes only its own screenshots,
+`comparisons/<policyDetailsId>-<historyId>` folder and result, reads and updates of
+`quote-guid-mapping.json` run one at a time and replace the file in one step, and the first
+OCR worker loads alone so the shared language-data cache is written only once.
+
+A failed policy is reported and the run continues. At the end,
 after a blank line, a summary lists the counts and then each failed policy with its issues
 indented below it (only the issues and the failed count are coloured: yellow for validation
 failures, otherwise red; the count is yellow only when every failure is a validation failure):
@@ -656,4 +670,5 @@ await compare('screenshots/before.png', 'screenshots/example.png', { useOcr: fal
 - `quotePage(policyDetailsId, historyId, options)` takes the MRP directory and both URL
   templates in `options`, plus an optional `quoteGuidFallback` that enables the NHI Oops
   fallback.
-- `quotePages(policyDetailsIds, historyId, options)` runs `quotePage` for each ID in turn.
+- `quotePages(policyDetailsIds, historyId, options)` runs `quotePage` for each ID,
+  `options.concurrency` at a time (default 3).

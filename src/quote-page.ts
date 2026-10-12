@@ -3,7 +3,9 @@ import { resolve } from 'node:path';
 import type { Page } from 'playwright';
 import { color, failureColor } from './color.js';
 import { compare } from './compare.js';
+import { runConcurrently, validateConcurrency } from './concurrency.js';
 import { isMissing } from './fs-helpers.js';
+import { runWithLogPrefix, withPrefixedConsole } from './log-context.js';
 import { writeFailedQuotePages, type FailedQuotePage } from './failed-quote-pages.js';
 import {
   readQuoteGuidMapping,
@@ -111,39 +113,62 @@ export async function quotePage(
   return outcome;
 }
 
+/** Default number of policies {@link quotePages} runs at once. */
+export const defaultQuotePagesConcurrency = 3;
+
+/** Options for {@link quotePages}: those of each {@link quotePage} run, plus how many run at once. */
+export interface QuotePagesOptions extends QuotePageOptions {
+  /** Most policies run at once (default: {@link defaultQuotePagesConcurrency}); 1 runs them one after another. */
+  concurrency?: number;
+}
+
+/** How one policy of a quote-pages run ended. */
+type PolicyRunOutcome = { status: QuotePageResult } | { status: 'failed'; message: string; validation: boolean };
+
 /**
- * Runs {@link quotePage} for each policy in turn, continuing past failures.
+ * Runs {@link quotePage} for each policy, several at once, continuing past failures. Policies start in list order;
+ * when more than one runs at once, each line a policy logs is prefixed with its position and the start of its ID.
  * @param policyDetailsIds Policy details IDs to capture and compare.
  * @param historyId History ID used for every policy.
- * @param options Options passed to each {@link quotePage} run.
+ * @param options Options passed to each {@link quotePage} run, and the concurrency.
  * @param failedPath File that the run's failed policies replace, for `quote-pages -- retry-failed`; not written when omitted.
- * After all runs, saves the failed policies (an empty list when none failed), then prints a summary: the counts,
- * then each failed policy with its issues.
- * @throws After all runs when any policy failed. Policies where both sides declined are not failures.
+ * After all runs, saves the failed policies in list order (an empty list when none failed), then prints a summary:
+ * the counts, then each failed policy with its issues.
+ * @throws When the concurrency is not a positive integer, or after all runs when any policy failed. Policies where
+ * both sides declined are not failures.
  */
 export async function quotePages(
   policyDetailsIds: string[],
   historyId: number,
-  options: QuotePageOptions,
+  options: QuotePagesOptions,
   failedPath?: string
 ): Promise<void> {
+  const concurrency = options.concurrency ?? defaultQuotePagesConcurrency;
+  validateConcurrency(concurrency);
+  const outcomes: PolicyRunOutcome[] = [];
+  const runAll = () =>
+    runConcurrently(policyDetailsIds, concurrency, async (policyDetailsId, index) => {
+      const position = `${index + 1}/${policyDetailsIds.length}`;
+      console.log(color.Cyan(`[${position}] ${policyDetailsId}-${historyId}`));
+      const run = () => runPolicy(policyDetailsId, historyId, options);
+      outcomes[index] =
+        concurrency === 1 ? await run() : await runWithLogPrefix(`[${position} ${policyDetailsId.slice(0, 8)}]`, run);
+    });
+  await (concurrency === 1 ? runAll() : withPrefixedConsole(runAll));
+
   const failures: FailedQuotePage[] = [];
   const validationFailures = new Set<string>();
   let declined = 0;
-  for (const [index, policyDetailsId] of policyDetailsIds.entries()) {
-    console.log(color.Cyan(`[${index + 1}/${policyDetailsIds.length}] ${policyDetailsId}-${historyId}`));
-    try {
-      if ((await quotePage(policyDetailsId, historyId, options)) === 'declined') {
-        declined++;
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (error instanceof ValidationError) {
+  for (const [index, outcome] of outcomes.entries()) {
+    const policyDetailsId = policyDetailsIds[index] as string;
+    if (outcome.status === 'declined') {
+      declined++;
+    } else if (outcome.status === 'failed') {
+      if (outcome.validation) {
         validationFailures.add(policyDetailsId);
       }
 
-      console.error(failureColor(error instanceof ValidationError)(message));
-      failures.push({ policyDetailsId, issues: message.split('\n') });
+      failures.push({ policyDetailsId, issues: outcome.message.split('\n') });
     }
   }
 
@@ -160,6 +185,25 @@ export async function quotePages(
 
   if (failures.length > 0) {
     throw new Error(`${failures.length} of ${policyDetailsIds.length} quote pages failed; see the summary above.`);
+  }
+}
+
+/**
+ * Runs {@link quotePage} for one policy of a quote-pages run, logging any failure rather than throwing it.
+ * @returns The policy's result, or its failure message and whether it was a validation failure.
+ */
+async function runPolicy(
+  policyDetailsId: string,
+  historyId: number,
+  options: QuotePageOptions
+): Promise<PolicyRunOutcome> {
+  try {
+    return { status: await quotePage(policyDetailsId, historyId, options) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const validation = error instanceof ValidationError;
+    console.error(failureColor(validation)(message));
+    return { status: 'failed', message, validation };
   }
 }
 

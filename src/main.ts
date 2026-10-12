@@ -1,7 +1,13 @@
 import { parseArgs } from 'node:util';
 import { color } from './color.js';
 import { compare } from './compare.js';
-import { quotePage, quotePages, type QuotePageOptions } from './quote-page.js';
+import {
+  defaultQuotePagesConcurrency,
+  quotePage,
+  quotePages,
+  type QuotePageOptions,
+  type QuotePagesOptions
+} from './quote-page.js';
 import { failedQuotePagesPath, readFailedQuotePages } from './failed-quote-pages.js';
 import { isQuoteGuid, readQuoteGuidList, selectQuoteGuids } from './quote-guid-list.js';
 import { prefetchMissingMrpFiles } from './mrp-fetch.js';
@@ -38,8 +44,9 @@ Missing -mrp.json files are first fetched with mrp-and-quote's fetch. Runs save 
 policies to ${failedQuotePagesPath} (except one-off runs: a guid or a maxCount of 1);
 retry-failed reruns only those. retry-different reruns every policy in comparisons/ whose
 screenshots differed (the summarise "different" count) and leaves ${failedQuotePagesPath} untouched.
-  --no-ocr       Compare pixels without extracting text
-  -h, --help     Show help`;
+  -c, --concurrency <n>  Policies run at once (default: ${defaultQuotePagesConcurrency}; 1 runs them in turn)
+  --no-ocr               Compare pixels without extracting text
+  -h, --help             Show help`;
 
 const summariseHelp = `Usage: npm run summarise -- [options]   (or npm run summarize)
 Summarises every comparisons/<policyDetailsId>-<historyId> folder. It prints the visual and text differences
@@ -182,6 +189,7 @@ async function runQuotePages(args: string[]): Promise<void> {
     args,
     allowPositionals: true,
     options: {
+      concurrency: { type: 'string', short: 'c' },
       'no-ocr': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' }
     }
@@ -196,7 +204,10 @@ async function runQuotePages(args: string[]): Promise<void> {
   }
 
   const environment = await loadEnvironment();
-  const options = quotePageOptions(environment, values['no-ocr'] !== true);
+  const options: QuotePagesOptions = {
+    ...quotePageOptions(environment, values['no-ocr'] !== true),
+    concurrency: parseConcurrency(values.concurrency)
+  };
   if (positionals[0] === 'retry-failed') {
     await retryFailedQuotePages(environment, options);
     return;
@@ -239,7 +250,7 @@ function isOneOffSelector(selector: string | undefined): boolean {
 
 async function retryFailedQuotePages(
   environment: Record<string, string | undefined>,
-  options: QuotePageOptions
+  options: QuotePagesOptions
 ): Promise<void> {
   const saved = await readFailedQuotePages(failedQuotePagesPath);
   if (saved === undefined || saved.failed.length === 0) {
@@ -260,7 +271,7 @@ async function retryFailedQuotePages(
  */
 async function retryDifferentQuotePages(
   environment: Record<string, string | undefined>,
-  options: QuotePageOptions
+  options: QuotePagesOptions
 ): Promise<void> {
   const root = 'comparisons';
   const different = listDifferentPolicies(await collectQuoteResults(root));
@@ -287,6 +298,19 @@ async function retryDifferentQuotePages(
   if (failures.length > 0) {
     throw new Error(failures.join('\n'));
   }
+}
+
+/** @returns The `--concurrency` value, or the default when it is not given. */
+function parseConcurrency(value: string | undefined): number {
+  if (value === undefined) {
+    return defaultQuotePagesConcurrency;
+  }
+
+  if (!/^\d+$/.test(value) || Number(value) < 1 || !Number.isSafeInteger(Number(value))) {
+    throw new Error('--concurrency must be a positive integer.');
+  }
+
+  return Number(value);
 }
 
 function quotePageOptions(environment: Record<string, string | undefined>, useOcr: boolean): QuotePageOptions {

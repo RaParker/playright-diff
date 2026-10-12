@@ -32,6 +32,12 @@ Describe 'Run-Project.ps1 command lines' {
 
         @{ Name = 'retry-different reruns different policies'; Arguments = @('-RetryDifferent', '-NoOcr'); Expected = '{cli} quote-pages retry-different --no-ocr' }
 
+        @{ Name = 'quote-pages passes Concurrency'; Arguments = @('-QuotePages', '-MaxCount', '1300', '-Concurrency', '5', '-NoOcr'); Expected = '{cli} quote-pages 1300 --concurrency 5 --no-ocr' }
+
+        @{ Name = 'retry-failed passes Concurrency'; Arguments = @('-RetryFailed', '-Concurrency', '1'); Expected = '{cli} quote-pages retry-failed --concurrency 1' }
+
+        @{ Name = 'retry-different passes Concurrency'; Arguments = @('-RetryDifferent', '-Concurrency', '2'); Expected = '{cli} quote-pages retry-different --concurrency 2' }
+
         @{ Name = 'summarise runs the summary'; Arguments = @('-Summarise'); Expected = '{cli} summarise' }
 
         @{ Name = 'summarize is an alias for summarise'; Arguments = @('-Summarize'); Expected = '{cli} summarise' }
@@ -75,6 +81,10 @@ Describe 'Run-Project.ps1 validation' {
         @{ Name = 'an option from another command'; Arguments = @('-QuotePage', '-PolicyDetailsId', 'ABCDEF1234567890ABCDEF1234567890', '-HistoryId', '1', '-Threshold', '5'); Message = '*Parameter set cannot be resolved*' }
 
         @{ Name = 'NoOcr with Summarise'; Arguments = @('-Summarise', '-NoOcr'); Message = '*Parameter set cannot be resolved*' }
+
+        @{ Name = 'a Concurrency of zero'; Arguments = @('-QuotePages', '-Concurrency', '0'); Message = "*parameter 'Concurrency'*" }
+
+        @{ Name = 'Concurrency with QuotePage'; Arguments = @('-QuotePage', '-PolicyDetailsId', 'ABCDEF1234567890ABCDEF1234567890', '-HistoryId', '1', '-Concurrency', '2'); Message = '*Parameter set cannot be resolved*' }
 
         @{ Name = 'an unknown task'; Arguments = @('-Task', 'Deploy'); Message = "*parameter 'Task'*" }
     ) {

@@ -85,6 +85,9 @@ retrieved, and totals including the GUID list size and Oops pages. Alias: -Summa
 .PARAMETER NoOcr
 Compare pixels without extracting text.
 
+.PARAMETER Concurrency
+Quote pages, RetryFailed and RetryDifferent: number of policies run at once (default: 3; 1 runs them in turn).
+
 .PARAMETER Task
 Development task: Install (npm install), InstallBrowser (Playwright Chromium), Build, Typecheck, Lint,
 Test (all suites), TestCompare, TestQuotePage, Verify (VerifyProject.ps1) or CleanUp (CleanUp.ps1).
@@ -103,6 +106,9 @@ Test (all suites), TestCompare, TestQuotePage, Verify (VerifyProject.ps1) or Cle
 
 .EXAMPLE
 ./Run-Project.ps1 -QuotePages -Guid 6819e30c2058490b8d1d9e25d267b002
+
+.EXAMPLE
+./Run-Project.ps1 -QuotePages -MaxCount 1300 -Concurrency 5
 
 .EXAMPLE
 ./Run-Project.ps1 -RetryFailed
@@ -211,6 +217,14 @@ param(
     [Parameter(ParameterSetName = 'RetryDifferent')]
     [switch]$NoOcr,
 
+    [Parameter(ParameterSetName = 'QuotePages')]
+    [Parameter(ParameterSetName = 'QuotePagesCount')]
+    [Parameter(ParameterSetName = 'QuotePagesGuid')]
+    [Parameter(ParameterSetName = 'RetryFailed')]
+    [Parameter(ParameterSetName = 'RetryDifferent')]
+    [ValidateRange(1, 100)]
+    [int]$Concurrency,
+
     [Parameter(Mandatory, ParameterSetName = 'Task')]
     [ValidateSet('Install', 'InstallBrowser', 'Build', 'Typecheck', 'Lint', 'Test', 'TestCompare', 'TestQuotePage', 'Verify', 'CleanUp')]
     [string]$Task
@@ -275,15 +289,15 @@ function Get-CliArguments {
         }
 
         'QuotePages*' {
-            return @('quote-pages') + (Get-QuotePagesSelector) + (Get-NoOcrArgument)
+            return @('quote-pages') + (Get-QuotePagesSelector) + (Get-ConcurrencyArgument) + (Get-NoOcrArgument)
         }
 
         'RetryFailed' {
-            return @('quote-pages', 'retry-failed') + (Get-NoOcrArgument)
+            return @('quote-pages', 'retry-failed') + (Get-ConcurrencyArgument) + (Get-NoOcrArgument)
         }
 
         'RetryDifferent' {
-            return @('quote-pages', 'retry-different') + (Get-NoOcrArgument)
+            return @('quote-pages', 'retry-different') + (Get-ConcurrencyArgument) + (Get-NoOcrArgument)
         }
 
         'Summarise' {
@@ -313,6 +327,10 @@ function Get-OptionArguments([hashtable]$optionValues) {
     }
 
     return $arguments
+}
+
+function Get-ConcurrencyArgument {
+    return Get-OptionArguments @{ concurrency = $Concurrency }
 }
 
 function Get-NoOcrArgument {

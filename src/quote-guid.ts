@@ -1,6 +1,13 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { readOptionalTextFile } from './fs-helpers.js';
+
+/**
+ * The latest pending read or update of each mapping file (by absolute path). Each one waits for the one before, so
+ * policies running at once never read a file mid-write or overwrite each other's new entries.
+ */
+const mappingQueues = new Map<string, Promise<unknown>>();
 
 export interface QuoteGuidRequestOptions {
   quoteGuidUrl: string;
@@ -59,12 +66,53 @@ export async function requestQuoteGuid(
 }
 
 /**
- * Reads the mapping of original quote GUIDs to their replacements.
+ * Reads the mapping of original quote GUIDs to their replacements, after any pending update of the file.
  * @param path Mapping JSON file path.
  * @returns The mapping, or an empty mapping when the file does not exist.
  * @throws When the file cannot be read or is not a JSON object of strings.
  */
 export async function readQuoteGuidMapping(path: string): Promise<Record<string, string>> {
+  return withMappingQueue(path, () => readMappingFile(path));
+}
+
+/**
+ * Records a replacement quote GUID against the original, keeping existing entries. Updates of the same file run one
+ * at a time, and each replaces the file in one step (a temporary file renamed over it), so no entry is lost and no
+ * reader sees a partly written file.
+ * @param path Mapping JSON file path.
+ * @param originalGuid Quote GUID that displayed Oops.
+ * @param replacementGuid Quote GUID to use instead.
+ * @throws When the existing mapping is invalid or the file cannot be written.
+ */
+export async function saveQuoteGuidMapping(path: string, originalGuid: string, replacementGuid: string): Promise<void> {
+  await withMappingQueue(path, async () => {
+    const mapping = await readMappingFile(path);
+    mapping[originalGuid] = replacementGuid;
+    await mkdir(dirname(path), { recursive: true });
+    await replaceFile(path, `${JSON.stringify(mapping, null, 2)}\n`);
+  });
+}
+
+/** Runs a read or update of a mapping file once every earlier one queued for the same file has settled. */
+async function withMappingQueue<T>(path: string, task: () => Promise<T>): Promise<T> {
+  const key = resolve(path);
+  const result = (mappingQueues.get(key) ?? Promise.resolve()).then(task, task);
+  const settled = result.then(
+    () => undefined,
+    () => undefined
+  );
+  mappingQueues.set(key, settled);
+  try {
+    return await result;
+  } finally {
+    // Forget the file once nothing else is queued for it.
+    if (mappingQueues.get(key) === settled) {
+      mappingQueues.delete(key);
+    }
+  }
+}
+
+async function readMappingFile(path: string): Promise<Record<string, string>> {
   const content = await readOptionalTextFile(path);
   if (content === undefined) {
     return {};
@@ -83,18 +131,16 @@ export async function readQuoteGuidMapping(path: string): Promise<Record<string,
   return mapping as Record<string, string>;
 }
 
-/**
- * Records a replacement quote GUID against the original, keeping existing entries.
- * @param path Mapping JSON file path.
- * @param originalGuid Quote GUID that displayed Oops.
- * @param replacementGuid Quote GUID to use instead.
- * @throws When the existing mapping is invalid or the file cannot be written.
- */
-export async function saveQuoteGuidMapping(path: string, originalGuid: string, replacementGuid: string): Promise<void> {
-  const mapping = await readQuoteGuidMapping(path);
-  mapping[originalGuid] = replacementGuid;
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(mapping, null, 2)}\n`);
+/** Writes the content to a temporary file beside the target, then renames it over the target. */
+async function replaceFile(path: string, content: string): Promise<void> {
+  const temporaryPath = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, content);
+    await rename(temporaryPath, path);
+  } catch (error) {
+    await rm(temporaryPath, { force: true });
+    throw error;
+  }
 }
 
 /** Today's local date as `YYYY-MM-DD`. */

@@ -60,6 +60,9 @@ async function load(path: string) {
     .toBuffer({ resolveWithObject: true });
 }
 
+/** Settles once the first OCR worker in this process has loaded (or failed to), caching its language data. */
+let firstOcrWorkerLoaded: Promise<void> | undefined;
+
 type LoadedImage = Awaited<ReturnType<typeof load>>;
 type OcrWorker = Awaited<ReturnType<typeof createWorker>>;
 interface Box {
@@ -235,7 +238,7 @@ async function processRegions(
     if (boxes.length > 0 && useOcr) {
       await mkdir(cachePath, { recursive: true });
       console.log(color.Gray('Loading local OCR (first use downloads language data)…'));
-      worker = await createWorker(language, undefined, { cachePath });
+      worker = await createOcrWorker(language, cachePath);
       // Tesseract prints diagnostics such as "Estimating resolution as …" to stdout for every crop; send them to
       // the null device inside its virtual file system. This changes only logging, not recognition.
       await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT, debug_file: '/dev/null' });
@@ -274,6 +277,24 @@ async function processRegions(
 
   printRegionCount(regions.length, regions.filter((region) => region.textChanges.length > 0).length, useOcr);
   return regions;
+}
+
+/**
+ * Creates an OCR worker. The first one in the process loads alone, and later ones wait for it, so concurrent
+ * comparisons never download the language data into the shared cache at the same time.
+ */
+async function createOcrWorker(language: string, cachePath: string): Promise<OcrWorker> {
+  if (firstOcrWorkerLoaded !== undefined) {
+    await firstOcrWorkerLoaded;
+    return createWorker(language, undefined, { cachePath });
+  }
+
+  const worker = createWorker(language, undefined, { cachePath });
+  firstOcrWorkerLoaded = worker.then(
+    () => undefined,
+    () => undefined
+  );
+  return worker;
 }
 
 function printRegionCount(total: number, withTextChanges: number, useOcr: boolean): void {

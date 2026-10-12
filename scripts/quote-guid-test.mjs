@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { describe, test } from 'node:test';
 import { defaultQuoteGuidCount, readQuoteGuidList, selectQuoteGuids } from '../dist/quote-guid-list.js';
 import { readQuoteGuidMapping, requestQuoteGuid, saveQuoteGuidMapping } from '../dist/quote-guid.js';
@@ -340,6 +340,39 @@ describe('quote GUID mapping file', () => {
       await assert.rejects(result, /JSON object of strings/);
     });
   }
+
+  test('keeps every entry when many are saved at once', async () => {
+    // arrange
+    const path = join(await mkdtemp(join(tmpdir(), 'quote-guid-map-')), 'mapping.json');
+    const entries = Array.from({ length: 20 }, (_, index) => [`original-${index}`, `replacement-${index}`]);
+
+    // act
+    await Promise.all(entries.map(([original, replacement]) => saveQuoteGuidMapping(path, original, replacement)));
+
+    // assert
+    assert.deepEqual(await readQuoteGuidMapping(path), Object.fromEntries(entries));
+    assert.deepEqual(await readdir(dirname(path)), ['mapping.json']);
+  });
+
+  test('reads made while entries are being saved never see a partly written file', async () => {
+    // arrange
+    const path = join(await mkdtemp(join(tmpdir(), 'quote-guid-map-')), 'mapping.json');
+    await saveQuoteGuidMapping(path, 'first', 'one');
+
+    // act
+    const results = await Promise.allSettled(
+      Array.from({ length: 20 }, (_, index) =>
+        index % 2 === 0 ? saveQuoteGuidMapping(path, `original-${index}`, 'replacement') : readQuoteGuidMapping(path)
+      )
+    );
+
+    // assert
+    assert.deepEqual(
+      results.filter((result) => result.status === 'rejected'),
+      []
+    );
+    assert.equal(Object.keys(await readQuoteGuidMapping(path)).length, 11);
+  });
 });
 
 describe('quote-page NHI Oops fallback', () => {
@@ -792,6 +825,75 @@ ${policyB}
       assert.match(result.output, expected);
     });
   }
+
+  for (const value of ['0', 'three', '-1']) {
+    test(`rejects a concurrency of ${value}`, async () => {
+      // arrange
+      const { directory, env } = await fixture('http://127.0.0.1:1');
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n`);
+
+      // act
+      const result = await run(directory, env, ['quote-pages', `--concurrency=${value}`]);
+
+      // assert
+      assert.notEqual(result.code, 0);
+      assert.match(result.output, /--concurrency must be a positive integer/);
+    });
+  }
+
+  test("prefixes each policy's lines with its position when policies run at once", async () => {
+    await withServer(quoteJourneyHandler([]), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base, { [`${policyA}-1`]: 'guid-a', [`${policyB}-1`]: 'guid-b' });
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n`);
+
+      // act
+      const result = await run(directory, env, ['quote-pages', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.match(result.plain, /\n\[1\/2 ABCDEF12\] NHI: opening /);
+      assert.match(result.plain, /\n\[2\/2 11111111\] NHI: opening /);
+      assert.match(result.plain, /\n\nQuote pages summary\n2 passed \(0 both declined\), 0 failed\.\n/);
+    });
+  });
+
+  test('a concurrency of 1 runs the policies in turn without line prefixes', async () => {
+    await withServer(quoteJourneyHandler([]), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base, { [`${policyA}-1`]: 'guid-a', [`${policyB}-1`]: 'guid-b' });
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n`);
+
+      // act
+      const result = await run(directory, env, ['quote-pages', '-c', '1', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.doesNotMatch(result.plain, /\[\d\/2 [0-9A-F]{8}\]/);
+      const firstPolicyDone = result.plain.indexOf('Screenshot saved to', result.plain.indexOf(`[1/2] ${policyA}-1`));
+      assert.ok(firstPolicyDone < result.plain.indexOf(`[2/2] ${policyB}-1`), result.plain);
+    });
+  });
+
+  test('saves failures in list order when policies run at once', async () => {
+    await withServer(quoteJourneyHandler([]), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base, { [`${policyB}-1`]: 'guid-b' });
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyB}\n${policyC}\n${policyA}\n`);
+
+      // act
+      const result = await run(directory, env, ['quote-pages', '--concurrency', '3', '--no-ocr']);
+
+      // assert
+      assert.notEqual(result.code, 0);
+      assert.match(result.plain, /Quote pages summary\n1 passed \(0 both declined\), 2 failed\.\n/);
+      const saved = await readFailed(directory);
+      assert.deepEqual(
+        saved.failed.map(({ policyDetailsId }) => policyDetailsId),
+        [policyC, policyA]
+      );
+    });
+  });
 
   test('reports a missing QUOTE_GUID_LIST_PATH', async () => {
     // arrange
