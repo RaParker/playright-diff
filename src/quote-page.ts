@@ -33,6 +33,11 @@ export interface QuotePageOptions {
   nhiQuotePageUrlTemplate: string;
   tcasQuotePageUrlTemplate: string;
   useOcr?: boolean;
+  /**
+   * Step timeout in milliseconds for every NHI and TCAS capture (default: the screenshot default, 30000). Quote loading
+   * screens get twice as long.
+   */
+  timeout?: number;
   /** When set, an NHI Oops requests a replacement quote GUID, records it, and retries NHI once. */
   quoteGuidFallback?: QuoteGuidFallbackOptions;
 }
@@ -272,7 +277,11 @@ async function captureAndCompare(
   const [nhi, originalTcas] = await Promise.allSettled([
     captureNhi(artemisQuoteGuid, mappedGuid, mappingPath, policyDetailsId, historyId, nhiPath, options),
     mappedGuid === undefined
-      ? captureAt('TCAS', tcasUrl, { output: tcasPath, beforeCapture: withAnnualPayment('TCAS', tcasQuote) })
+      ? captureAt('TCAS', tcasUrl, {
+          output: tcasPath,
+          timeout: options.timeout,
+          beforeCapture: withAnnualPayment('TCAS', tcasQuote)
+        })
       : Promise.resolve(undefined)
   ]);
   let tcas = originalTcas;
@@ -283,6 +292,7 @@ async function captureAndCompare(
     [tcas] = await Promise.allSettled([
       captureAt('TCAS', replacementUrl, {
         output: tcasPath,
+        timeout: options.timeout,
         beforeCapture: withAnnualPayment('TCAS', quoteSummary('TCAS'))
       })
     ]);
@@ -374,6 +384,7 @@ async function captureNhi(
   const capture = (quoteGuid: string) =>
     captureAt('NHI', templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), {
       output,
+      timeout: options.timeout,
       beforeCapture: withAnnualPayment('NHI', quoteSummary('NHI'))
     });
   const fallback = options.quoteGuidFallback;
@@ -385,6 +396,7 @@ async function captureNhi(
   const captureUnsaved = (quoteGuid: string) =>
     captureAt('NHI', templateUrl(fallback.unsavedQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), {
       output,
+      timeout: options.timeout,
       beforeCapture: withAnnualPayment('NHI', unsavedQuote)
     });
   if (mappedGuid !== undefined) {

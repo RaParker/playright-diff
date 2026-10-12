@@ -14,6 +14,7 @@ import { isQuoteGuid, readQuoteGuidList, selectQuoteGuids } from './quote-guid-l
 import { prefetchMissingMrpFiles, reportMissingMrpFiles } from './mrp-fetch.js';
 import { screenshot, ValidationError } from './screenshot.js';
 import { loadEnvironment } from './environment.js';
+import { intervalToMs } from './interval.js';
 import { collectQuoteResults, listDifferentPolicies, summariseQuoteResults } from './summarise.js';
 
 const help = `Usage: npm start -- <screenshot|compare|quote-page|quote-pages|summarise> [arguments] [options]
@@ -341,6 +342,7 @@ function quotePageOptions(environment: Record<string, string | undefined>, useOc
     nhiQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE'),
     tcasQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE'),
     useOcr,
+    timeout: parseQuotePageTimeout(optional(environment, 'QUOTE_PAGE_TIMEOUT')),
     quoteGuidFallback: {
       quoteGuidUrl: required(environment, 'QUOTE_JOURNEY_QUOTE_GUID_URL'),
       agentId: required(environment, 'QUOTE_JOURNEY_AGENT_ID'),
@@ -350,6 +352,23 @@ function quotePageOptions(environment: Record<string, string | undefined>, useOc
       tcasReplacementUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE')
     }
   };
+}
+
+/**
+ * @returns The `QUOTE_PAGE_TIMEOUT` step timeout in milliseconds, or `undefined` (the 30 s default) when not set.
+ * @throws When it is not a whole number with an optional `s`, `m`, `h` or `d` suffix (milliseconds without one), from
+ * 1 ms to 8 hours.
+ */
+function parseQuotePageTimeout(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  try {
+    return intervalToMs(value.trim());
+  } catch (error) {
+    throw new Error(`QUOTE_PAGE_TIMEOUT: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
 }
 
 function optional(environment: Record<string, string | undefined>, name: string): string | undefined {

@@ -317,6 +317,7 @@ The committed `.env` targets the feature-dev environment.
 | --------------------------------------------- | ------------- | ------------------------------------------------------------------------ |
 | `MRP_AND_QUOTE_OUTPUT_DIR`                    | both          | Folder containing `<ID>-<historyId>-mrp.json` files                      |
 | `MRP_AND_QUOTE_PROJECT_DIR`                   | `quote-pages` | Optional mrp-and-quote project folder the MRP fetch runs in              |
+| `QUOTE_PAGE_TIMEOUT`                          | both          | Optional step timeout per capture, e.g. `45s` or `1m` (default `30s`)    |
 | `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE`   | both          | NHI quote URL, with `{artemisQuoteGuid}`                                 |
 | `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE`      | both          | Unsaved replacement journey URL (`nhi=false`)                            |
 | `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE`  | both          | TCAS quote URL, with `{policyDetailsId}` and `{historyId}`               |
@@ -328,7 +329,10 @@ The committed `.env` targets the feature-dev environment.
 | `QUOTE_GUID_LIST_PATH`                        | `quote-pages` | GUID list file, one policy ID per line (also used by `retry-failed`)     |
 
 All variables listed for a command are required, except `MRP_AND_QUOTE_PROJECT_DIR` (default: the
-output folder's parent). `summarise` also reads `QUOTE_GUID_LIST_PATH` and
+output folder's parent) and `QUOTE_PAGE_TIMEOUT`. `QUOTE_PAGE_TIMEOUT` is a whole number with an
+optional `s`, `m`, `h` or `d` suffix (milliseconds without one), from 1 ms to 8 hours, as
+`intervalToMs` in `@avantia/client-and-server-utilities` reads it. It is how long each page load,
+click and wait for the next page may take; quote loading screens get twice as long. `summarise` also reads `QUOTE_GUID_LIST_PATH` and
 `MRP_AND_QUOTE_OUTPUT_DIR`, but both are optional there (see [summarise](#summarise)).
 
 Rules:

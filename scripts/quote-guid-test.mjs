@@ -609,6 +609,43 @@ describe('quote-page declined quotes', () => {
   });
 });
 
+describe('QUOTE_PAGE_TIMEOUT', () => {
+  test('sets the step timeout of the NHI and TCAS captures', async () => {
+    const stuckPage = (_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/html' });
+      response.end('<h1>Still waiting</h1>');
+    };
+    await withServer(stuckPage, async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base);
+      env.QUOTE_PAGE_TIMEOUT = '1s';
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.notEqual(result.code, 0);
+      assert.match(result.plain, /NHI: Expected page did not appear within 1 s/);
+      assert.match(result.plain, /TCAS: .*Timeout 1000ms exceeded/);
+    });
+  });
+
+  for (const value of ['0s', 'abc', '45 s', '9h']) {
+    test(`rejects a value of ${value}`, async () => {
+      // arrange
+      const { directory, env } = await fixture('http://127.0.0.1:1');
+      env.QUOTE_PAGE_TIMEOUT = value;
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.notEqual(result.code, 0);
+      assert.match(result.output, /QUOTE_PAGE_TIMEOUT: The 'interval' /);
+    });
+  }
+});
+
 describe('quote-pages', () => {
   test('counts policies where both sides declined as passed', async () => {
     await withServer(decliningHandler(['guid-a', policyA]), async (base) => {
