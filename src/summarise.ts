@@ -70,6 +70,8 @@ export interface SummariseOptions {
   guidListPath?: string;
   /** mrp-and-quote's output folder (`MRP_AND_QUOTE_OUTPUT_DIR`), checked for each listed policy's MRP record. */
   mrpAndQuoteOutputDir?: string;
+  /** Print only the policies whose screenshots differ, and their count, leaving out failures, MRP records and Oops pages. */
+  differentOnly?: boolean;
 }
 
 /** How many of one flow's failure pages showed Oops, and how many of those policies still compared or declined. */
@@ -93,12 +95,18 @@ export interface GuidListStatus {
 /**
  * Prints a summary of every quote-page result in a comparisons folder: the visual and text differences of each
  * compared policy, the most common text changes, each failed policy with its issues, failures grouped by reason,
- * the MRP records not retrieved, and the totals (including the GUID list size and Oops pages).
- * @param options Folders to read, and optionally the GUID list and MRP folder.
+ * the MRP records not retrieved, and the totals (including the GUID list size and Oops pages). With `differentOnly`, it
+ * prints only the differences, the most common text changes and how many compared policies differ.
+ * @param options Folders to read, optionally the GUID list and MRP folder, and whether to print only the differences.
  * @throws When a `result.json`, `report.json` or the GUID list cannot be read or parsed.
  */
 export async function summariseQuoteResults(options: SummariseOptions = {}): Promise<void> {
   const summary = await collectQuoteResults(options.root ?? outputPath('comparisons'));
+  if (options.differentOnly === true) {
+    printDifferentPolicies(summary);
+    return;
+  }
+
   const oops = await countOopsPages(options.screenshots ?? outputPath('screenshots'), summary);
   const guidList =
     options.guidListPath === undefined || options.mrpAndQuoteOutputDir === undefined
@@ -308,9 +316,7 @@ function printQuoteResultsSummary(
   guidList: GuidListStatus | undefined
 ): void {
   console.log(color.Cyan(`Quote results summary (${summary.root})`));
-  printVisualOnlyDifferences(summary.compared.filter(isVisualOnly));
-  printTextDifferences(summary.compared.filter((policy) => policy.textDifferences.length > 0));
-  printCommonTextChanges(countTextChanges(summary.compared).filter(({ count }) => count > 1));
+  printDifferenceSections(summary.compared);
   printFailedPolicies(summary.failed);
   printFailureReasons(countFailureReasons(summary.failed));
   if (summary.unrecorded.length > 0) {
@@ -319,6 +325,21 @@ function printQuoteResultsSummary(
 
   printMissingMrpRecords(guidList?.missingMrp ?? []);
   printTotals(summary, oops, guidList);
+}
+
+function printDifferentPolicies({ root, compared }: QuoteResultsSummary): void {
+  const count = compared.filter((policy) => policy.changedPixels > 0).length;
+  const different = `${count} different`;
+  console.log(color.Cyan(`Different quote results (${root})`));
+  printDifferenceSections(compared);
+  console.log(`\n${color.Cyan('Totals')}`);
+  console.log(`${count > 0 ? color.Yellow(different) : different} of ${compared.length} compared.`);
+}
+
+function printDifferenceSections(compared: ComparedPolicy[]): void {
+  printVisualOnlyDifferences(compared.filter(isVisualOnly));
+  printTextDifferences(compared.filter((policy) => policy.textDifferences.length > 0));
+  printCommonTextChanges(countTextChanges(compared).filter(({ count }) => count > 1));
 }
 
 function printVisualOnlyDifferences(policies: ComparedPolicy[]): void {

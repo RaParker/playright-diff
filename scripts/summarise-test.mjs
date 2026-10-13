@@ -510,6 +510,60 @@ describe('summarise command', () => {
     assert.doesNotMatch(output, /MRP records not retrieved/);
   });
 
+  test('different prints only the differences and how many compared policies differ', async () => {
+    // arrange
+    const { directory, mrp, guidList } = await projectFixture();
+
+    // act
+    const { code, output } = await runCli(directory, ['summarise', 'different'], {
+      QUOTE_GUID_LIST_PATH: guidList,
+      MRP_AND_QUOTE_OUTPUT_DIR: mrp
+    });
+
+    // assert
+    assert.equal(code, 0, output);
+    assert.match(output, /Different quote results \(/);
+    assert.match(output, /Visual-only differences \(1\)\n {2}E{32}-1 /);
+    assert.match(output, /Text differences \(1\)\nB{32}-1 /);
+    assert.match(output, /Totals\n2 different of 3 compared\.\n/);
+  });
+
+  test('different leaves out failures, MRP records, the GUID list and Oops pages', async () => {
+    // arrange
+    const { directory, mrp, guidList } = await projectFixture();
+
+    // act
+    const { code, output } = await runCli(directory, ['summarise', 'different'], {
+      QUOTE_GUID_LIST_PATH: guidList,
+      MRP_AND_QUOTE_OUTPUT_DIR: mrp
+    });
+
+    // assert
+    assert.equal(code, 0, output);
+    for (const section of [
+      /Failed policies/,
+      /Failures by reason/,
+      /without a result/,
+      /MRP records/,
+      /GUID list/,
+      /Oops pages/
+    ]) {
+      assert.doesNotMatch(output, section);
+    }
+  });
+
+  test('rejects an unknown argument', async () => {
+    // arrange
+    const { directory } = await projectFixture();
+
+    // act
+    const { code, output } = await runCli(directory, ['summarise', 'identical']);
+
+    // assert
+    assert.notEqual(code, 0, output);
+    assert.match(output, /Usage: npm run summarise/);
+  });
+
   test('shows help', async () => {
     // arrange
     const directory = await mkdtemp(join(tmpdir(), 'summarise-'));

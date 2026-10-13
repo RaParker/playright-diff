@@ -56,7 +56,7 @@ screenshots differed (the summarise "different" count) and leaves ${failedQuoteP
   --no-ocr               Compare pixels without extracting text
   -h, --help             Show help`;
 
-const summariseHelp = `Usage: npm run summarise -- [options]   (or npm run summarize)
+const summariseHelp = `Usage: npm run summarise [different] [-- options]   (or npm run summarize)
 Summarises every comparisons/<policyDetailsId>-<historyId> folder. It prints the visual and text differences
 of each compared policy, the most common text changes, failed policies with their issues, failures by
 reason and the MRP records not retrieved, then the totals: the GUID list size and how many policies have a
@@ -65,6 +65,8 @@ Outcomes come from the result.json each quote-page run saves; folders with only 
 runs) count as compared. Oops pages saved before a policy's last run started are not counted.
 The GUID list and MRP records need QUOTE_GUID_LIST_PATH and MRP_AND_QUOTE_OUTPUT_DIR (.env or environment);
 without them that part is skipped. The exit code is 0 whatever the results.
+different prints only the visual-only and text differences, the most common text changes and how many of
+the compared policies differ (the policies retry-different reruns).
   -h, --help     Show help`;
 
 /**
@@ -253,17 +255,26 @@ async function runQuotePages(args: string[]): Promise<void> {
 }
 
 async function runSummarise(args: string[]): Promise<void> {
-  const { values } = parseArgs({ args, options: { help: { type: 'boolean', short: 'h' } } });
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { help: { type: 'boolean', short: 'h' } }
+  });
   if (values.help === true) {
     console.log(summariseHelp);
     return;
+  }
+
+  if (positionals.length > 1 || (positionals[0] !== undefined && positionals[0] !== 'different')) {
+    throw new Error(summariseHelp);
   }
 
   // Unlike quote-pages, the GUID list and MRP folder are optional: without them the GUID list totals are skipped.
   const environment = await loadEnvironment();
   await summariseQuoteResults({
     guidListPath: optional(environment, 'QUOTE_GUID_LIST_PATH'),
-    mrpAndQuoteOutputDir: optional(environment, 'MRP_AND_QUOTE_OUTPUT_DIR')
+    mrpAndQuoteOutputDir: optional(environment, 'MRP_AND_QUOTE_OUTPUT_DIR'),
+    differentOnly: positionals[0] === 'different'
   });
 }
 

@@ -28,13 +28,14 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 
 ## Commands
 
-| Command               | What it does                                                |
-| --------------------- | ----------------------------------------------------------- |
-| `npm run screenshot`  | Capture a full-page screenshot of one URL                   |
-| `npm run compare`     | Compare two images and report changed regions and text      |
-| `npm run quote-page`  | Capture NHI and TCAS versions of one quote and compare them |
-| `npm run quote-pages` | Run `quote-page` for every policy in a GUID list            |
-| `npm run summarise`   | Summarise every quote-page result (alias `summarize`)       |
+| Command                       | What it does                                                |
+| ----------------------------- | ----------------------------------------------------------- |
+| `npm run screenshot`          | Capture a full-page screenshot of one URL                   |
+| `npm run compare`             | Compare two images and report changed regions and text      |
+| `npm run quote-page`          | Capture NHI and TCAS versions of one quote and compare them |
+| `npm run quote-pages`         | Run `quote-page` for every policy in a GUID list            |
+| `npm run summarise`           | Summarise every quote-page result (alias `summarize`)       |
+| `npm run summarise different` | Show only the quote-page results that differ                |
 
 Add `-- --help` to any command for its options (for example `npm run compare -- --help`).
 
@@ -307,6 +308,17 @@ Oops pages: NHI 957 (953 later compared or declined), TCAS 10 (1 later compared 
   declined" recovered, usually through the [NHI Oops fallback](#nhi-oops-fallback). A page
   saved before the policy's last recorded run started (`startedAt`) is left over from an earlier
   run and is not counted.
+
+To see only what differs, add `different`:
+
+```sh
+npm run summarise different
+```
+
+This prints the Visual-only differences, Text differences and Most common text changes
+sections, then how many of the compared policies differ (the policies
+[`retry-different`](#quote-pages) reruns), for example `404 different of 1237 compared.`
+Failures, MRP records, the GUID list and Oops pages are left out.
 
 ## Configuration
 
