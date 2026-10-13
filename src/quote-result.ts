@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { readOptionalTextFile } from './fs-helpers.js';
+import { outputPath } from './output-paths.js';
 
 /** File name of the result each quote-page run writes into its `comparisons/<policyDetailsId>-<historyId>` folder. */
 export const quoteResultFileName = 'result.json';
@@ -27,10 +28,10 @@ export interface QuoteResult {
  * Writes a quote-page run's result to `comparisons/<policyDetailsId>-<historyId>/result.json`, creating the folder
  * when the run stopped before comparing.
  * @param result The run's result.
- * @param root Comparisons folder (default: `comparisons` in the current working directory).
+ * @param root Comparisons folder (default: `comparisons` in the output folder, see {@link outputPath}).
  * @throws When the folder or file cannot be written.
  */
-export async function writeQuoteResult(result: QuoteResult, root = 'comparisons'): Promise<void> {
+export async function writeQuoteResult(result: QuoteResult, root = outputPath('comparisons')): Promise<void> {
   const directory = resolve(root, `${result.policyDetailsId}-${result.historyId}`);
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, quoteResultFileName), `${JSON.stringify(result, null, 2)}\n`);

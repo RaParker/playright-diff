@@ -6,6 +6,7 @@ import { readDirectoryNames, readFileNames, readOptionalTextFile } from './fs-he
 import { fetchedHistoryId, filterMissingMrpFiles } from './mrp-fetch.js';
 import { readQuoteGuidList } from './quote-guid-list.js';
 import { readQuoteResult, type QuoteResult } from './quote-result.js';
+import { outputPath } from './output-paths.js';
 
 /** OCR confidence (0-100) below which a region's text change is flagged as probably misread. */
 const lowOcrConfidence = 60;
@@ -61,9 +62,9 @@ export interface QuoteResultsSummary {
 
 /** Where the summarise command looks; relative paths resolve from the current working directory. */
 export interface SummariseOptions {
-  /** Comparisons folder (default: `comparisons`). */
+  /** Comparisons folder (default: `comparisons` in the output folder, see {@link outputPath}). */
   root?: string;
-  /** Screenshots folder, searched for Oops failure pages (default: `screenshots`). */
+  /** Screenshots folder, searched for Oops failure pages (default: `screenshots` in the output folder). */
   screenshots?: string;
   /** GUID list (`QUOTE_GUID_LIST_PATH`); the GUID list totals are left out unless this and the next are set. */
   guidListPath?: string;
@@ -97,8 +98,8 @@ export interface GuidListStatus {
  * @throws When a `result.json`, `report.json` or the GUID list cannot be read or parsed.
  */
 export async function summariseQuoteResults(options: SummariseOptions = {}): Promise<void> {
-  const summary = await collectQuoteResults(options.root ?? 'comparisons');
-  const oops = await countOopsPages(options.screenshots ?? 'screenshots', summary);
+  const summary = await collectQuoteResults(options.root ?? outputPath('comparisons'));
+  const oops = await countOopsPages(options.screenshots ?? outputPath('screenshots'), summary);
   const guidList =
     options.guidListPath === undefined || options.mrpAndQuoteOutputDir === undefined
       ? undefined

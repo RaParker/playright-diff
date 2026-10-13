@@ -27,6 +27,7 @@ import {
 } from './screenshot.js';
 import { tcasQuote } from './tcas-quote.js';
 import { unsavedQuote } from './unsaved-quote.js';
+import { outputPath } from './output-paths.js';
 
 export interface QuotePageOptions {
   mrpAndQuoteOutputDir: string;
@@ -267,8 +268,8 @@ async function captureAndCompare(
     policyDetailsId,
     historyId: String(historyId)
   });
-  const nhiPath = resolve('screenshots', `${basename}-nhi.png`);
-  const tcasPath = resolve('screenshots', `${basename}-tcas.png`);
+  const nhiPath = outputPath('screenshots', `${basename}-nhi.png`);
+  const tcasPath = outputPath('screenshots', `${basename}-tcas.png`);
   const mappingPath = resolve(fallback?.mappingPath ?? 'quote-guid-mapping.json');
   const mappedGuid = fallback === undefined ? undefined : (await readQuoteGuidMapping(mappingPath))[artemisQuoteGuid];
   // Inputs are valid, so clear the previous run's results before writing new ones.
@@ -326,7 +327,7 @@ async function captureAndCompare(
     );
   }
 
-  await compare(nhiPath, tcasPath, { output: resolve('comparisons', basename), useOcr: options.useOcr });
+  await compare(nhiPath, tcasPath, { output: outputPath('comparisons', basename), useOcr: options.useOcr });
   return 'compared';
 }
 

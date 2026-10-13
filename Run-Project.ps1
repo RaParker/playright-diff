@@ -8,8 +8,9 @@ development tasks. Each command is a switch with its own parameter set, so tab c
 options that apply, and inputs are validated before Node starts.
 
 CLI commands run src/main.ts through tsx (as the npm scripts do) from the project root, so .env,
-quote-guid-mapping.json and quote-pages-failed.json are always read from there. Relative paths you
-pass are resolved from your current directory first.
+quote-guid-mapping.json and quote-pages-failed.json are always read from there. The screenshots and comparisons
+folders are written to DIFF_OUTPUT_DIR (.env or environment), or the project root when it is not set. Relative
+paths you pass are resolved from your current directory first.
 
 Use -WhatIf to print the command without running it. The script exits with the command's exit code.
 
@@ -22,8 +23,8 @@ Capture a full-page screenshot of -Url.
 http or https URL to capture.
 
 .PARAMETER Output
-Screenshot: PNG or JPEG output file (default: screenshots/screenshot.png).
-Compare: new report directory (default: comparisons/run-<timestamp>).
+Screenshot: PNG or JPEG output file (default: screenshots/screenshot.png in DIFF_OUTPUT_DIR).
+Compare: new report directory (default: comparisons/run-<timestamp> in DIFF_OUTPUT_DIR).
 
 .PARAMETER Width
 Viewport width in pixels (default: 1440).

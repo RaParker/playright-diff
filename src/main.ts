@@ -14,14 +14,17 @@ import { isQuoteGuid, readQuoteGuidList, selectQuoteGuids } from './quote-guid-l
 import { prefetchMissingMrpFiles, reportMissingMrpFiles } from './mrp-fetch.js';
 import { screenshot, ValidationError } from './screenshot.js';
 import { loadEnvironment } from './environment.js';
+import { outputPath, setOutputRoot } from './output-paths.js';
 import { intervalToMs } from './interval.js';
 import { collectQuoteResults, listDifferentPolicies, summariseQuoteResults } from './summarise.js';
 
 const help = `Usage: npm start -- <screenshot|compare|quote-page|quote-pages|summarise> [arguments] [options]
-Use npm run <action> -- --help for action options.`;
+Use npm run <action> -- --help for action options.
+The screenshots/ and comparisons/ folders are kept in DIFF_OUTPUT_DIR (.env or environment), or the current
+directory when it is not set.`;
 
 const screenshotHelp = `Usage: npm run screenshot -- <url> [options]
-  -o, --output <path>     PNG or JPEG output (default: screenshots/screenshot.png)
+  -o, --output <path>     PNG or JPEG output (default: screenshots/screenshot.png in DIFF_OUTPUT_DIR)
   --width <pixels>        Viewport width (default: 1440)
   --height <pixels>       Viewport height (default: 900)
   --wait <milliseconds>   Extra delay after scrolling (default: 1000)
@@ -29,7 +32,7 @@ const screenshotHelp = `Usage: npm run screenshot -- <url> [options]
   -h, --help              Show help`;
 
 const compareHelp = `Usage: npm run compare -- <before-image> <after-image> [options]
-  -o, --output <directory> New report directory (default: comparisons/run-<timestamp>)
+  -o, --output <directory> New report directory (default: comparisons/run-<timestamp> in DIFF_OUTPUT_DIR)
   --threshold <0-255>      Ignore channel differences (default: 20)
   --language <code>        OCR language (default: eng)
   --no-ocr                 Skip text extraction
@@ -78,6 +81,8 @@ async function main(): Promise<void> {
     console.log(help);
     return;
   }
+
+  setOutputRoot(optional(await loadEnvironment(), 'DIFF_OUTPUT_DIR'));
 
   if (action === 'screenshot') {
     await runScreenshot(args);
@@ -296,7 +301,7 @@ async function retryDifferentQuotePages(
   options: QuotePagesOptions,
   prepareMrpFiles: PrepareMrpFiles
 ): Promise<void> {
-  const root = 'comparisons';
+  const root = outputPath('comparisons');
   const different = listDifferentPolicies(await collectQuoteResults(root));
   if (different.length === 0) {
     console.log(`No different quote pages to retry (${root}).`);

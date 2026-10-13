@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import { chromium, errors, type Page } from 'playwright';
 import { color } from './color.js';
+import { outputPath } from './output-paths.js';
 
 export interface ScreenshotOptions {
   output?: string;
@@ -304,7 +305,7 @@ function validateOptions(urlArgument: string, options: ScreenshotOptions) {
   const height = integer(options.height ?? 900, 'height', 1);
   const wait = integer(options.wait ?? 1000, 'wait', 0);
   const timeout = integer(options.timeout ?? 30000, 'timeout', 1);
-  const output = resolve(options.output ?? 'screenshots/screenshot.png');
+  const output = options.output === undefined ? outputPath('screenshots', 'screenshot.png') : resolve(options.output);
   const extension = extname(output).toLowerCase();
   if (!['.png', '.jpg', '.jpeg'].includes(extension)) {
     throw new Error('Output must have a .png, .jpg, or .jpeg extension.');

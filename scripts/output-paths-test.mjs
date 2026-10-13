@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { afterEach, describe, test } from 'node:test';
+import { outputPath, setOutputRoot } from '../dist/output-paths.js';
+import { writeQuoteResult } from '../dist/quote-result.js';
+
+describe('outputPath', () => {
+  afterEach(() => setOutputRoot(undefined));
+
+  for (const [name, root, expected] of [
+    ['uses the current working directory when no output folder is set', undefined, resolve('screenshots', 'a.png')],
+    ['uses the current working directory when the output folder is blank', '  ', resolve('screenshots', 'a.png')],
+    ['uses the configured output folder', 'D:/temp/diff-output', resolve('D:/temp/diff-output/screenshots/a.png')],
+    ['resolves a relative output folder from the current working directory', 'out', resolve('out/screenshots/a.png')]
+  ]) {
+    test(name, () => {
+      // arrange
+      setOutputRoot(root);
+
+      // act
+      const path = outputPath('screenshots', 'a.png');
+
+      // assert
+      assert.equal(path, expected);
+    });
+  }
+
+  test('writes quote results into comparisons under the configured output folder', async () => {
+    // arrange
+    const root = await mkdtemp(join(tmpdir(), 'output-paths-test-'));
+    setOutputRoot(root);
+    const result = {
+      policyDetailsId: 'ABCDEF1234567890ABCDEF1234567890',
+      historyId: 1,
+      outcome: 'compared',
+      validation: false,
+      issues: [],
+      startedAt: '2026-10-13T09:00:00.000Z',
+      finishedAt: '2026-10-13T09:01:00.000Z'
+    };
+
+    // act
+    await writeQuoteResult(result);
+
+    // assert
+    const saved = await readFile(join(root, 'comparisons', `${result.policyDetailsId}-1`, 'result.json'), 'utf8');
+    assert.deepEqual(JSON.parse(saved), result);
+  });
+});

@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import { createWorker, PSM } from 'tesseract.js';
 import { color } from './color.js';
 import { createSerialisedUntilSuccess } from './concurrency.js';
+import { outputPath } from './output-paths.js';
 
 export interface CompareOptions {
   output?: string;
@@ -178,7 +179,7 @@ async function createOutputDirectory(outputArgument?: string) {
   const output =
     outputArgument !== undefined && outputArgument.length > 0
       ? resolve(outputArgument)
-      : resolve('comparisons', `run-${Date.now()}`);
+      : outputPath('comparisons', `run-${Date.now()}`);
   await mkdir(dirname(output), { recursive: true });
   await mkdir(output, { recursive: false });
   return output;
@@ -232,7 +233,7 @@ async function processRegions(
   language: string,
   useOcr: boolean
 ) {
-  const cachePath = resolve('comparisons', '.ocr-cache');
+  const cachePath = outputPath('comparisons', '.ocr-cache');
   let worker: OcrWorker | undefined;
   const regions = [];
   try {

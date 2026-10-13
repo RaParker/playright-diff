@@ -1,7 +1,8 @@
 import { readFile, rm, unlink } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { color } from './color.js';
 import { isMissing, readDirectoryNames } from './fs-helpers.js';
+import { outputPath } from './output-paths.js';
 
 /** Files a quote-page run can write for each flow: the screenshot, and on failure or decline its HTML too. */
 const outputSuffixes = ['.png', '-failed.png', '-failed.html', '-declined.png', '-declined.html'];
@@ -18,7 +19,7 @@ export async function removeQuoteOutput(
   flows: string[]
 ): Promise<{ screenshots: number; comparisons: number }> {
   const screenshotPaths = flows.flatMap((flow) =>
-    outputSuffixes.map((suffix) => resolve('screenshots', `${basename}-${flow}${suffix}`))
+    outputSuffixes.map((suffix) => outputPath('screenshots', `${basename}-${flow}${suffix}`))
   );
   const screenshots = (await Promise.all(screenshotPaths.map(removeFile))).filter(Boolean).length;
   const comparisons = await removeComparisons(basename, new Set(screenshotPaths));
@@ -37,7 +38,7 @@ export async function removeQuoteOutput(
  * `run-<timestamp>` reports).
  */
 async function removeComparisons(basename: string, screenshotPaths: Set<string>): Promise<number> {
-  const root = resolve('comparisons');
+  const root = outputPath('comparisons');
   let removed = 0;
   for (const entry of await readDirectoryNames(root)) {
     const directory = join(root, entry);

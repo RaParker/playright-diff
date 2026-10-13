@@ -781,7 +781,7 @@ ${policyB}
 
       // assert
       assert.equal(result.code, 0, result.output);
-      assert.match(result.plain, /Retrying 1 different policies from comparisons/);
+      assert.match(result.plain, /Retrying 1 different policies from .*comparisons\n/);
       assert.ok(requests.includes(`/tcas/${policyA}/1`));
       assert.ok(!requests.some((path) => path.includes(policyB) || path.includes('guid-b')));
       assert.equal(await readFile(join(directory, 'quote-pages-failed.json'), 'utf8'), saved);
@@ -799,7 +799,7 @@ ${policyB}
 
     // assert
     assert.equal(result.code, 0, result.output);
-    assert.match(result.plain, /No different quote pages to retry \(comparisons\)\./);
+    assert.match(result.plain, /No different quote pages to retry \(.*comparisons\)\./);
   });
 
   for (const [name, selector] of [
