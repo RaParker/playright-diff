@@ -331,29 +331,36 @@ function printDifferentPolicies({ root, compared }: QuoteResultsSummary): void {
   const count = compared.filter((policy) => policy.changedPixels > 0).length;
   const different = `${count} different`;
   console.log(color.Cyan(`Different quote results (${root})`));
-  printDifferenceSections(compared);
+  printDifferenceSections(compared, root);
   console.log(`\n${color.Cyan('Totals')}`);
   console.log(`${count > 0 ? color.Yellow(different) : different} of ${compared.length} compared.`);
 }
 
-function printDifferenceSections(compared: ComparedPolicy[]): void {
-  printVisualOnlyDifferences(compared.filter(isVisualOnly));
-  printTextDifferences(compared.filter((policy) => policy.textDifferences.length > 0));
+/**
+ * Prints the visual-only differences, text differences and most common text changes. With `folderRoot`, each policy
+ * is labelled with its full comparisons folder path, so terminals can open it, rather than its folder name.
+ */
+function printDifferenceSections(compared: ComparedPolicy[], folderRoot?: string): void {
+  printVisualOnlyDifferences(compared.filter(isVisualOnly), folderRoot);
+  printTextDifferences(
+    compared.filter((policy) => policy.textDifferences.length > 0),
+    folderRoot
+  );
   printCommonTextChanges(countTextChanges(compared).filter(({ count }) => count > 1));
 }
 
-function printVisualOnlyDifferences(policies: ComparedPolicy[]): void {
+function printVisualOnlyDifferences(policies: ComparedPolicy[], folderRoot: string | undefined): void {
   if (policies.length === 0) {
     return;
   }
 
   console.log(`\n${color.Cyan(`Visual-only differences (${policies.length})`)}`);
   for (const policy of [...policies].sort((a, b) => b.changedPercent - a.changedPercent)) {
-    console.log(`  ${policy.name}  ${describeChange(policy)}`);
+    console.log(`  ${policyLabel(policy.name, folderRoot)}  ${describeChange(policy)}`);
   }
 }
 
-function printTextDifferences(policies: ComparedPolicy[]): void {
+function printTextDifferences(policies: ComparedPolicy[], folderRoot: string | undefined): void {
   if (policies.length === 0) {
     return;
   }
@@ -361,8 +368,9 @@ function printTextDifferences(policies: ComparedPolicy[]): void {
   console.log(`\n${color.Cyan(`Text differences (${policies.length})`)}`);
   for (const policy of policies) {
     const regions = policy.textDifferences.length;
+    const label = policyLabel(policy.name, folderRoot);
     console.log(
-      `${policy.name}  ${describeChange(policy)}, ${regions} ${regions === 1 ? 'region' : 'regions'} with text changes`
+      `${label}  ${describeChange(policy)}, ${regions} ${regions === 1 ? 'region' : 'regions'} with text changes`
     );
     for (const { regionId, removed, added, lowConfidence } of policy.textDifferences) {
       console.log(`  Region ${regionId}${lowConfidence ? color.Gray(' (low OCR confidence)') : ''}`);
@@ -458,6 +466,10 @@ function printGuidListTotals(guidList: GuidListStatus | undefined): void {
 
 function isVisualOnly(policy: ComparedPolicy): boolean {
   return policy.changedPixels > 0 && policy.textDifferences.length === 0;
+}
+
+function policyLabel(name: string, folderRoot: string | undefined): string {
+  return folderRoot === undefined ? name : join(folderRoot, name);
 }
 
 function describeChange(policy: ComparedPolicy): string {

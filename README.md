@@ -318,7 +318,9 @@ npm run summarise different
 This prints the Visual-only differences, Text differences and Most common text changes
 sections, then how many of the compared policies differ (the policies
 [`retry-different`](#quote-pages) reruns), for example `404 different of 1237 compared.`
-Failures, MRP records, the GUID list and Oops pages are left out.
+Failures, MRP records, the GUID list and Oops pages are left out. Each policy is shown by the
+full path of its comparisons folder rather than its folder name, so you can Ctrl+click it in
+most terminals to open the screenshots and report.
 
 ## Configuration
 

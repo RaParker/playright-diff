@@ -523,8 +523,8 @@ describe('summarise command', () => {
     // assert
     assert.equal(code, 0, output);
     assert.match(output, /Different quote results \(/);
-    assert.match(output, /Visual-only differences \(1\)\n {2}E{32}-1 /);
-    assert.match(output, /Text differences \(1\)\nB{32}-1 /);
+    assert.match(output, /Visual-only differences \(1\)\n {2}\S+E{32}-1 /);
+    assert.match(output, /Text differences \(1\)\n\S+B{32}-1 /);
     assert.match(output, /Totals\n2 different of 3 compared\.\n/);
   });
 
@@ -550,6 +550,34 @@ describe('summarise command', () => {
     ]) {
       assert.doesNotMatch(output, section);
     }
+  });
+
+  test('different labels each policy with its full comparisons folder path', async () => {
+    // arrange
+    const { directory } = await projectFixture();
+
+    // act
+    const { code, output } = await runCli(directory, ['summarise', 'different']);
+
+    // assert
+    assert.equal(code, 0, output);
+    const [, root] = /Different quote results \((.+)\)\n/.exec(output) ?? [];
+    assert.ok(root?.endsWith('comparisons'), output);
+    assert.ok(output.includes(`\n  ${join(root, `${visualPolicy}-1`)}  0.10% changed`), output);
+    assert.ok(output.includes(`\n${join(root, `${textPolicy}-1`)}  0.02% changed`), output);
+  });
+
+  test('the full summary labels each policy with its folder name', async () => {
+    // arrange
+    const { directory } = await projectFixture();
+
+    // act
+    const { code, output } = await runCli(directory, ['summarise']);
+
+    // assert
+    assert.equal(code, 0, output);
+    assert.match(output, /\n {2}E{32}-1 {2}0\.10% changed/);
+    assert.match(output, /\nB{32}-1 {2}0\.02% changed/);
   });
 
   test('rejects an unknown argument', async () => {
