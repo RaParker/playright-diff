@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -35,12 +35,16 @@ after(async () => {
 /** Captures both pages with the given mask and returns the comparison's changed pixel count. */
 async function captureAndCompare(mask) {
   const directory = await mkdtemp(join(tmpdir(), 'screenshot-mask-'));
-  const [nhi, tcas] = [join(directory, 'nhi.png'), join(directory, 'tcas.png')];
-  await screenshot(`${base}/nhi`, { output: nhi, width: 400, height: 300, wait: 0, mask });
-  await screenshot(`${base}/tcas`, { output: tcas, width: 400, height: 300, wait: 0, mask });
-  const output = join(directory, 'comparison');
-  await compare(nhi, tcas, { output, useOcr: false });
-  return JSON.parse(await readFile(join(output, 'report.json'), 'utf8')).changedPixels;
+  try {
+    const [nhi, tcas] = [join(directory, 'nhi.png'), join(directory, 'tcas.png')];
+    await screenshot(`${base}/nhi`, { output: nhi, width: 400, height: 300, wait: 0, mask });
+    await screenshot(`${base}/tcas`, { output: tcas, width: 400, height: 300, wait: 0, mask });
+    const output = join(directory, 'comparison');
+    await compare(nhi, tcas, { output, useOcr: false });
+    return JSON.parse(await readFile(join(output, 'report.json'), 'utf8')).changedPixels;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 describe('screenshot mask', () => {

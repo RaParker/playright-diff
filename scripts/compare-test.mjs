@@ -20,6 +20,7 @@ async function run(args) {
 }
 
 test('comparison detects pixel, dimension, and OCR changes', { timeout: 180000 }, async () => {
+  // arrange
   const dir = await mkdtemp(join(tmpdir(), 'image-compare-test-'));
   try {
     const before = join(dir, 'before.png'),
@@ -37,7 +38,11 @@ test('comparison detects pixel, dimension, and OCR changes', { timeout: 180000 }
         .toFile(path);
     }
     const same = join(dir, 'same');
+
+    // act
     let result = await run([before, before, '--output', same]);
+
+    // assert
     assert.equal(result.code, 0, result.output);
     let report = JSON.parse(await readFile(join(same, 'report.json'), 'utf8'));
     assert.equal(report.changedPixels, 0);
@@ -45,8 +50,13 @@ test('comparison detects pixel, dimension, and OCR changes', { timeout: 180000 }
     // Identical images are summarised in green.
     assert.ok(result.output.includes('\u001b[32m0 changed pixels'), result.output);
 
+    // arrange
     const output = join(dir, 'text');
+
+    // act
     result = await run([before, after, '--output', output]);
+
+    // assert
     assert.equal(result.code, 0, result.output);
     report = JSON.parse(await readFile(join(output, 'report.json'), 'utf8'));
     assert.ok(report.changedPixels > 0);
@@ -60,17 +70,27 @@ test('comparison detects pixel, dimension, and OCR changes', { timeout: 180000 }
     assert.ok(result.output.includes('Region 1: Recognized text differs'), result.output);
     assert.ok(result.output.includes('1 changed region, 1 with text changes.'), result.output);
 
+    // arrange
     const taller = join(dir, 'taller.png');
     await sharp(before).extend({ bottom: 50, background: 'white' }).png().toFile(taller);
     const dimensions = join(dir, 'dimensions');
+
+    // act
     result = await run([before, taller, '--no-ocr', '--output', dimensions]);
+
+    // assert
     assert.equal(result.code, 0, result.output);
     report = JSON.parse(await readFile(join(dimensions, 'report.json'), 'utf8'));
     assert.equal(report.changedPixels, 700 * 50);
     assert.equal(report.ocrEnabled, false);
 
+    // arrange
     const directOutput = join(dir, 'direct-dimensions');
+
+    // act
     await compare(before, taller, { useOcr: false, output: directOutput });
+
+    // assert
     const directReport = JSON.parse(await readFile(join(directOutput, 'report.json'), 'utf8'));
     assert.deepEqual(directReport, report);
     assert.equal(
@@ -78,12 +98,15 @@ test('comparison detects pixel, dimension, and OCR changes', { timeout: 180000 }
       await readFile(join(dimensions, 'report.md'), 'utf8')
     );
 
-    result = await run([before, after, '--output', same]);
-    assert.notEqual(result.code, 0, 'Must refuse an existing output directory');
-    result = await run([before, after, '--threshold', '-1']);
-    assert.notEqual(result.code, 0);
-    result = await run([before, join(dir, 'missing.png')]);
-    assert.notEqual(result.code, 0);
+    // act
+    const existingOutput = await run([before, after, '--output', same]);
+    const negativeThreshold = await run([before, after, '--threshold', '-1']);
+    const missingImage = await run([before, join(dir, 'missing.png')]);
+
+    // assert
+    assert.notEqual(existingOutput.code, 0, 'Must refuse an existing output directory');
+    assert.notEqual(negativeThreshold.code, 0);
+    assert.notEqual(missingImage.code, 0);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

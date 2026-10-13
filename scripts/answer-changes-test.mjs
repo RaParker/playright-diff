@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -54,6 +54,7 @@ async function pageAnswerChanges(html, beforeCapture) {
   } finally {
     server.closeAllConnections();
     await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+    await rm(directory, { recursive: true, force: true });
   }
 }
 
@@ -155,9 +156,10 @@ describe('answer changes', () => {
     );
   });
 
-  test('writes the policy and its changes with nhi before tcas and the error last', async () => {
+  test('writes the policy and its changes with nhi before tcas and the error last', async (context) => {
     // arrange
     const directory = await mkdtemp(join(tmpdir(), 'answer-changes-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
     const path = join(directory, 'comparisons', 'ABC-1', 'answer-changes.json');
     const change = { question: 'bedrooms', before: null, after: '3', error: 'Please select the number of bedrooms.' };
 
@@ -180,9 +182,10 @@ describe('answer changes', () => {
     assert.deepEqual(Object.keys(report.changes.nhi['Property type'][0]), ['question', 'before', 'after', 'error']);
   });
 
-  test('writes nothing when no answer was changed', async () => {
+  test('writes nothing when no answer was changed', async (context) => {
     // arrange
     const directory = await mkdtemp(join(tmpdir(), 'answer-changes-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
 
     // act
     const written = await writeAnswerChanges(join(directory, 'policy', 'answer-changes.json'), {
@@ -196,9 +199,10 @@ describe('answer changes', () => {
     assert.deepEqual(await readdir(directory), []);
   });
 
-  test('removes the answer changes a previous run left when no answer was changed', async () => {
+  test('removes the answer changes a previous run left when no answer was changed', async (context) => {
     // arrange
     const directory = await mkdtemp(join(tmpdir(), 'answer-changes-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
     await mkdir(join(directory, 'policy'));
     await writeFile(join(directory, 'policy', 'answer-changes.json'), '{}');
 

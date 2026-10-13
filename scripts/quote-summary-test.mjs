@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -234,6 +234,7 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
     });
     await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
     const directory = await mkdtemp(join(tmpdir(), 'quote-summary-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
     try {
       // act
       const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {

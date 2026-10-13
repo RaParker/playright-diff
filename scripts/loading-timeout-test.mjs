@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -60,7 +60,7 @@ for (const [name, html, beforeCapture, expectedError] of [
     }
   ]
 ]) {
-  test(`loading timeout ${name}`, async () => {
+  test(`loading timeout ${name}`, async (context) => {
     // arrange
     const server = createServer((_request, response) => {
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -68,6 +68,7 @@ for (const [name, html, beforeCapture, expectedError] of [
     });
     await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
     const directory = await mkdtemp(join(tmpdir(), 'loading-timeout-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
     try {
       // act
       const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {

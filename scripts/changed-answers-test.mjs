@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { describe, test } from 'node:test';
+import { after, describe, test } from 'node:test';
 import { collectChangedAnswers, countChangedQuestions } from '../dist/changed-answers.js';
 
 const script = resolve('dist/main.js');
@@ -31,6 +31,10 @@ const coverStart = {
   error: 'The Cover start field needs to be between 2026-10-13 and 2026-11-27'
 };
 
+/** Temp folders made by `comparisonsFixture`, which the tests still read, removed once they have all run. */
+const fixtureDirectories = [];
+after(() => Promise.all(fixtureDirectories.map((directory) => rm(directory, { recursive: true, force: true }))));
+
 async function writeAnswerChangesFile(root, policyDetailsId, changes) {
   await mkdir(join(root, `${policyDetailsId}-1`), { recursive: true });
   await writeFile(
@@ -42,6 +46,7 @@ async function writeAnswerChangesFile(root, policyDetailsId, changes) {
 /** A comparisons folder with two changed policies, one changing only the cover start, one unchanged and an OCR cache. */
 async function comparisonsFixture() {
   const directory = await mkdtemp(join(tmpdir(), 'changed-answers-'));
+  fixtureDirectories.push(directory);
   const root = join(directory, 'comparisons');
   await writeAnswerChangesFile(root, firstPolicy, {
     nhi: { 'Property circumstances': [rebuildingCost], 'Household details': [claimValue, claimValue] },
@@ -111,9 +116,11 @@ describe('changed answers', () => {
     assert.deepEqual(Object.keys(changedAnswers), [`${firstPolicy}-1`, `${secondPolicy}-1`]);
   });
 
-  test('finds nothing when the comparisons folder does not exist', async () => {
+  test('finds nothing when the comparisons folder does not exist', async (context) => {
     // arrange
-    const root = join(await mkdtemp(join(tmpdir(), 'changed-answers-')), 'missing');
+    const directory = await mkdtemp(join(tmpdir(), 'changed-answers-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const root = join(directory, 'missing');
 
     // act
     const changedAnswers = await collectChangedAnswers(root);

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
@@ -86,9 +86,10 @@ describe('retryWhileBusy', () => {
 });
 
 describe('replaceFile', () => {
-  test('replaces the content and leaves no temporary file', async () => {
+  test('replaces the content and leaves no temporary file', async (context) => {
     // arrange
     const directory = await mkdtemp(join(tmpdir(), 'replace-file-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
     const path = join(directory, 'result.json');
     await writeFile(path, 'old');
 
@@ -100,9 +101,10 @@ describe('replaceFile', () => {
     assert.deepEqual(await readdir(directory), ['result.json']);
   });
 
-  test('rejects and leaves no temporary file when the folder does not exist', async () => {
+  test('rejects and leaves no temporary file when the folder does not exist', async (context) => {
     // arrange
     const directory = await mkdtemp(join(tmpdir(), 'replace-file-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
 
     // act
     const replace = replaceFile(join(directory, 'missing', 'result.json'), 'new');

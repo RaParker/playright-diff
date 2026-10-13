@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, test } from 'node:test';
@@ -26,7 +26,10 @@ describe('removeQuoteOutput', () => {
     directory = await mkdtemp(join(tmpdir(), 'quote-output-'));
     process.chdir(directory);
   });
-  afterEach(() => process.chdir(originalDirectory));
+  afterEach(async () => {
+    process.chdir(originalDirectory);
+    await rm(directory, { recursive: true, force: true });
+  });
 
   test('removes every screenshot and failure HTML for the policy and keeps other policies and history IDs', async () => {
     // arrange

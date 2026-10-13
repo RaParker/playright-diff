@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 
 const server = createServer((_request, response) => {
@@ -29,4 +29,6 @@ try {
 } finally {
   server.closeAllConnections();
   await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  // Only the screenshot this test wrote; the screenshots folder may hold the user's own captures.
+  await rm('screenshots/smoke-test.png', { force: true });
 }

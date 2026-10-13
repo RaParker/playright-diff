@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { describe, test } from 'node:test';
+import { after, describe, test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { defaultQuoteGuidCount, readQuoteGuidList, selectQuoteGuids } from '../dist/quote-guid-list.js';
 import { readQuoteGuidMapping, requestQuoteGuid, saveQuoteGuidMapping } from '../dist/quote-guid.js';
@@ -109,8 +109,13 @@ function quoteJourneyHandler(
   };
 }
 
+/** Temp folders made by `fixture`, which the tests still read, removed once they have all run. */
+const fixtureDirectories = [];
+after(() => Promise.all(fixtureDirectories.map((directory) => rm(directory, { recursive: true, force: true }))));
+
 async function fixture(base, mrpFiles = { [`${policyA}-1`]: 'orig-guid' }) {
   const directory = await mkdtemp(join(tmpdir(), 'quote-guid-'));
+  fixtureDirectories.push(directory);
   for (const [basename, artemisQuoteGuid] of Object.entries(mrpFiles)) {
     await writeFile(join(directory, `${basename}-mrp.json`), JSON.stringify({ artemisQuoteGuid }));
   }
@@ -165,9 +170,10 @@ async function readMapping(directory) {
 }
 
 describe('readQuoteGuidList', () => {
-  test('returns uppercase GUIDs and skips blank lines', async () => {
+  test('returns uppercase GUIDs and skips blank lines', async (context) => {
     // arrange
     const directory = await mkdtemp(join(tmpdir(), 'quote-guid-list-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
     const path = join(directory, 'quoteGuids.txt');
     await writeFile(path, `${policyA.toLowerCase()}\r\n\n  ${policyB}  \n`);
 
@@ -178,9 +184,10 @@ describe('readQuoteGuidList', () => {
     assert.deepEqual(guids, [policyA, policyB]);
   });
 
-  test('rejects a line that is not a dashless UUID', async () => {
+  test('rejects a line that is not a dashless UUID', async (context) => {
     // arrange
     const directory = await mkdtemp(join(tmpdir(), 'quote-guid-list-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
     const path = join(directory, 'quoteGuids.txt');
     await writeFile(path, `${policyA}\nnot-a-guid\n`);
 
@@ -322,9 +329,11 @@ describe('requestQuoteGuid', () => {
 });
 
 describe('quote GUID mapping file', () => {
-  test('reads a missing file as an empty mapping', async () => {
+  test('reads a missing file as an empty mapping', async (context) => {
     // arrange
-    const path = join(await mkdtemp(join(tmpdir(), 'quote-guid-map-')), 'mapping.json');
+    const directory = await mkdtemp(join(tmpdir(), 'quote-guid-map-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'mapping.json');
 
     // act
     const mapping = await readQuoteGuidMapping(path);
@@ -333,9 +342,11 @@ describe('quote GUID mapping file', () => {
     assert.deepEqual(mapping, {});
   });
 
-  test('saves new entries alongside existing ones', async () => {
+  test('saves new entries alongside existing ones', async (context) => {
     // arrange
-    const path = join(await mkdtemp(join(tmpdir(), 'quote-guid-map-')), 'mapping.json');
+    const directory = await mkdtemp(join(tmpdir(), 'quote-guid-map-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'mapping.json');
     await writeFile(path, JSON.stringify({ first: 'one' }));
 
     // act
@@ -350,9 +361,11 @@ describe('quote GUID mapping file', () => {
     ['null', 'null'],
     ['a non-string value', '{"a":1}']
   ]) {
-    test(`rejects ${name}`, async () => {
+    test(`rejects ${name}`, async (context) => {
       // arrange
-      const path = join(await mkdtemp(join(tmpdir(), 'quote-guid-map-')), 'mapping.json');
+      const directory = await mkdtemp(join(tmpdir(), 'quote-guid-map-'));
+      context.after(() => rm(directory, { recursive: true, force: true }));
+      const path = join(directory, 'mapping.json');
       await writeFile(path, content);
 
       // act
@@ -363,9 +376,11 @@ describe('quote GUID mapping file', () => {
     });
   }
 
-  test('keeps every entry when many are saved at once', async () => {
+  test('keeps every entry when many are saved at once', async (context) => {
     // arrange
-    const path = join(await mkdtemp(join(tmpdir(), 'quote-guid-map-')), 'mapping.json');
+    const directory = await mkdtemp(join(tmpdir(), 'quote-guid-map-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'mapping.json');
     const entries = Array.from({ length: 20 }, (_, index) => [`original-${index}`, `replacement-${index}`]);
 
     // act
@@ -376,9 +391,11 @@ describe('quote GUID mapping file', () => {
     assert.deepEqual(await readdir(dirname(path)), ['mapping.json']);
   });
 
-  test('reads and saves made at the same time all succeed and keep every entry', async () => {
+  test('reads and saves made at the same time all succeed and keep every entry', async (context) => {
     // arrange
-    const path = join(await mkdtemp(join(tmpdir(), 'quote-guid-map-')), 'mapping.json');
+    const directory = await mkdtemp(join(tmpdir(), 'quote-guid-map-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'mapping.json');
     await saveQuoteGuidMapping(path, 'first', 'one');
 
     // act

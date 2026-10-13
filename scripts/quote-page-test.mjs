@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -22,11 +22,13 @@ const server = createServer((request, response) => {
   );
   const html = `<!doctype html><html><body>${request.url.startsWith('/tcas/') ? journey : quoteSummaryHtml}</body></html>`;
   if (request.url.startsWith('/nhi/') && !tcasRequested) {
-    // A sequential implementation cannot reach TCAS before this NHI response.
+    // A sequential implementation cannot reach TCAS before this NHI response, so it never ends this wait early: it
+    // gets the 503 below (well inside the 30 s default step timeout) and fails, however long the window is. The window
+    // only needs to outlast how long a concurrent run takes to request TCAS, so it is generous to cope with load.
     const timer = setTimeout(() => {
       response.writeHead(503);
       response.end('TCAS did not start concurrently');
-    }, 5000);
+    }, 20000);
     finishNhi = () => {
       clearTimeout(timer);
       response.end(html);
@@ -42,8 +44,8 @@ const server = createServer((request, response) => {
   response.end(html);
 });
 await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+const directory = await mkdtemp(join(tmpdir(), 'quote-page-'));
 try {
-  const directory = await mkdtemp(join(tmpdir(), 'quote-page-'));
   await mkdir(join(directory, 'mrp'));
   await writeFile(
     join(directory, 'mrp', 'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'),
@@ -126,4 +128,5 @@ try {
 } finally {
   server.closeAllConnections();
   await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+  await rm(directory, { recursive: true, force: true });
 }

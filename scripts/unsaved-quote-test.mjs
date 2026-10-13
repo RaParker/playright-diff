@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -469,6 +469,7 @@ for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of
     });
     await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
     const directory = await mkdtemp(join(tmpdir(), 'unsaved-quote-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
     try {
       // act
       const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {
@@ -526,6 +527,7 @@ async function captureUnsavedQuote(html) {
   } finally {
     server.closeAllConnections();
     await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+    await rm(directory, { recursive: true, force: true });
   }
 }
 

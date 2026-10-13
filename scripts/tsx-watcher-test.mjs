@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -9,13 +9,17 @@ import { declinedPageHtml } from './unsaved-journey-html.mjs';
 
 // The npm scripts run the TypeScript source through tsx, which rewrites named functions; the page watcher must
 // still work there, not only in the compiled dist/ code the other tests use.
-const timeoutMilliseconds = 8000;
+// The capture's --wait and --timeout: without the watcher, the run would last at least this long.
+const waitMilliseconds = 60000;
+// How soon the run must stop: generous for starting tsx and the browser under parallel test load, yet well short of
+// the wait, so passing still proves the watcher stopped the capture rather than the wait running out.
+const stopWithinMilliseconds = 20000;
 
 for (const [name, finalHtml, expected] of [
   ['an Oops that appears after the page loads', '<h2>Oops</h2>', /Website displayed <h2>Oops<\/h2>/],
   ['a decline that appears after the page loads', declinedPageHtml, /Website declined the quote/]
 ]) {
-  test(`page watcher under tsx stops at once on ${name}`, async () => {
+  test(`page watcher under tsx stops at once on ${name}`, async (context) => {
     // arrange
     const server = createServer((_request, response) => {
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -27,6 +31,7 @@ for (const [name, finalHtml, expected] of [
     });
     await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
     const directory = await mkdtemp(join(tmpdir(), 'tsx-watcher-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
     try {
       const started = performance.now();
 
@@ -42,9 +47,9 @@ for (const [name, finalHtml, expected] of [
           '--output',
           join(directory, 'page.png'),
           '--wait',
-          String(timeoutMilliseconds),
+          String(waitMilliseconds),
           '--timeout',
-          String(timeoutMilliseconds)
+          String(waitMilliseconds)
         ],
         { cwd: resolve('.') }
       );
@@ -59,7 +64,7 @@ for (const [name, finalHtml, expected] of [
       // assert
       assert.notEqual(code, 0, output);
       assert.match(output, expected);
-      assert.ok(performance.now() - started < timeoutMilliseconds, `stopped only after the wait: ${output}`);
+      assert.ok(performance.now() - started < stopWithinMilliseconds, `stopped only after the wait: ${output}`);
     } finally {
       server.closeAllConnections();
       await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));

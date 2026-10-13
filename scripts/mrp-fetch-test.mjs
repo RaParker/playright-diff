@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
-import { describe, test } from 'node:test';
+import { after, describe, test } from 'node:test';
 import { mrpFetchEnvironment, prefetchMissingMrpFiles, reportMissingMrpFiles } from '../dist/mrp-fetch.js';
 
 const policyA = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
@@ -12,12 +12,17 @@ const policyD = 'DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD';
 const unlistedPolicy = 'EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE';
 const guidList = [policyA, policyB, policyC, policyD];
 
+/** Temp folders made by `createOutputDir`, which the tests still read, removed once they have all run. */
+const projectDirs = [];
+after(() => Promise.all(projectDirs.map((projectDir) => rm(projectDir, { recursive: true, force: true }))));
+
 /**
  * Creates an mrp-and-quote project folder (with a go.mod unless `goModule` is false) whose output folder holds
  * `-1-mrp.json` files for the given policies.
  */
 async function createOutputDir(fetchedPolicies, goModule = true) {
   const projectDir = await mkdtemp(join(tmpdir(), 'mrp-fetch-'));
+  projectDirs.push(projectDir);
   const outputDir = join(projectDir, 'output');
   await mkdir(outputDir);
   if (goModule) {
@@ -130,10 +135,11 @@ describe('prefetchMissingMrpFiles', () => {
     await assert.doesNotReject(prefetch);
   });
 
-  test('fetches in the given project folder into an output folder outside it', async () => {
+  test('fetches in the given project folder into an output folder outside it', async (context) => {
     // arrange
     const { projectDir } = await createOutputDir([]);
     const outputDir = await mkdtemp(join(tmpdir(), 'mrp-output-'));
+    context.after(() => rm(outputDir, { recursive: true, force: true }));
     await writeFile(join(outputDir, `${policyA}-1-mrp.json`), '{}');
     const { calls, runner } = recordingRunner();
 

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { describe, test } from 'node:test';
+import { after, describe, test } from 'node:test';
 import { readQuoteResult, writeQuoteResult } from '../dist/quote-result.js';
 import {
   collectGuidListStatus,
@@ -65,9 +65,14 @@ async function writeReport(root, name, { changedPixels = 0, afterHeight = 100, r
   );
 }
 
+/** Temp folders made by `projectFixture`, which the tests still read, removed once they have all run. */
+const fixtureDirectories = [];
+after(() => Promise.all(fixtureDirectories.map((directory) => rm(directory, { recursive: true, force: true }))));
+
 /** A project folder with one policy of each kind, an OCR cache, a run-<timestamp> report and Oops pages. */
 async function projectFixture() {
   const directory = await mkdtemp(join(tmpdir(), 'summarise-'));
+  fixtureDirectories.push(directory);
   const comparisons = join(directory, 'comparisons');
   await writeReport(comparisons, `${identicalPolicy}-1`);
   await writeReport(comparisons, `${textPolicy}-1`, {
@@ -136,9 +141,10 @@ async function runCli(directory, args, env = {}) {
 }
 
 describe('quote result file', () => {
-  test('reads back what was written', async () => {
+  test('reads back what was written', async (context) => {
     // arrange
     const root = await mkdtemp(join(tmpdir(), 'quote-result-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
     const result = failedResult(failedPolicy, ['first', 'second'], true);
 
     // act
@@ -148,9 +154,10 @@ describe('quote result file', () => {
     assert.deepEqual(await readQuoteResult(join(root, `${failedPolicy}-1`)), result);
   });
 
-  test('reads a folder without a result as undefined', async () => {
+  test('reads a folder without a result as undefined', async (context) => {
     // arrange
     const root = await mkdtemp(join(tmpdir(), 'quote-result-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
 
     // act
     const result = await readQuoteResult(root);
@@ -159,9 +166,10 @@ describe('quote result file', () => {
     assert.equal(result, undefined);
   });
 
-  test('rejects a result cut short, naming the file', async () => {
+  test('rejects a result cut short, naming the file', async (context) => {
     // arrange
     const root = await mkdtemp(join(tmpdir(), 'quote-result-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
     const path = join(root, 'result.json');
     await writeFile(path, '{"policyDetailsId": "ABC", "histo');
 
@@ -182,9 +190,10 @@ describe('quote result file', () => {
     ['non-string issues', { ...failedResult(failedPolicy, []), issues: [1] }],
     ['a missing finishedAt', { ...failedResult(failedPolicy, []), finishedAt: undefined }]
   ]) {
-    test(`rejects ${name}`, async () => {
+    test(`rejects ${name}`, async (context) => {
       // arrange
       const root = await mkdtemp(join(tmpdir(), 'quote-result-'));
+      context.after(() => rm(root, { recursive: true, force: true }));
       await writeFile(join(root, 'result.json'), JSON.stringify(content));
 
       // act
@@ -320,9 +329,10 @@ describe('collectQuoteResults', () => {
     ]);
   });
 
-  test('does not flag a side with no text, such as a region below the end of the shorter page', async () => {
+  test('does not flag a side with no text, such as a region below the end of the shorter page', async (context) => {
     // arrange
     const root = await mkdtemp(join(tmpdir(), 'summarise-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
     await writeReport(root, `${textPolicy}-1`, {
       changedPixels: 10,
       afterHeight: 120,
@@ -338,9 +348,10 @@ describe('collectQuoteResults', () => {
     ]);
   });
 
-  test('flags a side whose text has no OCR confidence', async () => {
+  test('flags a side whose text has no OCR confidence', async (context) => {
     // arrange
     const root = await mkdtemp(join(tmpdir(), 'summarise-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
     await writeReport(root, `${textPolicy}-1`, { changedPixels: 10, regions: [region(1, 'Old', 'New', [null, 90])] });
 
     // act
@@ -363,9 +374,11 @@ describe('collectQuoteResults', () => {
     assert.deepEqual(policy.textDifferences, []);
   });
 
-  test('returns nothing for a missing folder', async () => {
+  test('returns nothing for a missing folder', async (context) => {
     // arrange
-    const root = join(await mkdtemp(join(tmpdir(), 'summarise-')), 'missing');
+    const directory = await mkdtemp(join(tmpdir(), 'summarise-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const root = join(directory, 'missing');
 
     // act
     const summary = await collectQuoteResults(root);
@@ -441,9 +454,10 @@ describe('listDifferentPolicies', () => {
     ]);
   });
 
-  test('takes the history ID from the folder name', async () => {
+  test('takes the history ID from the folder name', async (context) => {
     // arrange
     const root = await mkdtemp(join(tmpdir(), 'summarise-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
     await writeReport(root, `${textPolicy}-42`, { changedPixels: 1 });
     const summary = await collectQuoteResults(root);
 
@@ -623,9 +637,10 @@ describe('summarise command', () => {
     assert.doesNotMatch(output, /Modes:/);
   });
 
-  test('shows help', async () => {
+  test('shows help', async (context) => {
     // arrange
     const directory = await mkdtemp(join(tmpdir(), 'summarise-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
 
     // act
     const { code, output } = await runCli(directory, ['summarise', '--help']);

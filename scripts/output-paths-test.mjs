@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, test } from 'node:test';
@@ -27,9 +27,10 @@ describe('outputPath', () => {
     });
   }
 
-  test('writes quote results into comparisons under the configured output folder', async () => {
+  test('writes quote results into comparisons under the configured output folder', async (context) => {
     // arrange
     const root = await mkdtemp(join(tmpdir(), 'output-paths-test-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
     setOutputRoot(root);
     const result = {
       policyDetailsId: 'ABCDEF1234567890ABCDEF1234567890',

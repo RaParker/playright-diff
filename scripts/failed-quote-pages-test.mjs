@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
@@ -8,9 +8,11 @@ import { readFailedQuotePages, writeFailedQuotePages } from '../dist/failed-quot
 const policyA = 'ABCDEF1234567890ABCDEF1234567890';
 
 describe('failed quote pages file', () => {
-  test('reads back what was written', async () => {
+  test('reads back what was written', async (context) => {
     // arrange
-    const path = join(await mkdtemp(join(tmpdir(), 'failed-quote-pages-')), 'failed.json');
+    const directory = await mkdtemp(join(tmpdir(), 'failed-quote-pages-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'failed.json');
     const failures = { historyId: 1, failed: [{ policyDetailsId: policyA, issues: ['first', 'second'] }] };
 
     // act
@@ -25,9 +27,11 @@ describe('failed quote pages file', () => {
     ['an existing file', true],
     ['no existing file', false]
   ]) {
-    test(`deletes the file when nothing failed, given ${name}`, async () => {
+    test(`deletes the file when nothing failed, given ${name}`, async (context) => {
       // arrange
-      const path = join(await mkdtemp(join(tmpdir(), 'failed-quote-pages-')), 'failed.json');
+      const directory = await mkdtemp(join(tmpdir(), 'failed-quote-pages-'));
+      context.after(() => rm(directory, { recursive: true, force: true }));
+      const path = join(directory, 'failed.json');
       if (existing) {
         await writeFailedQuotePages(path, { historyId: 1, failed: [{ policyDetailsId: policyA, issues: [] }] });
       }
@@ -40,9 +44,11 @@ describe('failed quote pages file', () => {
     });
   }
 
-  test('reads a missing file as undefined', async () => {
+  test('reads a missing file as undefined', async (context) => {
     // arrange
-    const path = join(await mkdtemp(join(tmpdir(), 'failed-quote-pages-')), 'missing.json');
+    const directory = await mkdtemp(join(tmpdir(), 'failed-quote-pages-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'missing.json');
 
     // act
     const saved = await readFailedQuotePages(path);
@@ -51,9 +57,11 @@ describe('failed quote pages file', () => {
     assert.equal(saved, undefined);
   });
 
-  test('uppercases policy details IDs', async () => {
+  test('uppercases policy details IDs', async (context) => {
     // arrange
-    const path = join(await mkdtemp(join(tmpdir(), 'failed-quote-pages-')), 'failed.json');
+    const directory = await mkdtemp(join(tmpdir(), 'failed-quote-pages-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'failed.json');
     await writeFile(
       path,
       JSON.stringify({ historyId: 2, failed: [{ policyDetailsId: policyA.toLowerCase(), issues: [] }] })
@@ -74,9 +82,11 @@ describe('failed quote pages file', () => {
     ['an invalid policy details ID', { historyId: 1, failed: [{ policyDetailsId: 'not-a-guid', issues: [] }] }],
     ['non-string issues', { historyId: 1, failed: [{ policyDetailsId: policyA, issues: [1] }] }]
   ]) {
-    test(`rejects ${name}`, async () => {
+    test(`rejects ${name}`, async (context) => {
       // arrange
-      const path = join(await mkdtemp(join(tmpdir(), 'failed-quote-pages-')), 'failed.json');
+      const directory = await mkdtemp(join(tmpdir(), 'failed-quote-pages-'));
+      context.after(() => rm(directory, { recursive: true, force: true }));
+      const path = join(directory, 'failed.json');
       await writeFile(path, JSON.stringify(content));
 
       // act

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
@@ -236,36 +236,39 @@ const validationCases = new Set([
 /** Cases that time out on an unexpected page (no loading screen shown), which keep that error class. */
 const unexpectedPageCases = new Set(['missing welcome heading']);
 
-test('Oops appearing during capture cannot produce a normal screenshot', async () => {
+test('Oops appearing during capture cannot produce a normal screenshot', async (context) => {
+  // arrange
   const server = createServer((_request, response) => {
     response.setHeader('Content-Type', 'text/html');
     response.end('<h2>Quote ready</h2>');
   });
   await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   const directory = await mkdtemp(join(tmpdir(), 'oops-capture-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
   try {
-    await assert.rejects(
-      screenshot(`http://127.0.0.1:${server.address().port}`, {
-        output: join(directory, 'quote.png'),
-        wait: 0,
-        timeout: 1000,
-        beforeCapture: async (page) => {
-          // Exercise the direct check even if observer notification is unavailable.
+    // act
+    const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {
+      output: join(directory, 'quote.png'),
+      wait: 0,
+      timeout: 1000,
+      beforeCapture: async (page) => {
+        // Exercise the direct check even if observer notification is unavailable.
+        await page.evaluate(() => {
+          window.__stopOnOops = async () => undefined;
+        });
+        const capture = page.screenshot.bind(page);
+        page.screenshot = async (options) => {
+          const image = await capture(options);
           await page.evaluate(() => {
-            window.__stopOnOops = async () => undefined;
+            document.body.innerHTML = '<h2>Oops</h2>';
           });
-          const capture = page.screenshot.bind(page);
-          page.screenshot = async (options) => {
-            const image = await capture(options);
-            await page.evaluate(() => {
-              document.body.innerHTML = '<h2>Oops</h2>';
-            });
-            return image;
-          };
-        }
-      }),
-      /Website displayed <h2>Oops<\/h2>/
-    );
+          return image;
+        };
+      }
+    });
+
+    // assert
+    await assert.rejects(capture, /Website displayed <h2>Oops<\/h2>/);
     assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
   } finally {
     server.closeAllConnections();
@@ -273,7 +276,7 @@ test('Oops appearing during capture cannot produce a normal screenshot', async (
   }
 });
 
-test('a page that closes keeps the error that stopped the capture', async () => {
+test('a page that closes keeps the error that stopped the capture', async (context) => {
   // arrange
   const server = createServer((_request, response) => {
     response.setHeader('Content-Type', 'text/html');
@@ -281,6 +284,7 @@ test('a page that closes keeps the error that stopped the capture', async () => 
   });
   await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   const directory = await mkdtemp(join(tmpdir(), 'closed-capture-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
   try {
     // act
     const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {
@@ -303,7 +307,8 @@ test('a page that closes keeps the error that stopped the capture', async () => 
 
 for (const loading of ['<h2>Loading your quote</h2>', '<div class="hp-loading-widget-screen"></div>']) {
   for (const completes of [true, false]) {
-    test(`shared capture loading: ${loading}, completes: ${completes}`, async () => {
+    test(`shared capture loading: ${loading}, completes: ${completes}`, async (context) => {
+      // arrange
       const server = createServer((_request, response) => {
         response.setHeader('Content-Type', 'text/html');
         response.end(
@@ -312,12 +317,16 @@ for (const loading of ['<h2>Loading your quote</h2>', '<div class="hp-loading-wi
       });
       await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
       const directory = await mkdtemp(join(tmpdir(), 'loading-quote-'));
+      context.after(() => rm(directory, { recursive: true, force: true }));
       try {
+        // act
         const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {
           output: join(directory, 'quote.png'),
           wait: 0,
           timeout: 1000
         });
+
+        // assert
         if (completes) {
           await capture;
           const png = await readFile(join(directory, 'quote.png'));
@@ -336,6 +345,7 @@ for (const loading of ['<h2>Loading your quote</h2>', '<div class="hp-loading-wi
 
 for (const [name, html, expectedError, expectedLogs = []] of cases) {
   test(`TCAS journey: ${name}`, async (context) => {
+    // arrange
     const log = context.mock.method(console, 'log');
     const server = createServer((_request, response) => {
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -343,13 +353,17 @@ for (const [name, html, expectedError, expectedLogs = []] of cases) {
     });
     await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
     const directory = await mkdtemp(join(tmpdir(), 'tcas-journey-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
     try {
+      // act
       const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {
         output: join(directory, 'quote.png'),
         wait: 0,
         timeout: 1000,
         beforeCapture: tcasQuote
       });
+
+      // assert
       if (expectedError === undefined) {
         await capture;
         assert.deepEqual(await readdir(directory), ['quote.png']);

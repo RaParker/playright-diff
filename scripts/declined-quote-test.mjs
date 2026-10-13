@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,7 +24,7 @@ for (const [name, html, beforeCapture, expectedDeclined] of [
     false
   ]
 ]) {
-  test(`declined quote: ${name}`, async () => {
+  test(`declined quote: ${name}`, async (context) => {
     // arrange
     const server = createServer((_request, response) => {
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -32,6 +32,7 @@ for (const [name, html, beforeCapture, expectedDeclined] of [
     });
     await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
     const directory = await mkdtemp(join(tmpdir(), 'declined-quote-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
     try {
       // act
       const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {
@@ -57,7 +58,7 @@ for (const [name, html, beforeCapture, expectedDeclined] of [
   });
 }
 
-test('failure HTML is the rendered DOM, not the served source', async () => {
+test('failure HTML is the rendered DOM, not the served source', async (context) => {
   // arrange
   const server = createServer((_request, response) => {
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -65,6 +66,7 @@ test('failure HTML is the rendered DOM, not the served source', async () => {
   });
   await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   const directory = await mkdtemp(join(tmpdir(), 'declined-quote-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
   try {
     // act
     const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {

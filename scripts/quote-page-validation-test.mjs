@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { quoteSummaryHtml } from './unsaved-journey-html.mjs';
 
 const script = resolve('dist/main.js');
@@ -20,8 +20,13 @@ const settings = [
   'QUOTE_JOURNEY_CALL_MEDIA_USER'
 ];
 
+/** Temp folders made by `fixture`, which the tests still read, removed once they have all run. */
+const fixtureDirectories = [];
+after(() => Promise.all(fixtureDirectories.map((directory) => rm(directory, { recursive: true, force: true }))));
+
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'quote-validation-'));
+  fixtureDirectories.push(directory);
   await writeFile(
     join(directory, 'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'),
     JSON.stringify({ artemisQuoteGuid: 'guid' })
@@ -77,8 +82,13 @@ const cases = [
 ];
 for (const [name, args, expected] of cases) {
   test(`quote-page rejects ${name} before writing output`, async () => {
+    // arrange
     const { directory, env } = await fixture();
+
+    // act
     const result = await run(directory, env, args);
+
+    // assert
     assert.notEqual(result.code, 0);
     assert.match(result.output, expected);
     assert.deepEqual(await readdir(directory), ['ABCDEF1234567890ABCDEF1234567890-42-mrp.json']);
@@ -118,9 +128,14 @@ test('quote-page reports its own error when the result cannot be saved', async (
 
 for (const name of settings) {
   test(`quote-page reports missing ${name}`, async () => {
+    // arrange
     const { directory, env } = await fixture();
     delete env[name];
+
+    // act
     const result = await run(directory, env);
+
+    // assert
     assert.notEqual(result.code, 0);
     assert.ok(result.output.includes(`${name} must be configured`));
     assert.deepEqual(await readdir(directory), ['ABCDEF1234567890ABCDEF1234567890-42-mrp.json']);
@@ -136,9 +151,14 @@ for (const [name, content, expected] of [
   ['blank GUID', '{"artemisQuoteGuid":"  "}', /non-empty string/]
 ]) {
   test(`quote-page rejects ${name}`, async () => {
+    // arrange
     const { directory, env } = await fixture();
     await writeFile(join(directory, 'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'), content);
+
+    // act
     const result = await run(directory, env);
+
+    // assert
     assert.notEqual(result.code, 0);
     assert.match(result.output, expected);
     // Only the failed result is saved; no screenshots are taken.
@@ -162,9 +182,14 @@ for (const [name, template, expected, setting = 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_UR
   ]
 ]) {
   test(`quote-page rejects ${name} in ${setting}`, async () => {
+    // arrange
     const { directory, env } = await fixture();
     env[setting] = template;
+
+    // act
     const result = await run(directory, env);
+
+    // assert
     assert.notEqual(result.code, 0);
     assert.match(result.output, expected);
     // Only the failed result is saved; no screenshots are taken.
@@ -177,18 +202,23 @@ for (const [name, template, expected, setting = 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_UR
 }
 
 test('quote-page help works without configuration', async () => {
+  // arrange
   const { directory, env } = await fixture();
   for (const name of settings) {
     delete env[name];
   }
 
+  // act
   const result = await run(directory, env, ['--help']);
+
+  // assert
   assert.equal(result.code, 0, result.output);
   assert.match(result.output, /Usage:/);
 });
 
 for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].map((delayed) => [flow, delayed]))) {
   test(`quote-page skips comparison on ${flow} Oops (delayed: ${delayed})`, async () => {
+    // arrange
     const { directory, env } = await fixture();
     const requests = [];
     const server = createServer((request, response) => {
@@ -209,7 +239,11 @@ for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].ma
       const base = `http://127.0.0.1:${server.address().port}`;
       env.QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE = `${base}/nhi/{artemisQuoteGuid}`;
       env.QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE = `${base}/tcas/{policyDetailsId}/{historyId}`;
+
+      // act
       const result = await run(directory, env);
+
+      // assert
       assert.notEqual(result.code, 0);
       assert.match(result.output, /Website displayed <h2>Oops<\/h2>/);
       assert.equal(
@@ -237,6 +271,7 @@ for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].ma
 }
 
 test('quote-page stops after an HTTP failure and respects environment over .env', async () => {
+  // arrange
   const { directory, env } = await fixture();
   const requests = [];
   const server = createServer((request, response) => {
@@ -250,7 +285,11 @@ test('quote-page stops after an HTTP failure and respects environment over .env'
     env.QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE = `${base}/nhi/{artemisQuoteGuid}`;
     env.QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE = `${base}/tcas/{policyDetailsId}/{historyId}`;
     await writeFile(join(directory, '.env'), 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=invalid');
+
+    // act
     const result = await run(directory, env);
+
+    // assert
     assert.notEqual(result.code, 0);
     assert.match(result.output, /HTTP 503/);
     assert.ok(requests.includes('/nhi/guid'));
