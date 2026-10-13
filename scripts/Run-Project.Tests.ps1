@@ -5,10 +5,17 @@ BeforeAll {
     $script:projectRoot = Split-Path $script:runProject
     $script:cli = 'node node_modules/tsx/dist/cli.mjs src/main.ts'
 
-    # Runs the wrapper in a child pwsh so its exit code and host output can be checked.
+    # Runs the wrapper in a child pwsh from the project folder, so its exit code and host output can be checked. The
+    # folder is restored even when the run throws, so one failing test cannot change the folder the next one runs in.
     function Invoke-RunProject([string[]]$arguments) {
-        $output = pwsh -NoProfile -NonInteractive -File $script:runProject @arguments 2>&1 | Out-String
-        return [pscustomobject]@{ Output = $output; ExitCode = $LASTEXITCODE }
+        Push-Location $script:projectRoot
+        try {
+            $output = pwsh -NoProfile -NonInteractive -File $script:runProject @arguments 2>&1 | Out-String
+            return [pscustomobject]@{ Output = $output; ExitCode = $LASTEXITCODE }
+        }
+        finally {
+            Pop-Location
+        }
     }
 }
 
@@ -46,21 +53,24 @@ Describe 'Run-Project.ps1 command lines' {
 
         @{ Name = 'summarize is an alias for summarise'; Arguments = @('-Summarize'); Expected = '{cli} summarise' }
 
+        @{ Name = 'summarise passes the differences mode'; Arguments = @('-Summarise', '-Mode', 'differences'); Expected = '{cli} summarise differences' }
+
+        @{ Name = 'summarise passes the changed-answers mode'; Arguments = @('-Summarise', '-Mode', 'changed-answers'); Expected = '{cli} summarise changed-answers' }
+
         @{ Name = 'npm task runs its npm script'; Arguments = @('-Task', 'TestQuotePage'); Expected = 'npm run test:quote-page' }
 
         @{ Name = 'Verify task runs VerifyProject.ps1'; Arguments = @('-Task', 'Verify'); Expected = '{root}\VerifyProject.ps1' }
     ) {
         # arrange
-        Push-Location $script:projectRoot
         $expectedCommand = $Expected.Replace('{cli}', $script:cli).Replace('{root}', $script:projectRoot)
 
         # act
         $result = Invoke-RunProject ($Arguments + '-WhatIf')
-        Pop-Location
 
         # assert
         $result.ExitCode | Should -Be 0
-        $result.Output | Should -BeLike "*on target `"$expectedCommand`"*"
+        # A plain substring check: -BeLike would read the ? and [ in URLs and paths as wildcards.
+        $result.Output.Contains("on target `"$expectedCommand`"") | Should -BeTrue -Because $result.Output
     }
 }
 
@@ -91,13 +101,16 @@ Describe 'Run-Project.ps1 validation' {
         @{ Name = 'Concurrency with QuotePage'; Arguments = @('-QuotePage', '-PolicyDetailsId', 'ABCDEF1234567890ABCDEF1234567890', '-HistoryId', '1', '-Concurrency', '2'); Message = '*Parameter set cannot be resolved*' }
 
         @{ Name = 'an unknown task'; Arguments = @('-Task', 'Deploy'); Message = "*parameter 'Task'*" }
+
+        @{ Name = 'an unknown summarise mode'; Arguments = @('-Summarise', '-Mode', 'everything'); Message = "*parameter 'Mode'*" }
+
+        @{ Name = 'Mode without Summarise'; Arguments = @('-RetryFailed', '-Mode', 'differences'); Message = '*Parameter set cannot be resolved*' }
     ) {
         # arrange
-        Push-Location $script:projectRoot
+        $arguments = $Arguments + '-WhatIf'
 
         # act
-        $result = Invoke-RunProject ($Arguments + '-WhatIf')
-        Pop-Location
+        $result = Invoke-RunProject $arguments
 
         # assert
         $result.ExitCode | Should -Not -Be 0
@@ -106,11 +119,10 @@ Describe 'Run-Project.ps1 validation' {
 
     It 'shows help and succeeds when called with no arguments' {
         # arrange
-        Push-Location $script:projectRoot
+        $arguments = @()
 
         # act
-        $result = Invoke-RunProject @()
-        Pop-Location
+        $result = Invoke-RunProject $arguments
 
         # assert
         $result.ExitCode | Should -Be 0

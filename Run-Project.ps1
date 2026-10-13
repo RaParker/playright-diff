@@ -83,6 +83,10 @@ quote-pages-failed.json untouched.
 Summarise every comparisons folder: differences and their text, failures and their reasons, MRP records not
 retrieved, and totals including the GUID list size and Oops pages. Alias: -Summarize.
 
+.PARAMETER Mode
+Summarise only: differences (only the policies whose screenshots differed) or changed-answers (combine and count
+every policy's answer changes). Without it, the full summary is shown.
+
 .PARAMETER NoOcr
 Compare pixels without extracting text.
 
@@ -123,6 +127,9 @@ Test (all suites), TestCompare, TestQuotePage or Verify (VerifyProject.ps1).
 
 .EXAMPLE
 ./Run-Project.ps1 -Summarise
+
+.EXAMPLE
+./Run-Project.ps1 -Summarise -Mode changed-answers
 
 .EXAMPLE
 ./Run-Project.ps1 -Task Verify
@@ -212,6 +219,10 @@ param(
     [Parameter(Mandatory, ParameterSetName = 'Summarise')]
     [Alias('Summarize')]
     [switch]$Summarise,
+
+    [Parameter(ParameterSetName = 'Summarise')]
+    [ValidateSet('differences', 'changed-answers')]
+    [string]$Mode,
 
     [Parameter(ParameterSetName = 'Compare')]
     [Parameter(ParameterSetName = 'QuotePage')]
@@ -312,7 +323,12 @@ function Get-CliArguments {
         }
 
         'Summarise' {
-            return @('summarise')
+            $arguments = @('summarise')
+            if ($Mode) {
+                $arguments += $Mode
+            }
+
+            return $arguments
         }
     }
 }

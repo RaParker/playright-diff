@@ -58,6 +58,7 @@ running it; with no arguments it shows its help (`Get-Help ./Run-Project.ps1 -Ex
 ./Run-Project.ps1 -RetryFailed
 ./Run-Project.ps1 -RetryDifferent
 ./Run-Project.ps1 -Summarise                                     # or -Summarize
+./Run-Project.ps1 -Summarise -Mode changed-answers               # or -Mode differences
 ./Run-Project.ps1 -Task Verify   # Install, InstallBrowser, Build, Typecheck, Lint, Test,
                                  # TestCompare, TestQuotePage, Verify
 ```
@@ -385,9 +386,13 @@ output folder's parent) and `QUOTE_PAGE_TIMEOUT`. `screenshots/` and `comparison
 README (including defaults and the OCR cache) are inside `DIFF_OUTPUT_DIR` when it is set; paths
 you pass yourself, such as `--output`, are not. `quote-guid-mapping.json` and
 `quote-pages-failed.json` always stay in the current working directory. `QUOTE_PAGE_TIMEOUT` is a whole number with an
-optional `s`, `m`, `h` or `d` suffix (milliseconds without one), from 1 ms to 8 hours, as
-`intervalToMs` in `@avantia/client-and-server-utilities` reads it. It is how long each page load,
-click and wait for the next page may take; quote loading screens get twice as long. `summarise` also reads `QUOTE_GUID_LIST_PATH` and
+optional `s`, `m`, `h` or `d` suffix (milliseconds without one), from 1 ms to 8 hours, matching
+how `intervalToMs` in `@avantia/client-and-server-utilities` reads it (`src/interval.ts` is this
+project's own copy). It is how long each page load, click and wait for the next page may take;
+quote loading screens get twice as long, and a wait that is still on a loading screen when it
+runs out is tried once more, so a slow quote can take up to three times as long in all. Set
+`NO_COLOR` to any value to print the logs without colours, for example when saving them to a
+file. `summarise` also reads `QUOTE_GUID_LIST_PATH` and
 `MRP_AND_QUOTE_OUTPUT_DIR`, but both are optional there (see [summarise](#summarise)).
 
 Rules:

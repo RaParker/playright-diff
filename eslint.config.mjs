@@ -22,16 +22,15 @@ export default defineConfig([
     extends: compat.extends('eslint:recommended', 'plugin:prettier/recommended'),
     plugins: { prettier },
     languageOptions: {
+      // Node for the scripts themselves; browser for the code they run in pages. Tests use node:test, not Jest.
       globals: {
         ...globals.browser,
-        ...globals.jasmine,
-        ...globals.jest,
         ...globals.node
       }
     }
   },
   {
-    files: ['src/**/*.ts', 'src/**/*.tsx', 'server/**/*.ts', 'setup/**/*.ts'],
+    files: ['src/**/*.ts'],
     extends: compat.extends(
       'eslint:recommended',
       'plugin:@typescript-eslint/recommended',
@@ -42,10 +41,9 @@ export default defineConfig([
       prettier
     },
     languageOptions: {
+      // Browser for the functions run in pages (page.evaluate); Node's types come from the TypeScript project.
       globals: {
-        ...globals.browser,
-        ...globals.jasmine,
-        ...globals.jest
+        ...globals.browser
       },
       parser: tsParser,
       parserOptions: { projectService: true, tsconfigRootDir: __dirname }
