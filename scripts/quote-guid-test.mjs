@@ -847,7 +847,7 @@ ${policyB}
   for (const [name, args, expected] of [
     ['an unknown GUID', [policyB], /No entry in the GUID list matches/],
     ['an invalid selector', ['ten'], /neither a non-negative maxCount/],
-    ['extra arguments', ['1', '2'], /Usage: npm run quote-pages/]
+    ['extra arguments', ['1', '2'], /quote-pages takes at most one argument \(got 1 2\)\.\nUsage: npm run quote-pages/]
   ]) {
     test(`rejects ${name}`, async () => {
       // arrange

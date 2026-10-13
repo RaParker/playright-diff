@@ -43,38 +43,70 @@ const quoteHelp = `Usage: npm run quote-page -- <policyDetailsId> <historyId> [o
   --no-ocr       Compare pixels without extracting text
   -h, --help     Show help`;
 
-const quotePagesHelp = `Usage: npm run quote-pages -- [maxCount|guid|retry-failed|retry-different] [options]
-Runs quote-page with historyId 1 for each GUID in QUOTE_GUID_LIST_PATH
-(default: the first 250; maxCount limits the count; guid selects one entry).
-Missing -mrp.json files in MRP_AND_QUOTE_OUTPUT_DIR are first fetched with mrp-and-quote's fetch, run in
-MRP_AND_QUOTE_PROJECT_DIR (default: the output folder's parent) with OUTPUT_DIR set to the output folder
-(existing files are always reused; --no-fetch skips the fetch). Runs save their failed
-policies to ${failedQuotePagesPath} (except one-off runs: a guid or a maxCount of 1);
-retry-failed reruns only those. retry-different reruns every policy in comparisons/ whose
-screenshots differed (the summarise "different" count) and leaves ${failedQuotePagesPath} untouched.
+const quotePagesUsage = 'Usage: npm run quote-pages -- [maxCount|guid|retry-failed|retry-different] [options]';
+
+const quotePagesHelp = `${quotePagesUsage}
+
+Runs quote-page (historyId 1) for the policies in QUOTE_GUID_LIST_PATH.
+
+Selection:
+  (none)            The first 250 GUIDs in the list
+  <maxCount>        The first maxCount GUIDs
+  <guid>            Just that GUID
+  retry-failed      Only the policies that failed last time (saved in ${failedQuotePagesPath})
+  retry-different   Every policy in comparisons/ whose screenshots differed (the summarise
+                    "differences" policies); leaves ${failedQuotePagesPath} untouched
+
+Options:
   -c, --concurrency <n>  Policies run at once, 1-${maxConcurrency} (default: ${defaultQuotePagesConcurrency}; 1 runs them in turn)
   --no-fetch             Use only the -mrp.json files already saved; policies without one fail
   --no-ocr               Compare pixels without extracting text
-  -h, --help             Show help`;
+  -h, --help             Show help
 
-const summariseHelp = `Usage: npm run summarise [different|changed-answers] [-- options]   (or npm run summarize)
-Summarises every comparisons/<policyDetailsId>-<historyId> folder. It prints the visual and text differences
-of each compared policy, the most common text changes, failed policies with their issues, failures by
-reason and the MRP records not retrieved, then the totals: the GUID list size and how many policies have a
-result, the policies compared, declined and failed, and the Oops pages in screenshots/.
-Outcomes come from the result.json each quote-page run saves; folders with only a report.json (from older
-runs) count as compared. Oops pages saved before a policy's last run started are not counted.
-The GUID list and MRP records need QUOTE_GUID_LIST_PATH and MRP_AND_QUOTE_OUTPUT_DIR (.env or environment);
-without them that part is skipped. The exit code is 0 whatever the results.
-different prints only the visual-only and text differences, the most common text changes and how many of
-the compared policies differ (the policies retry-different reruns).
-changed-answers combines every comparisons/<policyDetailsId>-<historyId>/answer-changes.json, leaving out
-cover start changes, into changed-answers.json in the output folder (keyed by folder name), and prints how
-many times each question was changed, most changed first.
-  -h, --help     Show help`;
+Environment (.env or environment):
+  QUOTE_GUID_LIST_PATH         The GUID list (required)
+  MRP_AND_QUOTE_OUTPUT_DIR     Where the -mrp.json files are kept (required)
+  MRP_AND_QUOTE_PROJECT_DIR    Where mrp-and-quote's fetch runs (default: the output folder's parent)
+  QUOTE_JOURNEY_*, QUOTE_PAGE_TIMEOUT
+                               The quote-page settings (see the README)
+
+Notes:
+  - Missing -mrp.json files are fetched first with mrp-and-quote's fetch (OUTPUT_DIR set to the
+    output folder); files already saved are always reused.
+  - Failed policies are saved to ${failedQuotePagesPath}, except on one-off runs (a guid or a
+    maxCount of 1).`;
+
+const summariseModeNames = ['differences', 'changed-answers'];
+
+const summariseUsage = `Usage: npm run summarise [${summariseModeNames.join('|')}] [-- options]`;
+
+const summariseHelp = `${summariseUsage}      (alias: npm run summarize)
+
+Summarises the quote-page results in comparisons/<policyDetailsId>-<historyId>/ (in DIFF_OUTPUT_DIR).
+
+Modes:
+  (none)            Full report: each policy's differences, most common text changes, failed
+                    policies and failures by reason, MRP records not retrieved, Oops pages, totals
+  differences       Only the policies that differ (the ones quote-pages retry-different reruns)
+  changed-answers   Combines every answer-changes.json (leaving out cover start changes) into
+                    changed-answers.json and counts changes per question, most changed first
+
+Options:
+  -h, --help        Show help
+
+Environment (.env or environment, both optional):
+  QUOTE_GUID_LIST_PATH, MRP_AND_QUOTE_OUTPUT_DIR
+                    Needed for the GUID list totals and the MRP records not retrieved;
+                    those parts are skipped without them
+
+Notes:
+  - Outcomes come from each folder's result.json. Folders with only a report.json (older runs)
+    count as compared.
+  - Oops pages saved before a policy's last run started are not counted.
+  - The exit code is always 0, whatever the results.`;
 
 /** What `summarise` can be given after its name: only the differences, or the changed answers. */
-const summariseModes = new Set(['different', 'changed-answers']);
+const summariseModes = new Set(summariseModeNames);
 
 /**
  * Gets the MRP files of the policies about to run ready: fetches the missing ones, or with `--no-fetch` only reports them.
@@ -228,7 +260,13 @@ async function runQuotePages(args: string[]): Promise<void> {
   }
 
   if (positionals.length > 1) {
-    throw new Error(quotePagesHelp);
+    throw new Error(
+      usageError(
+        `quote-pages takes at most one argument (got ${positionals.join(' ')}).`,
+        quotePagesUsage,
+        'quote-pages'
+      )
+    );
   }
 
   const environment = await loadEnvironment();
@@ -272,8 +310,17 @@ async function runSummarise(args: string[]): Promise<void> {
     return;
   }
 
-  if (positionals.length > 1 || (positionals[0] !== undefined && !summariseModes.has(positionals[0]))) {
-    throw new Error(summariseHelp);
+  if (positionals.length > 1) {
+    throw new Error(
+      usageError(`summarise takes at most one mode (got ${positionals.join(' ')}).`, summariseUsage, 'summarise')
+    );
+  }
+
+  if (positionals[0] !== undefined && !summariseModes.has(positionals[0])) {
+    const expected = summariseModeNames.join(' or ');
+    throw new Error(
+      usageError(`Unknown summarise mode "${positionals[0]}" (expected ${expected}).`, summariseUsage, 'summarise')
+    );
   }
 
   if (positionals[0] === 'changed-answers') {
@@ -286,8 +333,15 @@ async function runSummarise(args: string[]): Promise<void> {
   await summariseQuoteResults({
     guidListPath: optional(environment, 'QUOTE_GUID_LIST_PATH'),
     mrpAndQuoteOutputDir: optional(environment, 'MRP_AND_QUOTE_OUTPUT_DIR'),
-    differentOnly: positionals[0] === 'different'
+    differentOnly: positionals[0] === 'differences'
   });
+}
+
+/**
+ * @returns A short error for a bad argument: the problem, the usage line and how to see the full help.
+ */
+function usageError(problem: string, usage: string, action: string): string {
+  return `${problem}\n${usage}\nRun npm run ${action} -- --help for details.`;
 }
 
 /**

@@ -35,7 +35,7 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 | `npm run quote-page`                | Capture NHI and TCAS versions of one quote and compare them |
 | `npm run quote-pages`               | Run `quote-page` for every policy in a GUID list            |
 | `npm run summarise`                 | Summarise every quote-page result (alias `summarize`)       |
-| `npm run summarise different`       | Show only the quote-page results that differ                |
+| `npm run summarise differences`     | Show only the quote-page results that differ                |
 | `npm run summarise changed-answers` | Combine every policy's answer changes and count them        |
 
 Add `-- --help` to any command for its options (for example `npm run compare -- --help`).
@@ -314,10 +314,10 @@ Oops pages: NHI 957 (953 later compared or declined), TCAS 10 (1 later compared 
   saved before the policy's last recorded run started (`startedAt`) is left over from an earlier
   run and is not counted.
 
-To see only what differs, add `different`:
+To see only what differs, add `differences`:
 
 ```sh
-npm run summarise different
+npm run summarise differences
 ```
 
 This prints the Visual-only differences, Text differences and Most common text changes

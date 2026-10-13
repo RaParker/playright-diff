@@ -76,7 +76,7 @@ One GUID list entry to run (32 hex characters, case-insensitive).
 Rerun only the policies saved in quote-pages-failed.json by the last quote-pages run.
 
 .PARAMETER RetryDifferent
-Rerun every policy in comparisons whose screenshots differed (the summarise "different" count). Leaves
+Rerun every policy in comparisons whose screenshots differed (the summarise "differences" count). Leaves
 quote-pages-failed.json untouched.
 
 .PARAMETER Summarise

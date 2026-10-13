@@ -510,12 +510,12 @@ describe('summarise command', () => {
     assert.doesNotMatch(output, /MRP records not retrieved/);
   });
 
-  test('different prints only the differences and how many compared policies differ', async () => {
+  test('differences prints only the differences and how many compared policies differ', async () => {
     // arrange
     const { directory, mrp, guidList } = await projectFixture();
 
     // act
-    const { code, output } = await runCli(directory, ['summarise', 'different'], {
+    const { code, output } = await runCli(directory, ['summarise', 'differences'], {
       QUOTE_GUID_LIST_PATH: guidList,
       MRP_AND_QUOTE_OUTPUT_DIR: mrp
     });
@@ -528,12 +528,12 @@ describe('summarise command', () => {
     assert.match(output, /Totals\n2 different of 3 compared\.\n/);
   });
 
-  test('different leaves out failures, MRP records, the GUID list and Oops pages', async () => {
+  test('differences leaves out failures, MRP records, the GUID list and Oops pages', async () => {
     // arrange
     const { directory, mrp, guidList } = await projectFixture();
 
     // act
-    const { code, output } = await runCli(directory, ['summarise', 'different'], {
+    const { code, output } = await runCli(directory, ['summarise', 'differences'], {
       QUOTE_GUID_LIST_PATH: guidList,
       MRP_AND_QUOTE_OUTPUT_DIR: mrp
     });
@@ -552,12 +552,12 @@ describe('summarise command', () => {
     }
   });
 
-  test('different labels each policy with its full comparisons folder path', async () => {
+  test('differences labels each policy with its full comparisons folder path', async () => {
     // arrange
     const { directory } = await projectFixture();
 
     // act
-    const { code, output } = await runCli(directory, ['summarise', 'different']);
+    const { code, output } = await runCli(directory, ['summarise', 'differences']);
 
     // assert
     assert.equal(code, 0, output);
@@ -589,7 +589,22 @@ describe('summarise command', () => {
 
     // assert
     assert.notEqual(code, 0, output);
+    assert.match(output, /Unknown summarise mode "identical" \(expected differences or changed-answers\)/);
     assert.match(output, /Usage: npm run summarise/);
+    assert.doesNotMatch(output, /Modes:/);
+  });
+
+  test('rejects more than one mode', async () => {
+    // arrange
+    const { directory } = await projectFixture();
+
+    // act
+    const { code, output } = await runCli(directory, ['summarise', 'differences', 'changed-answers']);
+
+    // assert
+    assert.notEqual(code, 0, output);
+    assert.match(output, /summarise takes at most one mode \(got differences changed-answers\)/);
+    assert.doesNotMatch(output, /Modes:/);
   });
 
   test('shows help', async () => {
