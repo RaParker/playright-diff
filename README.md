@@ -57,7 +57,7 @@ running it; with no arguments it shows its help (`Get-Help ./Run-Project.ps1 -Ex
 ./Run-Project.ps1 -RetryDifferent
 ./Run-Project.ps1 -Summarise                                     # or -Summarize
 ./Run-Project.ps1 -Task Verify   # Install, InstallBrowser, Build, Typecheck, Lint, Test,
-                                 # TestCompare, TestQuotePage, Verify, CleanUp
+                                 # TestCompare, TestQuotePage, Verify
 ```
 
 When you add or change a CLI option in `src/main.ts`, update the matching parameter in
@@ -335,8 +335,7 @@ All variables listed for a command are required, except `DIFF_OUTPUT_DIR`, `MRP_
 output folder's parent) and `QUOTE_PAGE_TIMEOUT`. `screenshots/` and `comparisons/` paths in this
 README (including defaults and the OCR cache) are inside `DIFF_OUTPUT_DIR` when it is set; paths
 you pass yourself, such as `--output`, are not. `quote-guid-mapping.json` and
-`quote-pages-failed.json` always stay in the current working directory. `CleanUp.ps1` clears
-`screenshots/` and `comparisons/` in the same folder. `QUOTE_PAGE_TIMEOUT` is a whole number with an
+`quote-pages-failed.json` always stay in the current working directory. `QUOTE_PAGE_TIMEOUT` is a whole number with an
 optional `s`, `m`, `h` or `d` suffix (milliseconds without one), from 1 ms to 8 hours, as
 `intervalToMs` in `@avantia/client-and-server-utilities` reads it. It is how long each page load,
 click and wait for the next page may take; quote loading screens get twice as long. `summarise` also reads `QUOTE_GUID_LIST_PATH` and

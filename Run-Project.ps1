@@ -95,7 +95,7 @@ Quote pages, RetryFailed and RetryDifferent: number of policies run at once (def
 
 .PARAMETER Task
 Development task: Install (npm install), InstallBrowser (Playwright Chromium), Build, Typecheck, Lint,
-Test (all suites), TestCompare, TestQuotePage, Verify (VerifyProject.ps1) or CleanUp (CleanUp.ps1).
+Test (all suites), TestCompare, TestQuotePage or Verify (VerifyProject.ps1).
 
 .EXAMPLE
 ./Run-Project.ps1 -Screenshot -Url https://example.com -Output screenshots/example.png -Width 390 -Height 844
@@ -238,7 +238,7 @@ param(
     [switch]$NoFetch,
 
     [Parameter(Mandatory, ParameterSetName = 'Task')]
-    [ValidateSet('Install', 'InstallBrowser', 'Build', 'Typecheck', 'Lint', 'Test', 'TestCompare', 'TestQuotePage', 'Verify', 'CleanUp')]
+    [ValidateSet('Install', 'InstallBrowser', 'Build', 'Typecheck', 'Lint', 'Test', 'TestCompare', 'TestQuotePage', 'Verify')]
     [string]$Task
 )
 
@@ -256,8 +256,7 @@ $npmScriptByTask = @{
 }
 
 $projectScriptByTask = @{
-    Verify  = 'VerifyProject.ps1'
-    CleanUp = 'CleanUp.ps1'
+    Verify = 'VerifyProject.ps1'
 }
 
 function Get-ProjectCommand {

@@ -49,8 +49,6 @@ Describe 'Run-Project.ps1 command lines' {
         @{ Name = 'npm task runs its npm script'; Arguments = @('-Task', 'TestQuotePage'); Expected = 'npm run test:quote-page' }
 
         @{ Name = 'Verify task runs VerifyProject.ps1'; Arguments = @('-Task', 'Verify'); Expected = '{root}\VerifyProject.ps1' }
-
-        @{ Name = 'CleanUp task runs CleanUp.ps1'; Arguments = @('-Task', 'CleanUp'); Expected = '{root}\CleanUp.ps1' }
     ) {
         # arrange
         Push-Location $script:projectRoot
