@@ -15,7 +15,7 @@ const lowOcrConfidence = 60;
 const commonTextChangeLimit = 10;
 
 /** A quote-page output folder, `<policyDetailsId>-<historyId>`; others (such as `.ocr-cache`) are ignored. */
-const policyFolderPattern = /^[0-9a-f]{32}-\d+$/i;
+export const policyFolderPattern = /^[0-9a-f]{32}-\d+$/i;
 
 /** A flow's failure page, `<policyDetailsId>-<historyId>-<flow>-failed.html`, saved in the screenshots folder. */
 const failurePagePattern = /^([0-9a-f]{32}-\d+)-(nhi|tcas)-failed\.html$/i;

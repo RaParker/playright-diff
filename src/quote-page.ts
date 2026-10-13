@@ -1,7 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Page } from 'playwright';
-import { collectAnswerChanges, writeAnswerChanges, type AnswerChangesByFlow } from './answer-changes.js';
+import {
+  answerChangesFileName,
+  collectAnswerChanges,
+  writeAnswerChanges,
+  type AnswerChangesByFlow
+} from './answer-changes.js';
 import { color, failureColor } from './color.js';
 import { compare } from './compare.js';
 import { runConcurrently, validateConcurrency } from './concurrency.js';
@@ -360,7 +365,7 @@ async function saveAnswerChanges(
   changes: AnswerChangesByFlow
 ): Promise<void> {
   const basename = `${policyDetailsId}-${historyId}`;
-  const path = outputPath('comparisons', basename, 'answer-changes.json');
+  const path = outputPath('comparisons', basename, answerChangesFileName);
   try {
     if (await writeAnswerChanges(path, { policyDetailsId, historyId, changes })) {
       console.log(color.Gray(`Answer changes saved to ${path}`));

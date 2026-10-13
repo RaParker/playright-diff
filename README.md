@@ -28,14 +28,15 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 
 ## Commands
 
-| Command                       | What it does                                                |
-| ----------------------------- | ----------------------------------------------------------- |
-| `npm run screenshot`          | Capture a full-page screenshot of one URL                   |
-| `npm run compare`             | Compare two images and report changed regions and text      |
-| `npm run quote-page`          | Capture NHI and TCAS versions of one quote and compare them |
-| `npm run quote-pages`         | Run `quote-page` for every policy in a GUID list            |
-| `npm run summarise`           | Summarise every quote-page result (alias `summarize`)       |
-| `npm run summarise different` | Show only the quote-page results that differ                |
+| Command                             | What it does                                                |
+| ----------------------------------- | ----------------------------------------------------------- |
+| `npm run screenshot`                | Capture a full-page screenshot of one URL                   |
+| `npm run compare`                   | Compare two images and report changed regions and text      |
+| `npm run quote-page`                | Capture NHI and TCAS versions of one quote and compare them |
+| `npm run quote-pages`               | Run `quote-page` for every policy in a GUID list            |
+| `npm run summarise`                 | Summarise every quote-page result (alias `summarize`)       |
+| `npm run summarise different`       | Show only the quote-page results that differ                |
+| `npm run summarise changed-answers` | Combine every policy's answer changes and count them        |
 
 Add `-- --help` to any command for its options (for example `npm run compare -- --help`).
 
@@ -325,6 +326,33 @@ sections, then how many of the compared policies differ (the policies
 Failures, MRP records, the GUID list and Oops pages are left out. Each policy is shown by the
 full path of its comparisons folder rather than its folder name, so you can Ctrl+click it in
 most terminals to open the screenshots and report.
+
+To see which answers the [journey fixes](#answer-changes-file) changed across every policy,
+add `changed-answers`:
+
+```sh
+npm run summarise changed-answers
+```
+
+This combines every `comparisons/<ID>-<historyId>/answer-changes.json` into one
+`changed-answers.json` in the output folder (`DIFF_OUTPUT_DIR`), replacing any earlier one. Its
+keys are the policy folder names, each holding that policy's `nhi` and `tcas` changes by section,
+as in its own file. Cover start changes are left out, since nearly every run moves the cover
+start into range, and so is any section, flow or policy left with no other change. It then
+prints how many times each question was changed, most changed first, and the totals:
+
+```text
+Changed answers (…/comparisons; cover start ignored)
+  70× NHI   Property circumstances  rebuilding cost
+   4× NHI   Contact details         email address
+   4× TCAS  Contact details         email address
+
+Totals
+70 policies with changes, 78 changes.
+Saved to …/changed-answers.json
+```
+
+A question changed more than once for one policy (such as each claim) is counted each time.
 
 ## Configuration
 

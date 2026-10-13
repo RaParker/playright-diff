@@ -16,6 +16,7 @@ import { screenshot, ValidationError } from './screenshot.js';
 import { loadEnvironment } from './environment.js';
 import { outputPath, setOutputRoot } from './output-paths.js';
 import { intervalToMs } from './interval.js';
+import { summariseChangedAnswers } from './changed-answers.js';
 import { collectQuoteResults, listDifferentPolicies, summariseQuoteResults } from './summarise.js';
 
 const help = `Usage: npm start -- <screenshot|compare|quote-page|quote-pages|summarise> [arguments] [options]
@@ -56,7 +57,7 @@ screenshots differed (the summarise "different" count) and leaves ${failedQuoteP
   --no-ocr               Compare pixels without extracting text
   -h, --help             Show help`;
 
-const summariseHelp = `Usage: npm run summarise [different] [-- options]   (or npm run summarize)
+const summariseHelp = `Usage: npm run summarise [different|changed-answers] [-- options]   (or npm run summarize)
 Summarises every comparisons/<policyDetailsId>-<historyId> folder. It prints the visual and text differences
 of each compared policy, the most common text changes, failed policies with their issues, failures by
 reason and the MRP records not retrieved, then the totals: the GUID list size and how many policies have a
@@ -67,7 +68,13 @@ The GUID list and MRP records need QUOTE_GUID_LIST_PATH and MRP_AND_QUOTE_OUTPUT
 without them that part is skipped. The exit code is 0 whatever the results.
 different prints only the visual-only and text differences, the most common text changes and how many of
 the compared policies differ (the policies retry-different reruns).
+changed-answers combines every comparisons/<policyDetailsId>-<historyId>/answer-changes.json, leaving out
+cover start changes, into changed-answers.json in the output folder (keyed by folder name), and prints how
+many times each question was changed, most changed first.
   -h, --help     Show help`;
+
+/** What `summarise` can be given after its name: only the differences, or the changed answers. */
+const summariseModes = new Set(['different', 'changed-answers']);
 
 /**
  * Gets the MRP files of the policies about to run ready: fetches the missing ones, or with `--no-fetch` only reports them.
@@ -265,8 +272,13 @@ async function runSummarise(args: string[]): Promise<void> {
     return;
   }
 
-  if (positionals.length > 1 || (positionals[0] !== undefined && positionals[0] !== 'different')) {
+  if (positionals.length > 1 || (positionals[0] !== undefined && !summariseModes.has(positionals[0]))) {
     throw new Error(summariseHelp);
+  }
+
+  if (positionals[0] === 'changed-answers') {
+    await summariseChangedAnswers();
+    return;
   }
 
   // Unlike quote-pages, the GUID list and MRP folder are optional: without them the GUID list totals are skipped.

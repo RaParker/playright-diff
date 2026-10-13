@@ -2,6 +2,9 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
+/** File name of the answer changes each quote-page run writes into its `comparisons/<policyDetailsId>-<historyId>` folder. */
+export const answerChangesFileName = 'answer-changes.json';
+
 /** A change the flow made to one question's answer, so the journey would accept the test data. */
 export interface AnswerChange {
   /** Question changed, e.g. `claim value`. */
