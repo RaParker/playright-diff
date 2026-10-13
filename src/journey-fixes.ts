@@ -1,4 +1,5 @@
 import type { Locator, Page } from 'playwright';
+import { recordAnswerChange, type AnswerChange } from './answer-changes.js';
 import { color } from './color.js';
 import { ValidationError } from './screenshot.js';
 
@@ -19,6 +20,11 @@ export const replacementRebuildingCost = '249995';
  */
 export const rebuildingCostFixName = 'rebuilding cost';
 
+/** Cover start date field, beside the Cover details calendar. */
+const coverStartInputSelector = 'input.hp-date-input-single';
+/** Selected answer of a button or image question: a filled button, or a ticked image. */
+const selectedChoiceSelector = 'button.btn-primary:not(.dropdown-toggle), label.hp-checked';
+
 /** Open dropdown menu item, shown once a dropdown's toggle is clicked. */
 const dropdownItemSelector = '.dropdown-menu.show button.dropdown-item';
 
@@ -31,14 +37,20 @@ interface JourneyFix {
   section: string;
   /** Describes the change for the log line. */
   describe: (match: RegExpExecArray) => string;
-  /** Changes the field, once {@link section} is shown; `label` prefixes any further log lines. */
-  apply: (page: Page, match: RegExpExecArray, label: string) => Promise<void>;
+  /**
+   * Changes the field, once {@link section} is shown; `label` prefixes any further log lines.
+   * @returns Each answer changed, with the answer shown before it.
+   */
+  apply: (page: Page, match: RegExpExecArray, label: string) => Promise<FixedAnswer[]>;
   /**
    * Whether the page shows the field to fix, for errors whose summary text other questions share; the fix is skipped
    * (and can still be tried later) when it does not.
    */
   isShown?: (page: Page) => Promise<boolean>;
 }
+
+/** An answer a fix changed, before the error that led to it is added (see {@link AnswerChange}). */
+type FixedAnswer = Omit<AnswerChange, 'error'>;
 
 /** A question the journey reports as unanswered (or out of range), and the answer given to it. */
 interface QuestionAnswer {
@@ -340,7 +352,7 @@ const journeyFixes: JourneyFix[] = [
     pattern: /The Email address field contains invalid characters/i,
     section: 'Contact details',
     describe: () => `entering email address ${replacementEmail}`,
-    apply: (page) => page.locator('input[name="email"]').fill(replacementEmail)
+    apply: (page) => enterEmail(page)
   },
   {
     name: rebuildingCostFixName,
@@ -368,7 +380,9 @@ const journeyFixes: JourneyFix[] = [
  *   question.".
  *
  * Each fix is logged in grey, then opens its section from the timeline unless it is already shown; opening a section
- * and selecting "Choose another amount" are logged too.
+ * and selecting "Choose another amount" are logged too. Each answer changed is recorded (see
+ * {@link recordAnswerChange}) with the answer shown before it, the answer given, and the error summary line that led
+ * to it.
  * @param page Page showing the journey's error summary.
  * @param label Flow name (e.g. `NHI` or `TCAS`) that prefixes the log lines.
  * @param errors Error summary text to check.
@@ -394,7 +408,11 @@ export async function fixJourneyError(
     console.log(color.Gray(`${label}: ${fix.describe(match)} on ${fix.section}.`));
     applied.add(fix.name);
     await showSection(page, fix.section, label);
-    await fix.apply(page, match, label);
+    const error = errorLine(errors ?? '', match[0]);
+    for (const answer of await fix.apply(page, match, label)) {
+      recordAnswerChange(label, fix.section, { ...answer, error });
+    }
+
     fixedSection = fix.section;
   }
 
@@ -438,12 +456,14 @@ function answerFix(answer: QuestionAnswer): JourneyFix {
   };
 }
 
-async function answerQuestions(page: Page, answer: QuestionAnswer): Promise<void> {
+async function answerQuestions(page: Page, answer: QuestionAnswer): Promise<FixedAnswer[]> {
   // Ids are read first, as answering a question can clear its error and so drop it from the locator.
   const ids = await errorQuestions(page, answer).evaluateAll((elements) => elements.map((element) => element.id));
+  const answered: FixedAnswer[] = [];
   for (const id of ids) {
     const question = page.locator(`[id="${id}"]`);
     const field = question.locator(answer.field);
+    const before = await readAnswer(question, answer);
     switch (answer.kind) {
       case 'fill':
         await field.fill(answer.answer);
@@ -469,7 +489,13 @@ async function answerQuestions(page: Page, answer: QuestionAnswer): Promise<void
         await chooseDate(page, question, answer.answer);
         break;
     }
+
+    // Ticking a box leaves any others ticked, so the answer is read back rather than taken as the one given.
+    const after = answer.kind === 'check' ? ((await readAnswer(question, answer)) ?? answer.answer) : answer.answer;
+    answered.push({ question: answer.question, before, after });
   }
+
+  return answered;
 }
 
 async function chooseDate(page: Page, question: Locator, date: string): Promise<void> {
@@ -480,7 +506,9 @@ async function chooseDate(page: Page, question: Locator, date: string): Promise<
   }
 }
 
-async function enterRebuildingCost(page: Page, label: string): Promise<void> {
+async function enterRebuildingCost(page: Page, label: string): Promise<FixedAnswer[]> {
+  const costField = page.locator('input[name="rebuildingCost"]');
+  const before = await readValue(costField);
   // When a BCIS estimate is offered, the cost field is only shown once "Choose another amount" is selected; without an
   // estimate, the cost field is shown on its own.
   const otherAmount = page.locator('label[id$="~Kother"]').filter({ hasText: 'Choose another amount' });
@@ -492,19 +520,29 @@ async function enterRebuildingCost(page: Page, label: string): Promise<void> {
     await otherAmount.click();
   }
 
-  await page.locator('input[name="rebuildingCost"]').fill(replacementRebuildingCost);
+  await costField.fill(replacementRebuildingCost);
+  return [{ question: 'rebuilding cost', before, after: replacementRebuildingCost }];
 }
 
-async function selectCoverStart(page: Page, dateText: string): Promise<void> {
+async function selectCoverStart(page: Page, dateText: string): Promise<FixedAnswer[]> {
   const date = parseErrorDate(dateText, 'cover start');
+  const before = await readValue(page.locator(coverStartInputSelector));
   const day = date.getUTCDate();
   const suffix = day % 100 >= 11 && day % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] ?? 'th');
   const label = `${monthName(date)} ${day}${suffix}, ${date.getUTCFullYear()}`;
   await page.locator('svg.av-icon-calendar').click();
   await page.locator(`div[aria-label$="${label}"]:not(.react-datepicker__day--outside-month)`).click();
+  return [{ question: 'cover start', before, after: dateText }];
 }
 
-async function selectRenovationEnd(page: Page, message: string, dateText: string): Promise<void> {
+async function enterEmail(page: Page): Promise<FixedAnswer[]> {
+  const emailField = page.locator('input[name="email"]');
+  const before = await readValue(emailField);
+  await emailField.fill(replacementEmail);
+  return [{ question: 'email address', before, after: replacementEmail }];
+}
+
+async function selectRenovationEnd(page: Page, message: string, dateText: string): Promise<FixedAnswer[]> {
   const date = parseErrorDate(dateText, 'renovation end');
   // The id is read first, as answering the question can clear its error and so drop it from the locator.
   const id = await page
@@ -513,7 +551,52 @@ async function selectRenovationEnd(page: Page, message: string, dateText: string
     .first()
     .getAttribute('id');
   const question = page.locator(`[id="${id ?? ''}"]`);
-  await chooseDate(page, question, `${date.getUTCDate()} ${monthName(date)} ${date.getUTCFullYear()}`);
+  const before = await readDate(question);
+  const after = `${date.getUTCDate()} ${monthName(date)} ${date.getUTCFullYear()}`;
+  await chooseDate(page, question, after);
+  return [{ question: 'renovation end', before, after }];
+}
+
+/**
+ * Reads the answer a question shows, in the way {@link QuestionAnswer.kind} gives it: a text or autocomplete field's
+ * value, the selected button or ticked image, the dropdown toggle's text, the ticked checkboxes' labels (joined by
+ * commas), or the day, month and year toggles' texts (joined by spaces). Elements are read without waiting, so a
+ * missing one reads as no answer rather than timing out.
+ * @returns The answer, or `null` when the question shows none.
+ */
+async function readAnswer(question: Locator, answer: QuestionAnswer): Promise<string | null> {
+  if (answer.kind === 'date') {
+    return readDate(question);
+  }
+
+  const selector = {
+    fill: answer.field,
+    autocomplete: answer.field,
+    click: selectedChoiceSelector,
+    dropdown: answer.field,
+    check: `${answer.field}:has(input[type="checkbox"]:checked)`
+  }[answer.kind];
+  const texts = await question
+    .locator(selector)
+    .evaluateAll((elements) =>
+      elements.map((element) =>
+        (element instanceof HTMLInputElement ? element.value : (element.textContent ?? '')).trim()
+      )
+    );
+  return blankToNull(answer.kind === 'check' ? texts.join(', ') : (texts[0] ?? ''));
+}
+
+async function readDate(question: Locator): Promise<string | null> {
+  const parts = await question.locator('button.dropdown-toggle').allTextContents();
+  return blankToNull(parts.map((part) => part.trim()).join(' '));
+}
+
+/** Reads the first matching field's value without waiting; `null` when there is none or it is blank. */
+async function readValue(field: Locator): Promise<string | null> {
+  const values = await field.evaluateAll((elements) =>
+    elements.map((element) => (element instanceof HTMLInputElement ? element.value : ''))
+  );
+  return blankToNull(values[0] ?? '');
 }
 
 /** Questions showing `answer`'s error message that have its field. */
@@ -528,6 +611,15 @@ async function chooseDropdownItem(page: Page, text: string): Promise<void> {
     .locator(dropdownItemSelector)
     .filter({ hasText: exactText(text) })
     .click();
+}
+
+/** The error summary line that `matched` (text a fix's pattern matched) is part of. */
+function errorLine(errors: string, matched: string): string {
+  return errors.split('\n').find((line) => line.includes(matched)) ?? matched;
+}
+
+function blankToNull(text: string): string | null {
+  return text.trim().length > 0 ? text.trim() : null;
 }
 
 function parseErrorDate(dateText: string, field: string): Date {

@@ -169,6 +169,10 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   writes only this file and leaves the previous screenshots alone. If the file cannot be
   written, a yellow `Could not save the result of …` warning is shown and the run still passes
   or fails on its own result.
+- **Answer changes:** when a flow changed or added answers so the journey would accept the
+  test data (see [Journey error auto-fixes](#journey-error-auto-fixes)), the run also writes
+  `comparisons/<ID>-<historyId>/answer-changes.json`, whether it compared, declined or failed.
+  See [Answer changes file](#answer-changes-file) for its format.
 - **Masked areas:** the footer (`.hp-footer`) is painted over in flat grey in both screenshots
   (not in `-failed`/`-declined` ones), so it is never compared. It is the same on both sides,
   but OCR read its separators (`»`, `=`, `+`) differently between captures, reporting false text
@@ -531,6 +535,52 @@ property, as "I live here permanently" ticks You there, which can clear that err
 - In the unsaved journey, an error from **Continue** or from **Get your quote** returning to
   a section is fixed, then the journey is walked again from the fixed section; a return fixed
   this way does not count towards the one-return limit.
+
+#### Answer changes file
+
+Every answer a fix changes is saved in `comparisons/<ID>-<historyId>/answer-changes.json`,
+grouped by flow (`nhi`, then `tcas`) and then by section, in the order the changes were
+made. A question changed more than once (such as each claim) has one entry each time. Flows
+with no changes are left out, and the file is not written when nothing was changed.
+
+```json
+{
+  "policyDetailsId": "ABCDEF1234567890ABCDEF1234567890",
+  "historyId": 1,
+  "changes": {
+    "nhi": {
+      "Property type": [
+        {
+          "question": "bedrooms",
+          "before": null,
+          "after": "3",
+          "error": "Please select the number of bedrooms."
+        }
+      ]
+    },
+    "tcas": {
+      "Cover details": [
+        {
+          "question": "cover start",
+          "before": "27 Aug 2026",
+          "after": "2026-10-06",
+          "error": "The Cover start field needs to be between 2026-10-06 and 2026-11-20"
+        }
+      ]
+    }
+  }
+}
+```
+
+- `before` is the answer the page showed, read just before the fix: a field's value, the
+  selected button (`button.btn-primary`) or ticked image (`label.hp-checked`), a dropdown
+  toggle's text, the ticked checkboxes' labels (joined by commas), or the day, month and year
+  toggles (joined by spaces). It is `null` when nothing was shown.
+- `after` is the answer given; for a checkbox list it is read back, so boxes that were already
+  ticked are included.
+- `error` is the error summary line that led to the change.
+- If the file cannot be written, a yellow `Could not save the answer changes of …` warning is
+  shown and the run still passes or fails on its own result.
 
 ### Annual payments
 

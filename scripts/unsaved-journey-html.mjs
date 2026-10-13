@@ -110,7 +110,7 @@ export const questionField = {
     `<div class="btn-toolbar" role="group">${options
       .map(
         (option) =>
-          `<div class="hp-btn-wrapper"><button name="${name}" type="button" class="btn">${option}</button></div>`
+          `<div class="hp-btn-wrapper"><button name="${name}" type="button" class="btn btn-outline-primary">${option}</button></div>`
       )
       .join('')}</div>`,
   /**
@@ -188,7 +188,8 @@ export const questionField = {
 };
 
 /**
- * Script giving {@link questionField} fields behaviour: a clicked button or image is marked `data-selected`, a
+ * Script giving {@link questionField} fields behaviour: a clicked button or image is selected as the live page shows it
+ * (a button becomes `btn-primary` rather than `btn-outline-primary`, an image label gets `hp-checked`), a
  * dropdown toggle opens a menu whose items set the toggle text, and typing in an autocomplete opens a menu of matching
  * suggestions whose items set (and mark `data-chosen`) its value. Defines `answerOf(question)`, which reads a
  * question's chosen autocomplete value, text field value, ticked checkbox labels (joined by commas), selected button or
@@ -197,8 +198,12 @@ export const questionField = {
 export const questionScript = `document.addEventListener('click', (event) => {
   const choice = event.target.closest('.btn-toolbar button, .hp-float > label');
   if (choice !== null) {
-    choice.closest('.av-field-section').querySelectorAll('[data-selected]').forEach((element) => element.removeAttribute('data-selected'));
-    choice.setAttribute('data-selected', '');
+    choice.closest('.av-field-section').querySelectorAll('.btn-primary, .hp-checked').forEach((element) => {
+      element.classList.remove('btn-primary', 'hp-checked');
+      if (element.tagName === 'BUTTON') element.classList.add('btn-outline-primary');
+    });
+    if (choice.tagName === 'BUTTON') choice.classList.replace('btn-outline-primary', 'btn-primary');
+    else choice.classList.add('hp-checked');
     return;
   }
 
@@ -237,7 +242,7 @@ const answerOf = (question) => {
   if (input !== null) return input.dataset.options === undefined ? input.value : input.dataset.chosen;
   const boxes = [...question.querySelectorAll('.form-check')];
   if (boxes.length > 0) return boxes.filter((box) => box.querySelector('input').checked).map((box) => box.textContent.trim()).join(', ');
-  const selected = question.querySelector('[data-selected]');
+  const selected = question.querySelector('button.btn-primary, label.hp-checked');
   if (selected !== null) return selected.textContent.trim();
   return [...question.querySelectorAll('.dropdown-toggle')].map((toggle) => toggle.textContent.trim()).join(' ');
 };`;
@@ -276,8 +281,9 @@ export function questionErrorHtml(id, message, field) {
  * when false, Continue leaves the summary in place, like an answer that fails validation.
  * @param {boolean} [options.declines] Whether Get your quote shows the declined page instead of the quote.
  * @param {'continue' | 'quote'} [options.coverStartError] Adds a section timeline and a Cover start calendar (shown on
- * Cover details only), and reports the cover start date as out of range until October 6th is picked: on Continue from
- * Cover details, or when Get your quote is clicked (staying on the last section).
+ * Cover details only, beside its date field showing 27 Aug 2026), and reports the cover start date as out of range until
+ * October 6th is picked (which shows 06 Oct 2026): on Continue from Cover details, or when Get your quote is clicked
+ * (staying on the last section).
  * @param {boolean} [options.coverStartFixable] Whether picking October 6th clears the cover start error (default true).
  * @param {boolean} [options.emailError] Adds a section timeline and an email field (shown on Contact details only),
  * and reports the email address as invalid when Get your quote is clicked until nobody.special@nhitest.com is entered.
@@ -322,7 +328,8 @@ export function unsavedJourneyHtml({
   const coverStartHtml =
     coverStartError === undefined
       ? ''
-      : `<span id="calendar"><svg class="av-icon av-icon-calendar" width="24" height="24"><rect width="24" height="24" /></svg></span>
+      : `<span id="calendar"><input type="text" readonly class="hp-date-input-single form-control" value="27 Aug 2026"><svg
+      class="av-icon av-icon-calendar" width="24" height="24"><rect width="24" height="24" /></svg></span>
     <div id="day" hidden aria-label="Choose Tuesday, October 6th, 2026">6</div>`;
   const emailHtml = emailError
     ? '<input id="email" inputmode="email" name="email" type="text" class="form-control" value="first name.last@example.com">'
@@ -378,7 +385,10 @@ export function unsavedJourneyHtml({
     });
     if (coverStartError !== null) {
       document.querySelector('svg').onclick = () => { document.getElementById('day').hidden = false; };
-      document.getElementById('day').onclick = () => { coverStartValid = coverStartFixable; };
+      document.getElementById('day').onclick = () => {
+        coverStartValid = coverStartFixable;
+        document.querySelector('input.hp-date-input-single').value = '06 Oct 2026';
+      };
     }
     document.getElementById('continue').onclick = () => {
       if (coverStartError === 'continue' && sections[index] === 'Cover details' && !coverStartValid) {

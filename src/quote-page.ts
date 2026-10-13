@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Page } from 'playwright';
+import { collectAnswerChanges, writeAnswerChanges, type AnswerChangesByFlow } from './answer-changes.js';
 import { color, failureColor } from './color.js';
 import { compare } from './compare.js';
 import { runConcurrently, validateConcurrency } from './concurrency.js';
@@ -78,7 +79,9 @@ export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
 }
 
 /**
- * Captures the NHI and TCAS versions of one quote and compares them.
+ * Captures the NHI and TCAS versions of one quote and compares them. Any answers a flow changed so the journey would
+ * accept the test data are saved to `comparisons/<policyDetailsId>-<historyId>/answer-changes.json`, whether the run
+ * compared, declined or failed.
  * @param policyArgument TCAS policy details ID (32 hexadecimal characters).
  * @param historyId TCAS history ID.
  * @param options Input folder, URL templates and the optional NHI Oops fallback.
@@ -101,10 +104,12 @@ export async function quotePage(
   }
 
   const run = { policyDetailsId, historyId, startedAt: new Date().toISOString() };
+  const changes: AnswerChangesByFlow = {};
   let outcome: QuotePageResult;
   try {
-    outcome = await captureAndCompare(policyDetailsId, historyId, options);
+    outcome = await collectAnswerChanges(changes, () => captureAndCompare(policyDetailsId, historyId, options));
   } catch (error) {
+    await saveAnswerChanges(policyDetailsId, historyId, changes);
     await saveQuoteResult({
       ...run,
       outcome: 'failed',
@@ -115,6 +120,7 @@ export async function quotePage(
     throw error;
   }
 
+  await saveAnswerChanges(policyDetailsId, historyId, changes);
   await saveQuoteResult({ ...run, outcome, validation: false, issues: [], finishedAt: new Date().toISOString() });
   return outcome;
 }
@@ -341,6 +347,27 @@ async function saveQuoteResult(result: QuoteResult): Promise<void> {
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.log(color.Yellow(`Could not save the result of ${result.policyDetailsId}-${result.historyId}: ${reason}`));
+  }
+}
+
+/**
+ * Saves the answers a run changed, beside its comparison report (after the comparison, which needs a new folder). Only
+ * warns when it cannot, like {@link saveQuoteResult}.
+ */
+async function saveAnswerChanges(
+  policyDetailsId: string,
+  historyId: number,
+  changes: AnswerChangesByFlow
+): Promise<void> {
+  const basename = `${policyDetailsId}-${historyId}`;
+  const path = outputPath('comparisons', basename, 'answer-changes.json');
+  try {
+    if (await writeAnswerChanges(path, { policyDetailsId, historyId, changes })) {
+      console.log(color.Gray(`Answer changes saved to ${path}`));
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.log(color.Yellow(`Could not save the answer changes of ${basename}: ${reason}`));
   }
 }
 
