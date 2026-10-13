@@ -248,6 +248,45 @@ describe('answer changes made by the journey fixes', () => {
     });
   });
 
+  test('records renovation end and other dates from day, month and year dropdowns as the toggles show them', async () => {
+    // arrange
+    const section = 'Property circumstances';
+    const renovationMessage = 'The renovationEnd field needs to be between 2026-10-13 and 2031-10-13';
+    const floodMessage = 'Please select day, month and year.';
+    const floodYear = String(new Date().getFullYear() - 2);
+
+    // act
+    const changes = await journeyAnswerChanges({
+      sections: ['Cover details', section, 'Contact details'],
+      questions: [
+        {
+          section,
+          id: 'renovationEnd',
+          message: renovationMessage,
+          field: questionField.date('renovationEnd', ['2026', '2027']),
+          expected: '13 October 2026'
+        },
+        {
+          section,
+          id: 'flood~G01',
+          message: floodMessage,
+          field: questionField.date('flood~G01'),
+          expected: `1 January ${floodYear}`
+        }
+      ]
+    });
+
+    // assert
+    assert.deepEqual(changes, {
+      nhi: {
+        [section]: [
+          { question: 'renovation end', before: 'day month year', after: '13 October 2026', error: renovationMessage },
+          { question: 'date', before: 'day month year', after: `1 January ${floodYear}`, error: floodMessage }
+        ]
+      }
+    });
+  });
+
   test('records the cover start and email address with their full error summary lines', async () => {
     // arrange, act
     const changes = await journeyAnswerChanges({ coverStartError: 'quote', emailError: true });
@@ -259,7 +298,7 @@ describe('answer changes made by the journey fixes', () => {
           {
             question: 'cover start',
             before: '27 Aug 2026',
-            after: '2026-10-06',
+            after: '06 Oct 2026',
             error: 'The Cover start field needs to be between 2026-10-06 and 2026-11-20'
           }
         ],

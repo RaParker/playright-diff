@@ -563,7 +563,7 @@ with no changes are left out, and the file is not written when nothing was chang
         {
           "question": "cover start",
           "before": "27 Aug 2026",
-          "after": "2026-10-06",
+          "after": "06 Oct 2026",
           "error": "The Cover start field needs to be between 2026-10-06 and 2026-11-20"
         }
       ]
@@ -576,8 +576,10 @@ with no changes are left out, and the file is not written when nothing was chang
   selected button (`button.btn-primary`) or ticked image (`label.hp-checked`), a dropdown
   toggle's text, the ticked checkboxes' labels (joined by commas), or the day, month and year
   toggles (joined by spaces). It is `null` when nothing was shown.
-- `after` is the answer given; for a checkbox list it is read back, so boxes that were already
-  ticked are included.
+- `after` is the answer given. Dates and checkbox lists are read back from the page once the
+  fix is made, so they are recorded exactly as shown: cover start as its field shows it (e.g.
+  `06 Oct 2026`), day, month and year dropdowns as their toggles show them (e.g.
+  `13 October 2026`), and a checkbox list including any boxes that were already ticked.
 - `error` is the error summary line that led to the change.
 - If the file cannot be written, a yellow `Could not save the answer changes of …` warning is
   shown and the run still passes or fails on its own result.

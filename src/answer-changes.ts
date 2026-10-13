@@ -8,7 +8,7 @@ export interface AnswerChange {
   question: string;
   /** Answer shown before the change, or `null` when the question had none. */
   before: string | null;
-  /** Answer given. */
+  /** Answer given; dates and checkbox lists as the page shows them afterwards. */
   after: string;
   /** Error that led to the change, as the error summary reported it. */
   error: string;

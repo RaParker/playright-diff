@@ -1,4 +1,4 @@
-import type { Locator, Page } from 'playwright';
+import { errors, type Locator, type Page } from 'playwright';
 import { recordAnswerChange, type AnswerChange } from './answer-changes.js';
 import { color } from './color.js';
 import { ValidationError } from './screenshot.js';
@@ -381,8 +381,8 @@ const journeyFixes: JourneyFix[] = [
  *
  * Each fix is logged in grey, then opens its section from the timeline unless it is already shown; opening a section
  * and selecting "Choose another amount" are logged too. Each answer changed is recorded (see
- * {@link recordAnswerChange}) with the answer shown before it, the answer given, and the error summary line that led
- * to it.
+ * {@link recordAnswerChange}) with the answer shown before it, the answer given (dates and checkbox lists as the page
+ * then shows them), and the error summary line that led to it.
  * @param page Page showing the journey's error summary.
  * @param label Flow name (e.g. `NHI` or `TCAS`) that prefixes the log lines.
  * @param errors Error summary text to check.
@@ -490,8 +490,10 @@ async function answerQuestions(page: Page, answer: QuestionAnswer): Promise<Fixe
         break;
     }
 
-    // Ticking a box leaves any others ticked, so the answer is read back rather than taken as the one given.
-    const after = answer.kind === 'check' ? ((await readAnswer(question, answer)) ?? answer.answer) : answer.answer;
+    // Ticking a box leaves any others ticked, and a date is recorded as its toggles show it, so both are read back
+    // rather than taken as the answer given.
+    const readBack = answer.kind === 'check' || answer.kind === 'date';
+    const after = readBack ? ((await readAnswer(question, answer)) ?? answer.answer) : answer.answer;
     answered.push({ question: answer.question, before, after });
   }
 
@@ -532,7 +534,31 @@ async function selectCoverStart(page: Page, dateText: string): Promise<FixedAnsw
   const label = `${monthName(date)} ${day}${suffix}, ${date.getUTCFullYear()}`;
   await page.locator('svg.av-icon-calendar').click();
   await page.locator(`div[aria-label$="${label}"]:not(.react-datepicker__day--outside-month)`).click();
-  return [{ question: 'cover start', before, after: dateText }];
+  await waitForCoverStartChange(page, before);
+  const after = (await readValue(page.locator(coverStartInputSelector))) ?? dateText;
+  return [{ question: 'cover start', before, after }];
+}
+
+/**
+ * Waits for the cover start field to show the date picked (e.g. "06 Oct 2026") once the calendar updates it, so it is
+ * not read too early. Does not wait when the page has no such field, and a field that never changes is read as it is,
+ * since recording the change must not fail the journey.
+ */
+async function waitForCoverStartChange(page: Page, before: string | null): Promise<void> {
+  if ((await page.locator(coverStartInputSelector).count()) === 0) {
+    return;
+  }
+
+  try {
+    await page.waitForFunction(
+      ([selector, previous]) => (document.querySelector<HTMLInputElement>(selector)?.value ?? '').trim() !== previous,
+      [coverStartInputSelector, before ?? ''] as const
+    );
+  } catch (error) {
+    if (!(error instanceof errors.TimeoutError)) {
+      throw error;
+    }
+  }
 }
 
 async function enterEmail(page: Page): Promise<FixedAnswer[]> {
@@ -552,9 +578,9 @@ async function selectRenovationEnd(page: Page, message: string, dateText: string
     .getAttribute('id');
   const question = page.locator(`[id="${id ?? ''}"]`);
   const before = await readDate(question);
-  const after = `${date.getUTCDate()} ${monthName(date)} ${date.getUTCFullYear()}`;
-  await chooseDate(page, question, after);
-  return [{ question: 'renovation end', before, after }];
+  const dateAnswer = `${date.getUTCDate()} ${monthName(date)} ${date.getUTCFullYear()}`;
+  await chooseDate(page, question, dateAnswer);
+  return [{ question: 'renovation end', before, after: (await readDate(question)) ?? dateAnswer }];
 }
 
 /**
