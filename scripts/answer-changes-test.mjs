@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { describe, test } from 'node:test';
-import { collectAnswerChanges, recordAnswerChange, writeAnswerChanges } from '../dist/answer-changes.js';
+import {
+  collectAnswerChanges,
+  recordAnswerChange,
+  startAnswerChangeAttempt,
+  writeAnswerChanges
+} from '../dist/answer-changes.js';
 import { screenshot } from '../dist/screenshot.js';
 import { tcasQuote } from '../dist/tcas-quote.js';
 import { unsavedQuote } from '../dist/unsaved-quote.js';
@@ -102,6 +107,47 @@ describe('answer changes', () => {
     );
   });
 
+  test('adds the changes of a kept attempt after those the task recorded itself', async () => {
+    // arrange
+    const changes = {};
+    const change = (question) => ({ question, before: null, after: 'Yes', error: 'Missing' });
+
+    // act
+    await collectAnswerChanges(changes, async () => {
+      recordAnswerChange('NHI', 'Cover details', change('first'));
+      const attempt = startAnswerChangeAttempt(async () => {
+        recordAnswerChange('NHI', 'Cover details', change('attempt'));
+        recordAnswerChange('TCAS', 'Contact details', change('attempt'));
+      });
+      await attempt.result;
+      recordAnswerChange('NHI', 'Cover details', change('after'));
+      attempt.keep();
+    });
+
+    // assert
+    assert.deepEqual(changes, {
+      nhi: { 'Cover details': [change('first'), change('after'), change('attempt')] },
+      tcas: { 'Contact details': [change('attempt')] }
+    });
+  });
+
+  test('leaves out the changes of an attempt that is not kept, even after it fails', async () => {
+    // arrange
+    const changes = {};
+
+    // act
+    await collectAnswerChanges(changes, async () => {
+      const attempt = startAnswerChangeAttempt(async () => {
+        recordAnswerChange('TCAS', 'Contact details', { question: 'email', before: 'a', after: 'b', error: 'Bad' });
+        throw new Error('replaced');
+      });
+      await assert.rejects(attempt.result, /replaced/);
+    });
+
+    // assert
+    assert.deepEqual(changes, {});
+  });
+
   test('ignores changes recorded outside a collecting task', () => {
     // arrange, act, assert
     assert.doesNotThrow(() =>
@@ -148,6 +194,24 @@ describe('answer changes', () => {
     // assert
     assert.equal(written, false);
     assert.deepEqual(await readdir(directory), []);
+  });
+
+  test('removes the answer changes a previous run left when no answer was changed', async () => {
+    // arrange
+    const directory = await mkdtemp(join(tmpdir(), 'answer-changes-'));
+    await mkdir(join(directory, 'policy'));
+    await writeFile(join(directory, 'policy', 'answer-changes.json'), '{}');
+
+    // act
+    const written = await writeAnswerChanges(join(directory, 'policy', 'answer-changes.json'), {
+      policyDetailsId: 'ABC',
+      historyId: 1,
+      changes: {}
+    });
+
+    // assert
+    assert.equal(written, false);
+    assert.deepEqual(await readdir(join(directory, 'policy')), []);
   });
 });
 

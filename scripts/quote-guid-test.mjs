@@ -30,6 +30,27 @@ const tcasJourneyHtml = `<h1>Cover details</h1>
   <div class="av-timeline-all-sections"><ul><li title="Contact details">Contact details</li></ul></div>
   <button onclick="document.body.innerHTML = '${quotePageHtml}'">Get your quote</button>`;
 
+/** TCAS journey whose Get your quote rejects the email address until the journey fixes replace it. */
+const tcasEmailFixHtml = `<h1>Cover details</h1>
+  <div class="av-timeline-all-sections"><ul><li title="Contact details">Contact details</li></ul></div>
+  <input name="email" type="text" hidden value="first name.last@example.com"><button hidden>Get your quote</button>
+  <script>
+    const email = document.querySelector('input');
+    document.querySelector('li').onclick = () => {
+      document.querySelector('h1').textContent = 'Contact details';
+      email.hidden = false;
+      document.querySelector('button').hidden = false;
+    };
+    document.querySelector('button').onclick = () => {
+      document.querySelector('.av-card-error-summary')?.remove();
+      if (email.value === 'nobody.special@nhitest.com') {
+        document.body.innerHTML = '${quotePageHtml}';
+      } else {
+        document.body.insertAdjacentHTML('beforeend', '<div class="av-card-error-summary"><ul><li><a>The Email address field contains invalid characters</a></li></ul></div>');
+      }
+    };
+  </script>`;
+
 async function withServer(handler, run) {
   const requests = [];
   const server = createServer((request, response) => {
@@ -401,6 +422,45 @@ describe('quote-page NHI Oops fallback', () => {
       assert.ok((await readdir(directory)).includes('comparisons'));
     });
   });
+
+  for (const [name, oopsGuids, expectedFlows] of [
+    [
+      'leaves out the answer changes of the original TCAS capture the replacement takes the place of',
+      ['orig-guid'],
+      []
+    ],
+    ['saves the answer changes of the original TCAS capture when no replacement is needed', [], ['tcas']]
+  ]) {
+    test(name, async () => {
+      // arrange
+      const handler = quoteJourneyHandler(oopsGuids);
+      const tcasHandler = (request, response) => {
+        if (!request.url.startsWith('/tcas/')) {
+          handler(request, response);
+          return;
+        }
+
+        response.setHeader('Content-Type', 'text/html');
+        response.end(tcasEmailFixHtml);
+      };
+      await withServer(tcasHandler, async (base) => {
+        const { directory, env } = await fixture(base);
+
+        // act
+        const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+        // assert
+        assert.equal(result.code, 0, result.output);
+        assert.ok(result.output.includes('TCAS: entering email address'), result.output);
+        const changesPath = join(directory, 'comparisons', `${policyA}-1`, 'answer-changes.json');
+        const flows = await readFile(changesPath, 'utf8').then(
+          (content) => Object.keys(JSON.parse(content).changes),
+          () => []
+        );
+        assert.deepEqual(flows, expectedFlows);
+      });
+    });
+  }
 
   test('logs each URL it opens', async () => {
     await withServer(quoteJourneyHandler(['orig-guid']), async (base) => {

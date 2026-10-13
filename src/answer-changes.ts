@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 /** File name of the answer changes each quote-page run writes into its `comparisons/<policyDetailsId>-<historyId>` folder. */
@@ -41,6 +41,39 @@ export function collectAnswerChanges<T>(changes: AnswerChangesByFlow, task: () =
   return changeStorage.run(changes, task);
 }
 
+/** An attempt started by {@link startAnswerChangeAttempt}. */
+export interface AnswerChangeAttempt<T> {
+  /** The attempt's result. */
+  result: Promise<T>;
+  /** Adds the attempt's changes to those of the task that started it; call once, when the attempt's result is used. */
+  keep: () => void;
+}
+
+/**
+ * Starts a task whose answer changes are kept apart until {@link AnswerChangeAttempt.keep} is called, so an attempt
+ * that is replaced (e.g. by a fallback capture) does not report changes the compared screenshots do not reflect.
+ * @param task Work that may record changes.
+ * @returns The attempt's result, and a function that keeps its changes.
+ */
+export function startAnswerChangeAttempt<T>(task: () => Promise<T>): AnswerChangeAttempt<T> {
+  const parent = changeStorage.getStore();
+  const changes: AnswerChangesByFlow = {};
+  return {
+    result: changeStorage.run(changes, task),
+    keep: () => {
+      if (parent === undefined) {
+        return;
+      }
+
+      for (const [flow, sections] of Object.entries(changes)) {
+        for (const [section, sectionChanges] of Object.entries(sections)) {
+          ((parent[flow] ??= {})[section] ??= []).push(...sectionChanges);
+        }
+      }
+    }
+  };
+}
+
 /**
  * Records a change to a question's answer for the {@link collectAnswerChanges} task running it; does nothing outside
  * one.
@@ -60,15 +93,17 @@ export function recordAnswerChange(flow: string, section: string, change: Answer
 
 /**
  * Writes a policy's answer changes as JSON, flows in name order (`nhi` before `tcas`), creating its folder if needed.
- * Nothing is written when no answer was changed.
+ * When no answer was changed, nothing is written and any file a previous run left is removed, so it cannot be read as
+ * this run's changes.
  * @param path File to write.
  * @param report The policy and its changes.
  * @returns Whether the file was written.
- * @throws When the folder or file cannot be written.
+ * @throws When the folder or file cannot be written, or a previous file cannot be removed.
  */
 export async function writeAnswerChanges(path: string, report: AnswerChangesReport): Promise<boolean> {
   const flows = Object.keys(report.changes).sort();
   if (flows.length === 0) {
+    await rm(path, { force: true });
     return false;
   }
 

@@ -4,6 +4,7 @@ import type { Page } from 'playwright';
 import {
   answerChangesFileName,
   collectAnswerChanges,
+  startAnswerChangeAttempt,
   writeAnswerChanges,
   type AnswerChangesByFlow
 } from './answer-changes.js';
@@ -286,19 +287,26 @@ async function captureAndCompare(
   // Inputs are valid, so clear the previous run's results before writing new ones.
   await removeQuoteOutput(basename, ['nhi', 'tcas']);
   // A mapped replacement means TCAS must wait for NHI to save it; otherwise the original TCAS policy runs alongside.
+  const originalTcasAttempt =
+    mappedGuid === undefined
+      ? startAnswerChangeAttempt(() =>
+          captureAt('TCAS', tcasUrl, {
+            output: tcasPath,
+            timeout: options.timeout,
+            beforeCapture: withAnnualPayment('TCAS', tcasQuote)
+          })
+        )
+      : undefined;
   const [nhi, originalTcas] = await Promise.allSettled([
     captureNhi(artemisQuoteGuid, mappedGuid, mappingPath, policyDetailsId, historyId, nhiPath, options),
-    mappedGuid === undefined
-      ? captureAt('TCAS', tcasUrl, {
-          output: tcasPath,
-          timeout: options.timeout,
-          beforeCapture: withAnnualPayment('TCAS', tcasQuote)
-        })
-      : Promise.resolve(undefined)
+    originalTcasAttempt?.result
   ]);
   let tcas = originalTcas;
   const replacementGuid = nhi.status === 'fulfilled' ? nhi.value.replacementGuid : undefined;
-  if (replacementGuid !== undefined && fallback !== undefined) {
+  // The original TCAS capture's answer changes are saved only when no replacement capture takes its place.
+  if (replacementGuid === undefined || fallback === undefined) {
+    originalTcasAttempt?.keep();
+  } else {
     console.log(`TCAS: using replacement quote GUID ${replacementGuid} to match NHI.`);
     const replacementUrl = templateUrl(fallback.tcasReplacementUrlTemplate, { artemisQuoteGuid: replacementGuid });
     [tcas] = await Promise.allSettled([
@@ -425,6 +433,9 @@ async function captureNhi(
     return { outcome: await capture(artemisQuoteGuid) };
   }
 
+  // An attempt that shows Oops is replaced by the unsaved journey below, so only that journey's answer changes count.
+  const captureUnlessOops = (quoteGuid: string) => keepAnswerChangesUnlessOops(() => capture(quoteGuid));
+
   // Replacement quotes exist only in the question set store until the journey's quote button saves them to NHI.
   const captureUnsaved = (quoteGuid: string) =>
     captureAt('NHI', templateUrl(fallback.unsavedQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), {
@@ -435,7 +446,7 @@ async function captureNhi(
   if (mappedGuid !== undefined) {
     console.log(`NHI: using mapped quote GUID ${mappedGuid} for ${artemisQuoteGuid}.`);
     try {
-      return { replacementGuid: mappedGuid, outcome: await capture(mappedGuid) };
+      return { replacementGuid: mappedGuid, outcome: await captureUnlessOops(mappedGuid) };
     } catch (error) {
       if (!(error instanceof OopsError)) {
         throw error;
@@ -447,7 +458,7 @@ async function captureNhi(
   }
 
   try {
-    return { outcome: await capture(artemisQuoteGuid) };
+    return { outcome: await captureUnlessOops(artemisQuoteGuid) };
   } catch (error) {
     if (!(error instanceof OopsError)) {
       throw error;
@@ -459,6 +470,26 @@ async function captureNhi(
       `NHI: mapped ${artemisQuoteGuid} to new quote GUID ${replacementGuid} in ${mappingPath}; running its journey.`
     );
     return { replacementGuid, outcome: await captureUnsaved(replacementGuid) };
+  }
+}
+
+/**
+ * Runs a capture attempt, saving its answer changes unless it shows Oops (see {@link startAnswerChangeAttempt}).
+ * @returns The attempt's result.
+ * @throws The attempt's error.
+ */
+async function keepAnswerChangesUnlessOops<T>(task: () => Promise<T>): Promise<T> {
+  const attempt = startAnswerChangeAttempt(task);
+  try {
+    const result = await attempt.result;
+    attempt.keep();
+    return result;
+  } catch (error) {
+    if (!(error instanceof OopsError)) {
+      attempt.keep();
+    }
+
+    throw error;
   }
 }
 
