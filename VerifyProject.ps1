@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 $commandList = @(
-    "npx tsc",
+    "npm run typecheck",
     "npm run test",
     "pwsh -NoProfile -Command 'Import-Module Pester -MinimumVersion 5.0; Invoke-Pester ./scripts -CI'",
     "npm run lint"
