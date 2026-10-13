@@ -133,7 +133,8 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
     ]);
     console.log(`Screenshot saved to ${output}`);
   } catch (error) {
-    if (page !== undefined && !(await isQuoteLoading(page))) {
+    // A page that cannot be checked (e.g. it closed) is not loading, so its failure is still captured and rethrown.
+    if (page !== undefined && !(await isQuoteLoading(page).catch(() => false))) {
       const declined = error instanceof DeclinedError;
       const failedOutput = `${output.slice(0, -extension.length)}-${declined ? 'declined' : 'failed'}`;
       try {

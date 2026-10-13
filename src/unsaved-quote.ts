@@ -1,8 +1,9 @@
-import type { Page, Request } from 'playwright';
+import type { Page } from 'playwright';
+import { trackApiRequests, type ApiRequests } from './api-requests.js';
 import { color } from './color.js';
 import { fixJourneyError, rebuildingCostFixName } from './journey-fixes.js';
 import { quoteHeadingPattern } from './quote-summary.js';
-import { extendWhileLoading, ValidationError } from './screenshot.js';
+import { extendWhileLoading, UnexpectedPageError, ValidationError } from './screenshot.js';
 import { readErrorSummary } from './tcas-quote.js';
 
 const errorSelector = 'div.av-card-error-summary';
@@ -16,8 +17,6 @@ const maxSections = 40;
  * is walked again once after that, so a second return is reported.
  */
 const maxReturns = 1;
-const apiQuietMilliseconds = 500;
-const apiSettleLimitMilliseconds = 10000;
 const seenErrorAttribute = 'data-unsaved-quote-seen';
 /** Text shown while a section looks up details; its answers are incomplete until it disappears. */
 const lookupInProgressPattern = /^Checking property details$/i;
@@ -45,6 +44,7 @@ export async function unsavedQuote(page: Page): Promise<void> {
     await waitForLookups(page, apiRequests);
     if (await quoteButton.isVisible()) {
       console.log(color.Gray(`NHI: clicking Get your quote on ${section}.`));
+      await markErrorSummariesSeen(page);
       await quoteButton.click();
       if (await waitForQuote(page, section)) {
         return;
@@ -85,41 +85,51 @@ async function readSection(page: Page): Promise<string> {
   return (await heading.textContent())?.trim() ?? '';
 }
 
-async function waitForLookups(page: Page, apiRequests: { settled: () => Promise<void> }): Promise<void> {
+async function waitForLookups(page: Page, apiRequests: ApiRequests): Promise<void> {
   await apiRequests.settled();
   await page.getByText(lookupInProgressPattern).first().waitFor({ state: 'hidden' });
 }
 
 /**
  * Waits for the quote heading, or for the journey to return to a section (shown by a section heading or an error
- * summary).
+ * summary not shown before the click, see {@link markErrorSummariesSeen}).
  * @returns `true` when the quote is shown, `false` when the journey returned to a section.
  */
 async function waitForQuote(page: Page, section: string): Promise<boolean> {
-  const quoteHeading = await extendWhileLoading(page, () =>
-    page.waitForFunction(
-      ({ section, errorSelector, quoteHeadingPattern }) => {
-        // No named helper functions here: tsx wraps them in __name(), which does not exist in the browser.
-        if (
-          [...document.querySelectorAll('h2')].some(
-            (element) =>
-              new RegExp(quoteHeadingPattern, 'i').test(element.textContent?.trim() ?? '') &&
-              element.getClientRects().length > 0
-          )
-        ) {
-          return 'quote';
-        }
+  try {
+    const quoteHeading = await extendWhileLoading(page, () =>
+      page.waitForFunction(
+        ({ section, errorSelector, seenErrorAttribute, quoteHeadingPattern }) => {
+          // No named helper functions here: tsx wraps them in __name(), which does not exist in the browser.
+          if (
+            [...document.querySelectorAll('h2')].some(
+              (element) =>
+                new RegExp(quoteHeadingPattern, 'i').test(element.textContent?.trim() ?? '') &&
+                element.getClientRects().length > 0
+            )
+          ) {
+            return 'quote';
+          }
 
-        const heading = document.querySelector('h1');
-        const returned =
-          document.querySelector(errorSelector) !== null ||
-          (heading !== null && heading.getClientRects().length > 0 && heading.textContent?.trim() !== section);
-        return returned ? 'returned' : false;
-      },
-      { section, errorSelector, quoteHeadingPattern }
-    )
-  );
-  return (await quoteHeading.jsonValue()) === 'quote';
+          const heading = document.querySelector('h1');
+          const returned =
+            document.querySelector(`${errorSelector}:not([${seenErrorAttribute}])`) !== null ||
+            (heading !== null && heading.getClientRects().length > 0 && heading.textContent?.trim() !== section);
+          return returned ? 'returned' : false;
+        },
+        { section, errorSelector, seenErrorAttribute, quoteHeadingPattern }
+      )
+    );
+    return (await quoteHeading.jsonValue()) === 'quote';
+  } catch (error) {
+    // A summary the site keeps in place on returning to the same section leaves the page unchanged until the wait times
+    // out with no loading screen; a loading screen that does not clear is still reported as a timeout.
+    if (!(error instanceof UnexpectedPageError) || (await readErrorSummary(page, errorSelector)) === undefined) {
+      throw error;
+    }
+
+    return false;
+  }
 }
 
 /**
@@ -127,12 +137,7 @@ async function waitForQuote(page: Page, section: string): Promise<boolean> {
  * @returns The error summary text when Continue failed validation, otherwise `undefined`.
  */
 async function continueFrom(page: Page, section: string): Promise<string | undefined> {
-  // Mark summaries already shown, so only a new one (or the heading changing) ends the wait.
-  await page.evaluate(
-    ({ errorSelector, seenErrorAttribute }) =>
-      document.querySelectorAll(errorSelector).forEach((element) => element.setAttribute(seenErrorAttribute, '')),
-    { errorSelector, seenErrorAttribute }
-  );
+  await markErrorSummariesSeen(page);
   await page
     .locator('button')
     .filter({ hasText: /^Continue$/i })
@@ -165,35 +170,11 @@ async function continueFrom(page: Page, section: string): Promise<string | undef
   return outcome === 'moved' ? undefined : readErrorSummary(page, errorSelector);
 }
 
-function trackApiRequests(page: Page): { settled: () => Promise<void> } {
-  const origin = new URL(page.url()).origin;
-  const pending = new Set<Request>();
-  const isApi = (request: Request) => {
-    const url = new URL(request.url());
-    return url.origin === origin && url.pathname.startsWith('/api/');
-  };
-
-  page.on('request', (request) => {
-    if (isApi(request)) {
-      pending.add(request);
-    }
-  });
-  page.on('requestfinished', (request) => pending.delete(request));
-  page.on('requestfailed', (request) => pending.delete(request));
-  return {
-    settled: async () => {
-      // Proceed after the limit regardless, so a polling endpoint cannot stall the journey.
-      const started = performance.now();
-      let quietSince = performance.now();
-      while (performance.now() - started < apiSettleLimitMilliseconds) {
-        if (pending.size > 0) {
-          quietSince = performance.now();
-        } else if (performance.now() - quietSince >= apiQuietMilliseconds) {
-          return;
-        }
-
-        await page.waitForTimeout(100);
-      }
-    }
-  };
+/** Marks the error summaries already shown, so only a new one (or the heading changing) ends a wait after a click. */
+async function markErrorSummariesSeen(page: Page): Promise<void> {
+  await page.evaluate(
+    ({ errorSelector, seenErrorAttribute }) =>
+      document.querySelectorAll(errorSelector).forEach((element) => element.setAttribute(seenErrorAttribute, '')),
+    { errorSelector, seenErrorAttribute }
+  );
 }

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { screenshot, ValidationError } from '../dist/screenshot.js';
+import { OopsError, screenshot, UnexpectedPageError, ValidationError } from '../dist/screenshot.js';
 import { tcasQuote } from '../dist/tcas-quote.js';
 import { assertGreyLogsInOrder } from './log-assertions.mjs';
 
@@ -106,6 +106,35 @@ const cases = [
       'TCAS: clicking Get your quote again.'
     ]
   ]),
+  [
+    // The site checks the answers before showing (or clearing) the summary, so errors are read once it has responded.
+    'email address recovery: summary shown and cleared after a delay',
+    `${cover}${contact}<input name="email" type="text" hidden value="first name.last@example.com">
+    <button hidden>Get your quote</button>
+    <script>
+      const email = document.querySelector('input');
+      document.querySelector('li').onclick = () => {
+        document.querySelector('h1').textContent = 'Contact details';
+        email.hidden = false;
+        document.querySelector('button').hidden = false;
+      };
+      document.querySelector('button').onclick = () => {
+        setTimeout(() => {
+          document.querySelector('.av-card-error-summary')?.remove();
+          if (email.value === 'nobody.special@nhitest.com') {
+            document.body.innerHTML = "<h2>Welcome Alex, here's your quote</h2>";
+          } else {
+            document.body.insertAdjacentHTML('beforeend', '<div class="av-card-error-summary"><ul><li><a>The Email address field contains invalid characters</a></li></ul></div>');
+          }
+        }, 200);
+      };
+    </script>`,
+    undefined,
+    [
+      'TCAS: entering email address nobody.special@nhitest.com on Contact details.',
+      'TCAS: clicking Get your quote again.'
+    ]
+  ],
   ['straight apostrophe', journey("<h2>Welcome Alex, here's your quote</h2>"), undefined],
   ['curly apostrophe', journey('<h2>Welcome Sam Smith, here&rsquo;s your quote</h2>'), undefined],
   ['conditional quote', journey('<h2>Welcome Mrs. Smith, here&rsquo;s your conditional quote</h2>'), undefined],
@@ -153,6 +182,8 @@ const validationCases = new Set([
   'email address recovery: replacement accepted false',
   'errors after contact click'
 ]);
+/** Cases that time out on an unexpected page (no loading screen shown), which keep that error class. */
+const unexpectedPageCases = new Set(['missing welcome heading']);
 
 test('Oops appearing during capture cannot produce a normal screenshot', async () => {
   const server = createServer((_request, response) => {
@@ -185,6 +216,34 @@ test('Oops appearing during capture cannot produce a normal screenshot', async (
       /Website displayed <h2>Oops<\/h2>/
     );
     assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+  }
+});
+
+test('a page that closes keeps the error that stopped the capture', async () => {
+  // arrange
+  const server = createServer((_request, response) => {
+    response.setHeader('Content-Type', 'text/html');
+    response.end('<h2>Quote ready</h2>');
+  });
+  await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+  const directory = await mkdtemp(join(tmpdir(), 'closed-capture-'));
+  try {
+    // act
+    const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {
+      output: join(directory, 'quote.png'),
+      wait: 0,
+      timeout: 1000,
+      beforeCapture: async (page) => {
+        await page.close();
+        throw new OopsError();
+      }
+    });
+
+    // assert
+    await assert.rejects(capture, OopsError);
   } finally {
     server.closeAllConnections();
     await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
@@ -247,6 +306,7 @@ for (const [name, html, expectedError, expectedLogs = []] of cases) {
         await assert.rejects(capture, (error) => {
           assert.match(error.message, expectedError);
           assert.equal(error instanceof ValidationError, validationCases.has(name), error.message);
+          assert.equal(error instanceof UnexpectedPageError, unexpectedPageCases.has(name), error.message);
           return true;
         });
         assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);

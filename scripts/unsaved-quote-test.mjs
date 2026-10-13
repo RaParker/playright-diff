@@ -503,3 +503,66 @@ for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of
     }
   });
 }
+
+/**
+ * Serves `html` and drives it with {@link unsavedQuote} up to the screenshot.
+ * @param {string} html Page served.
+ * @returns {Promise<void>} The capture, which rejects with the journey's error.
+ */
+async function captureUnsavedQuote(html) {
+  const server = createServer((_request, response) => {
+    response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    response.end(html);
+  });
+  await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+  const directory = await mkdtemp(join(tmpdir(), 'unsaved-quote-'));
+  try {
+    await screenshot(`http://127.0.0.1:${server.address().port}`, {
+      output: join(directory, 'quote.png'),
+      wait: 0,
+      timeout: 2000,
+      beforeCapture: unsavedQuote
+    });
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+  }
+}
+
+const staleSummaryHtml = `<h1>Contact details</h1>
+  <div class="av-card-error-summary"><ul><li><a>Earlier error</a></li></ul></div><button>Get your quote</button>`;
+
+test('unsaved quote journey ignores a summary already shown when Get your quote loads the quote', async (context) => {
+  // arrange
+  const log = context.mock.method(console, 'log');
+  const html = `${staleSummaryHtml}<script>
+    document.querySelector('button').onclick = () => {
+      setTimeout(() => { document.body.innerHTML = "<h2>Welcome Alex, here's your quote</h2>"; }, 300);
+    };
+  </script>`;
+
+  // act
+  await captureUnsavedQuote(html);
+
+  // assert
+  assertGreyLogsAbsent(log, ['NHI: Get your quote returned to Contact details; walking the journey again.']);
+});
+
+test('unsaved quote journey counts a summary kept in place after Get your quote as a return', async (context) => {
+  // arrange
+  const log = context.mock.method(console, 'log');
+
+  // act
+  const capture = captureUnsavedQuote(staleSummaryHtml);
+
+  // assert
+  await assert.rejects(capture, (error) => {
+    assert.match(
+      error.message,
+      /^NHI journey returned to Contact details after Get your quote 2 times: Earlier error$/
+    );
+    assert.ok(error instanceof ValidationError, error.message);
+    return true;
+  });
+  assertGreyLogsInOrder(log, ['NHI: Get your quote returned to Contact details; walking the journey again.']);
+});

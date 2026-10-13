@@ -440,7 +440,10 @@ Before capturing TCAS, the steps in `src/tcas-quote.steps.json` run in order:
 Edit the JSON file to change selectors or steps. Each successful step is logged in grey
 with its number, action and elapsed milliseconds; a failure names the step that stopped.
 
-After each click, the action checks for `div.av-card-error-summary`. If present, it prints
+After each click, the action waits for the page's `/api/` requests to finish (no request for
+500 ms, or 10 s at most), since the site can show an error summary only after a server-side
+check and can leave the previous one on screen for a moment after a retry. It then checks for
+`div.av-card-error-summary`. If present, it prints
 the text of each `.av-card-error-summary > ul > li > a` link (or the full summary text if
 there are no links) and stops the journey and comparison.
 
@@ -569,7 +572,10 @@ property, as "I live here permanently" ticks You there, which can clear that err
 Every answer a fix changes is saved in `comparisons/<ID>-<historyId>/answer-changes.json`,
 grouped by flow (`nhi`, then `tcas`) and then by section, in the order the changes were
 made. A question changed more than once (such as each claim) has one entry each time. Flows
-with no changes are left out, and the file is not written when nothing was changed.
+with no changes are left out. When nothing was changed the file is not written, and any file
+an earlier run left is removed. Only the captures whose screenshots are used count: when NHI
+shows Oops and a replacement quote is captured instead, the changes made by the Oops attempt
+and by the original TCAS capture are left out.
 
 ```json
 {
@@ -698,6 +704,9 @@ Enter the year built`, unless it is one of the [journey error auto-fixes](#journ
   Otherwise the copied answers need changing before that policy can be quoted.
 - If Get your quote returns to a section (for example while the rebuild estimate is still
   being looked up), the journey is walked again once; a second return fails with the summary.
+  A return is shown by a new section heading or an error summary that was not on screen
+  before the click, or by a summary that stays in place until the step timeout with no loading
+  screen shown.
   The site can drop the saved rebuilding cost on such a return while its field still shows
   `249,995`, so the rebuilding cost fix can be made once more on that walk.
 - The journey stops after 40 sections (counting sections walked again after a fix or a
