@@ -84,20 +84,18 @@ async function clickAndRecover(page: Page, target: Locator, name: string, recove
   const fixed = new Set<string>();
   await target.click();
   for (;;) {
-    try {
-      await checkQuoteErrors(page, 'div.av-card-error-summary');
+    // The summary itself is passed to the fixes, so the changes they record quote its lines without this flow's heading.
+    const errors = await readErrorSummary(page, 'div.av-card-error-summary');
+    if (errors === undefined) {
       return;
-    } catch (error) {
-      if (
-        !recover ||
-        (await fixJourneyError(page, 'TCAS', error instanceof Error ? error.message : undefined, fixed)) === undefined
-      ) {
-        throw error;
-      }
-
-      console.log(color.Gray(`TCAS: clicking ${name} again.`));
-      await target.click();
     }
+
+    if (!recover || (await fixJourneyError(page, 'TCAS', errors, fixed)) === undefined) {
+      throw await quoteErrorsError(page, errors);
+    }
+
+    console.log(color.Gray(`TCAS: clicking ${name} again.`));
+    await target.click();
   }
 }
 
@@ -126,6 +124,10 @@ async function waitForQuote(page: Page, selector: string, textPattern: string, e
 async function checkQuoteErrors(page: Page, errorSelector: string): Promise<void> {
   const errors = await readErrorSummary(page, errorSelector);
   if (errors !== undefined) {
-    throw await errorSummaryError(page, `TCAS quote errors: ${errors}`);
+    throw await quoteErrorsError(page, errors);
   }
+}
+
+function quoteErrorsError(page: Page, errors: string): Promise<Error> {
+  return errorSummaryError(page, `TCAS quote errors: ${errors}`);
 }

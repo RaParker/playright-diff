@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { describe, test } from 'node:test';
 import { collectAnswerChanges, recordAnswerChange, writeAnswerChanges } from '../dist/answer-changes.js';
 import { screenshot } from '../dist/screenshot.js';
+import { tcasQuote } from '../dist/tcas-quote.js';
 import { unsavedQuote } from '../dist/unsaved-quote.js';
 import { questionField, unsavedJourneyHtml } from './unsaved-journey-html.mjs';
 
@@ -17,10 +18,20 @@ const claimValueMessage = 'Must be between £1 and £10,000,000.';
  * @param {object} journey `unsavedJourneyHtml` options.
  * @returns {Promise<object>} The answer changes, by flow and section.
  */
-async function journeyAnswerChanges(journey) {
+function journeyAnswerChanges(journey) {
+  return pageAnswerChanges(unsavedJourneyHtml(journey), unsavedQuote);
+}
+
+/**
+ * Serves `html` and runs `beforeCapture` on it up to the screenshot, collecting the answers changed on the way.
+ * @param {string} html Page served.
+ * @param {(page: object) => Promise<void>} beforeCapture Journey action, such as `unsavedQuote` or `tcasQuote`.
+ * @returns {Promise<object>} The answer changes, by flow and section.
+ */
+async function pageAnswerChanges(html, beforeCapture) {
   const server = createServer((_request, response) => {
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
-    response.end(unsavedJourneyHtml(journey));
+    response.end(html);
   });
   await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   const directory = await mkdtemp(join(tmpdir(), 'answer-changes-'));
@@ -31,7 +42,7 @@ async function journeyAnswerChanges(journey) {
         output: join(directory, 'quote.png'),
         wait: 0,
         timeout: 2000,
-        beforeCapture: unsavedQuote
+        beforeCapture
       })
     );
     return changes;
@@ -282,6 +293,47 @@ describe('answer changes made by the journey fixes', () => {
         [section]: [
           { question: 'renovation end', before: 'day month year', after: '13 October 2026', error: renovationMessage },
           { question: 'date', before: 'day month year', after: `1 January ${floodYear}`, error: floodMessage }
+        ]
+      }
+    });
+  });
+
+  test('records a TCAS change with the error summary line alone, without the TCAS errors heading', async () => {
+    // arrange
+    const message = 'The Email address field contains invalid characters';
+    const html = `<h1>Cover details</h1>
+    <div class="av-timeline-all-sections"><ul><li title="Contact details">Contact details</li></ul></div>
+    <input name="email" type="text" hidden value="first name.last@example.com"><button hidden>Get your quote</button>
+    <script>
+      const email = document.querySelector('input');
+      document.querySelector('li').onclick = () => {
+        document.querySelector('h1').textContent = 'Contact details';
+        email.hidden = false;
+        document.querySelector('button').hidden = false;
+      };
+      document.querySelector('button').onclick = () => {
+        document.querySelector('.av-card-error-summary')?.remove();
+        if (email.value === 'nobody.special@nhitest.com') {
+          document.body.innerHTML = "<h2>Welcome Alex, here's your quote</h2>";
+        } else {
+          document.body.insertAdjacentHTML('beforeend', '<div class="av-card-error-summary"><ul><li><a>${message}</a></li></ul></div>');
+        }
+      };
+    </script>`;
+
+    // act
+    const changes = await pageAnswerChanges(html, tcasQuote);
+
+    // assert
+    assert.deepEqual(changes, {
+      tcas: {
+        'Contact details': [
+          {
+            question: 'email address',
+            before: 'first name.last@example.com',
+            after: 'nobody.special@nhitest.com',
+            error: message
+          }
         ]
       }
     });
