@@ -103,7 +103,8 @@ Notes:
   - Outcomes come from each folder's result.json. Folders with only a report.json (older runs)
     count as compared.
   - Oops pages saved before a policy's last run started are not counted.
-  - The exit code is always 0, whatever the results.`;
+  - The exit code is 0 whatever the results, and 1 only when a file cannot be read (such as an
+    invalid result.json or report.json, or a missing GUID list).`;
 
 /** What `summarise` can be given after its name: only the differences, or the changed answers. */
 const summariseModes = new Set(summariseModeNames);
@@ -392,8 +393,9 @@ async function retryDifferentQuotePages(
     const policyDetailsIds = different
       .filter((policy) => policy.historyId === historyId)
       .map(({ policyDetailsId }) => policyDetailsId);
-    await prepareMrpFiles(policyDetailsIds, historyId, guidList);
     try {
+      // Inside the try, so a batch whose MRP files cannot be prepared does not stop the batches after it.
+      await prepareMrpFiles(policyDetailsIds, historyId, guidList);
       await quotePages(policyDetailsIds, historyId, options);
     } catch (error) {
       failures.push(error instanceof Error ? error.message : String(error));
@@ -453,6 +455,19 @@ function parseQuotePageTimeout(value: string | undefined): number | undefined {
   }
 }
 
+function isProgrammingError(error: unknown): error is Error {
+  return (
+    error instanceof TypeError ||
+    error instanceof ReferenceError ||
+    error instanceof RangeError ||
+    error instanceof SyntaxError
+  );
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function optional(environment: Record<string, string | undefined>, name: string): string | undefined {
   const value = environment[name];
   return value === undefined || value.trim().length === 0 ? undefined : value;
@@ -468,7 +483,8 @@ function required(environment: Record<string, string | undefined>, name: string)
 }
 
 main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
+  // A programming error (such as a TypeError) is shown with its stack, so it can be traced; others are reported as is.
+  const message = isProgrammingError(error) ? (error.stack ?? error.message) : describeError(error);
   console.error(error instanceof ValidationError ? color.Yellow(message) : color.Red(message));
   process.exitCode = 1;
 });

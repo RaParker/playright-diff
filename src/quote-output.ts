@@ -2,7 +2,7 @@ import { readFile, rm, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { color } from './color.js';
 import { isMissing, readDirectoryNames } from './fs-helpers.js';
-import { outputPath } from './output-paths.js';
+import { outputPath, policyFolderPattern } from './output-paths.js';
 
 /** Files a quote-page run can write for each flow: the screenshot, and on failure or decline its HTML too. */
 const outputSuffixes = ['.png', '-failed.png', '-failed.html', '-declined.png', '-declined.html'];
@@ -35,13 +35,18 @@ export async function removeQuoteOutput(
 /**
  * Removes the policy's own `comparisons/<basename>` report (even one a crashed run left without `report.json`) and
  * each other `comparisons/*` report whose `report.json` compares one of the given screenshots (such as older
- * `run-<timestamp>` reports).
+ * `run-<timestamp>` reports). Other policies' folders only compare their own screenshots, so their reports are not
+ * read, which keeps a run of many policies from reading every report once per policy.
  */
 async function removeComparisons(basename: string, screenshotPaths: Set<string>): Promise<number> {
   const root = outputPath('comparisons');
   let removed = 0;
   for (const entry of await readDirectoryNames(root)) {
     const directory = join(root, entry);
+    if (entry !== basename && policyFolderPattern.test(entry)) {
+      continue;
+    }
+
     const images = entry === basename ? [] : await readReportImages(join(directory, 'report.json'));
     if (entry === basename || images.some((image) => screenshotPaths.has(image))) {
       await rm(directory, { recursive: true, force: true });

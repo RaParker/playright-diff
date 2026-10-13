@@ -95,14 +95,17 @@ function detectChanges(a: LoadedImage, b: LoadedImage, threshold: number) {
         inB = x < b.info.width && y < b.info.height;
       const ai = (y * a.info.width + x) * 3,
         bi = (y * b.info.width + x) * 3;
+      // Plain indexing rather than a closure and readUInt8 per channel: this runs for every pixel of a full page.
       const changed =
         inA !== inB ||
         (inA &&
           inB &&
-          [0, 1, 2].some((c) => Math.abs(a.data.readUInt8(ai + c) - b.data.readUInt8(bi + c)) > threshold));
+          (Math.abs((a.data[ai] as number) - (b.data[bi] as number)) > threshold ||
+            Math.abs((a.data[ai + 1] as number) - (b.data[bi + 1] as number)) > threshold ||
+            Math.abs((a.data[ai + 2] as number) - (b.data[bi + 2] as number)) > threshold));
       const out = (y * width + x) * 3;
       for (let c = 0; c < 3; c++) {
-        highlight[out + c] = changed ? (c === 1 ? 0 : 255) : inB ? b.data.readUInt8(bi + c) : 255;
+        highlight[out + c] = changed ? (c === 1 ? 0 : 255) : inB ? (b.data[bi + c] as number) : 255;
       }
 
       if (changed) {
@@ -299,13 +302,27 @@ function printRegionCount(total: number, withTextChanges: number, useOcr: boolea
   console.log(color.Gray(useOcr ? `${regions}, ${withTextChanges} with text changes.` : `${regions}; OCR disabled.`));
 }
 
-type Report = {
-  before: string;
-  after: string;
+/** Image size, as `sharp` reads it. */
+interface ImageSize {
+  width: number;
+  height: number;
+}
+
+/**
+ * The parts of a comparison's `report.json` that `summarise` reads. Defined here, beside the writer, so renaming a field
+ * fails to compile where it is read rather than at run time.
+ */
+export interface ComparisonReportBasics {
+  dimensions: { before: ImageSize; after: ImageSize };
   changedPixels: number;
   changedPercent: number;
+}
+
+interface Report extends ComparisonReportBasics {
+  before: string;
+  after: string;
   regions: Awaited<ReturnType<typeof processRegions>>;
-};
+}
 
 async function writeReport(output: string, report: Report) {
   await replaceFile(join(output, 'report.json'), JSON.stringify(report, null, 2));

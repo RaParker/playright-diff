@@ -6,6 +6,9 @@ import { replaceFile } from './fs-helpers.js';
 /** File name of the answer changes each quote-page run writes into its `comparisons/<policyDetailsId>-<historyId>` folder. */
 export const answerChangesFileName = 'answer-changes.json';
 
+/** Question name the cover start fix records its changes under. */
+export const coverStartQuestion = 'cover start';
+
 /** A change the flow made to one question's answer, so the journey would accept the test data. */
 export interface AnswerChange {
   /** Question changed, e.g. `claim value`. */

@@ -13,7 +13,8 @@ const selectedBoxSelector = '.hp-selected-box';
  * @throws When Pay annually is clicked but does not become selected before the timeout.
  */
 export async function selectAnnualPayment(page: Page, label: string): Promise<void> {
-  const annual = page.locator(annualButtonSelector);
+  // Only a shown option is used, so a second (e.g. mobile) selector hidden by the layout cannot make the click ambiguous.
+  const annual = page.locator(annualButtonSelector).filter({ visible: true }).first();
   // The selector renders with the quote heading, which the journey has already waited for.
   if ((await annual.count()) === 0) {
     console.log(color.Gray(`${label}: no payment selector on the quote page; leaving payments as shown.`));

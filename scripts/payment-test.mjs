@@ -23,6 +23,17 @@ for (const [name, html, expected] of [
     { annual: 1, monthly: 0, log: undefined }
   ],
   [
+    // A second selector hidden by the layout (e.g. for mobile) must not make the click ambiguous.
+    'clicks the shown Pay annually when a hidden selector is also on the page',
+    `${quotePageHtml}<div hidden>${paymentSelectorHtml('monthly')}</div>${paymentSelectorHtml('monthly')}<script>
+      document.addEventListener('click', (event) => {
+        const list = event.target.closest('[id$="~Kannually"]')?.closest('.hp-radio-button-list');
+        if (list) list.outerHTML = ${JSON.stringify(paymentSelectorHtml('annually'))};
+      });
+    </script>`,
+    { annual: 1, monthly: 1, log: /NHI: selecting Pay annually\./ }
+  ],
+  [
     'skips a quote page without a payment selector',
     quotePageHtml,
     { annual: 0, monthly: 0, log: /NHI: no payment selector on the quote page/ }

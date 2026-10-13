@@ -1,5 +1,5 @@
 import { errors, type Locator, type Page } from 'playwright';
-import { recordAnswerChange, type AnswerChange } from './answer-changes.js';
+import { coverStartQuestion, recordAnswerChange, type AnswerChange } from './answer-changes.js';
 import { color } from './color.js';
 import { ValidationError } from './screenshot.js';
 
@@ -26,6 +26,8 @@ const coverStartInputSelector = 'input.hp-date-input-single';
 const calendarMonthSelector = '.react-datepicker__current-month';
 /** Most months the calendar is moved to reach the cover start date, so a calendar that never shows it cannot loop. */
 const maxCalendarMonthMoves = 24;
+/** Milliseconds to wait for the cover start field to show the date picked before reading it as it is. */
+const coverStartChangeTimeout = 5000;
 /** Selected answer of a button or image question: a filled button, or a ticked image. */
 const selectedChoiceSelector = 'button.btn-primary:not(.dropdown-toggle), label.hp-checked';
 
@@ -338,7 +340,7 @@ const questionAnswers: QuestionAnswer[] = [
 /** Errors the journey can report about test data, and how each is fixed. */
 const journeyFixes: JourneyFix[] = [
   {
-    name: 'cover start',
+    name: coverStartQuestion,
     pattern: /The cover start field needs to be between (\d{4}-\d{2}-\d{2})\b/i,
     section: 'Cover details',
     describe: (match) => `selecting cover start ${match[1]}`,
@@ -465,7 +467,7 @@ async function answerQuestions(page: Page, answer: QuestionAnswer): Promise<Fixe
   const ids = await errorQuestions(page, answer).evaluateAll((elements) => elements.map((element) => element.id));
   const answered: FixedAnswer[] = [];
   for (const id of ids) {
-    const question = page.locator(`[id="${id}"]`);
+    const question = questionById(page, id, answer.question);
     const field = question.locator(answer.field);
     const before = await readAnswer(question, answer);
     switch (answer.kind) {
@@ -531,7 +533,7 @@ async function enterRebuildingCost(page: Page, label: string): Promise<FixedAnsw
 }
 
 async function selectCoverStart(page: Page, dateText: string): Promise<FixedAnswer[]> {
-  const date = parseErrorDate(dateText, 'cover start');
+  const date = parseErrorDate(dateText, coverStartQuestion);
   const before = await readValue(page.locator(coverStartInputSelector));
   const day = date.getUTCDate();
   const suffix = day % 100 >= 11 && day % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] ?? 'th');
@@ -542,7 +544,7 @@ async function selectCoverStart(page: Page, dateText: string): Promise<FixedAnsw
   await dayButton.click();
   await waitForCoverStartChange(page, before);
   const after = (await readValue(page.locator(coverStartInputSelector))) ?? dateText;
-  return [{ question: 'cover start', before, after }];
+  return [{ question: coverStartQuestion, before, after }];
 }
 
 /**
@@ -587,9 +589,11 @@ async function waitForCoverStartChange(page: Page, before: string | null): Promi
   }
 
   try {
+    // A short wait: the calendar updates the field at once, and a date that was already shown never changes it.
     await page.waitForFunction(
       ([selector, previous]) => (document.querySelector<HTMLInputElement>(selector)?.value ?? '').trim() !== previous,
-      [coverStartInputSelector, before ?? ''] as const
+      [coverStartInputSelector, before ?? ''] as const,
+      { timeout: coverStartChangeTimeout }
     );
   } catch (error) {
     if (!(error instanceof errors.TimeoutError)) {
@@ -608,12 +612,11 @@ async function enterEmail(page: Page): Promise<FixedAnswer[]> {
 async function selectRenovationEnd(page: Page, message: string, dateText: string): Promise<FixedAnswer[]> {
   const date = parseErrorDate(dateText, 'renovation end');
   // The id is read first, as answering the question can clear its error and so drop it from the locator.
-  const id = await page
+  const ids = await page
     .locator('div.av-input-error')
     .filter({ has: page.locator('div.av-error-message', { hasText: message }) })
-    .first()
-    .getAttribute('id');
-  const question = page.locator(`[id="${id ?? ''}"]`);
+    .evaluateAll((elements) => elements.map((element) => element.id));
+  const question = questionById(page, ids[0] ?? '', 'renovation end');
   const before = await readDate(question);
   const dateAnswer = `${date.getUTCDate()} ${monthName(date)} ${date.getUTCFullYear()}`;
   await chooseDate(page, question, dateAnswer);
@@ -692,6 +695,18 @@ function parseErrorDate(dateText: string, field: string): Date {
   }
 
   return date;
+}
+
+/**
+ * Finds a question by the id its error element carries.
+ * @throws When the id is empty, naming the question, rather than waiting for a selector that matches nothing.
+ */
+function questionById(page: Page, id: string, question: string): Locator {
+  if (id.length === 0) {
+    throw new Error(`The ${question} question has no id, so its answer cannot be changed.`);
+  }
+
+  return page.locator(`[id="${id}"]`);
 }
 
 function monthName(date: Date): string {

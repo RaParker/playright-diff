@@ -21,3 +21,6 @@ export function setOutputRoot(root: string | undefined): void {
 export function outputPath(...segments: string[]): string {
   return resolve(outputRoot ?? '.', ...segments);
 }
+
+/** A quote-page output folder, `<policyDetailsId>-<historyId>`; others (such as `.ocr-cache`) are ignored. */
+export const policyFolderPattern = /^[0-9a-f]{32}-\d+$/i;

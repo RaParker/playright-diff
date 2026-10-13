@@ -2,20 +2,18 @@ import { diffArrays } from 'diff';
 import { readFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { color, failureColor } from './color.js';
+import type { ComparisonReportBasics } from './compare.js';
 import { parseJson, readDirectoryNames, readFileNames, readOptionalTextFile } from './fs-helpers.js';
 import { fetchedHistoryId, filterMissingMrpFiles } from './mrp-fetch.js';
 import { readQuoteGuidList } from './quote-guid-list.js';
 import { readQuoteResult, type QuoteResult } from './quote-result.js';
-import { outputPath } from './output-paths.js';
+import { outputPath, policyFolderPattern } from './output-paths.js';
 
 /** OCR confidence (0-100) below which a region's text change is flagged as probably misread. */
 const lowOcrConfidence = 60;
 
 /** How many of the most common text changes to list. */
 const commonTextChangeLimit = 10;
-
-/** A quote-page output folder, `<policyDetailsId>-<historyId>`; others (such as `.ocr-cache`) are ignored. */
-export const policyFolderPattern = /^[0-9a-f]{32}-\d+$/i;
 
 /** A flow's failure page, `<policyDetailsId>-<historyId>-<flow>-failed.html`, saved in the screenshots folder. */
 const failurePagePattern = /^([0-9a-f]{32}-\d+)-(nhi|tcas)-failed\.html$/i;
@@ -303,10 +301,7 @@ interface ReportRegion {
   textChanges: unknown[];
 }
 
-interface ComparisonReport {
-  dimensions: { before: { width: number; height: number }; after: { width: number; height: number } };
-  changedPixels: number;
-  changedPercent: number;
+interface ComparisonReport extends ComparisonReportBasics {
   regions: ReportRegion[];
 }
 

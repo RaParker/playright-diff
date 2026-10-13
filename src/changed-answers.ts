@@ -1,13 +1,17 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { answerChangesFileName, type AnswerChangesByFlow, type AnswerChangesReport } from './answer-changes.js';
+import {
+  answerChangesFileName,
+  coverStartQuestion,
+  type AnswerChangesByFlow,
+  type AnswerChangesReport
+} from './answer-changes.js';
 import { color } from './color.js';
 import { parseJson, readDirectoryNames, readOptionalTextFile, replaceFile } from './fs-helpers.js';
-import { outputPath } from './output-paths.js';
-import { policyFolderPattern } from './summarise.js';
+import { outputPath, policyFolderPattern } from './output-paths.js';
 
 /** Question left out of the changed answers: every run moves the cover start into range, so it says nothing. */
-const ignoredQuestion = 'cover start';
+const ignoredQuestion = coverStartQuestion;
 
 /** Changed answers by `<policyDetailsId>-<historyId>` folder name, in folder order. */
 export type ChangedAnswers = Record<string, AnswerChangesByFlow>;

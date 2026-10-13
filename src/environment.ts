@@ -30,7 +30,8 @@ export async function loadEnvironment(path = '.env', environment: Environment = 
 
 async function readEnvironmentFile(path: string): Promise<Environment | undefined> {
   const content = await readOptionalTextFile(path);
-  return content === undefined ? undefined : parseEnv(content);
+  // A byte order mark (added by some Windows editors) would otherwise become part of the first setting's name.
+  return content === undefined ? undefined : parseEnv(content.replace(/^\uFEFF/, ''));
 }
 
 function mergeEnvironment(fileValues: Environment, environment: Environment): Environment {
@@ -58,7 +59,7 @@ function referenceExpander(values: Environment): (name: string) => string {
       throw new Error(`Circular environment variable reference: ${[...visiting, name].join(' -> ')}.`);
     }
 
-    const value = values[name];
+    const value = values[name] ?? caseInsensitiveValue(values, name);
     if (value === undefined) {
       throw new Error(`Environment variable ${name} is referenced but not defined in .env or the environment.`);
     }
@@ -74,4 +75,17 @@ function referenceExpander(values: Environment): (name: string) => string {
   };
 
   return expand;
+}
+
+/**
+ * Finds a reference whose case differs from the variable's name, on Windows only, where environment variable names are
+ * case-insensitive (so `${Username}` finds `USERNAME`). Elsewhere names are case-sensitive and nothing is found.
+ */
+function caseInsensitiveValue(values: Environment, name: string, platform = process.platform): string | undefined {
+  if (platform !== 'win32') {
+    return undefined;
+  }
+
+  const upperName = name.toUpperCase();
+  return Object.entries(values).find(([key, value]) => key.toUpperCase() === upperName && value !== undefined)?.[1];
 }

@@ -109,3 +109,29 @@ test('an action shows its help when .env references a name defined nowhere', asy
   assert.equal(code, 0, output);
   assert.match(output, /^Usage: npm run quote-page/);
 });
+
+test('environment reads the first setting of a .env file saved with a byte order mark', async () => {
+  // arrange
+  const content = '\uFEFFDIFF_OUTPUT_DIR=D:/output\nOTHER=1';
+
+  // act
+  const values = await load(content);
+
+  // assert
+  assert.equal(values.DIFF_OUTPUT_DIR, 'D:/output');
+});
+
+test(
+  'environment finds a reference in a different case on Windows',
+  { skip: process.platform !== 'win32' && 'environment variable names are case-sensitive here' },
+  async () => {
+    // arrange
+    const content = 'AGENT=${Username}';
+
+    // act
+    const values = await load(content, { USERNAME: 'agent.name' });
+
+    // assert
+    assert.equal(values.AGENT, 'agent.name');
+  }
+);

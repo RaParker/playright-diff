@@ -83,8 +83,9 @@ const loadingTimeouts = new WeakMap<Page, number>();
 
 /**
  * Runs a wait, and if it times out while a quote loading screen is still shown, waits for the loading screen to clear
- * (up to the rest of the loading allowance, twice the step timeout in all) and runs the wait once more. A timeout
- * with no loading screen, on either run, is reported at once as an {@link UnexpectedPageError}.
+ * (up to the rest of the loading allowance, another step timeout) and runs the wait once more, so a slow quote can take
+ * up to three step timeouts in all. A timeout with no loading screen, on either run, is reported at once as an
+ * {@link UnexpectedPageError}.
  * @param page Page opened by {@link screenshot}.
  * @param wait Wait to run, which should use the page's default timeout.
  * @returns The wait's result.
@@ -126,9 +127,9 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
     page.setDefaultTimeout(timeout);
     page.setDefaultNavigationTimeout(timeout);
     loadingTimeouts.set(page, timeout * loadingTimeoutMultiplier);
-    const { failure } = await watchForStops(page);
+    const { failure, isStopped } = await watchForStops(page);
     await Promise.race([
-      capturePage(page, url.href, output, extension, wait, options.beforeCapture, options.mask),
+      capturePage(page, url.href, { output, extension, wait, isStopped }, options.beforeCapture, options.mask),
       failure
     ]);
     console.log(`Screenshot saved to ${output}`);
@@ -161,12 +162,20 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
   }
 }
 
+/** Where and how {@link capturePage} saves its screenshot. */
+interface CaptureTarget {
+  output: string;
+  extension: string;
+  /** Milliseconds to wait after scrolling, before the screenshot. */
+  wait: number;
+  /** Whether the page has shown Oops or a decline since it opened (see {@link watchForStops}). */
+  isStopped: () => boolean;
+}
+
 async function capturePage(
   page: Page,
   url: string,
-  output: string,
-  extension: string,
-  wait: number,
+  { output, extension, wait, isStopped }: CaptureTarget,
   beforeCapture?: (page: Page) => Promise<void>,
   mask: string[] = []
 ): Promise<void> {
@@ -193,11 +202,17 @@ async function capturePage(
     maskColor
   });
   await checkForStops(page);
+  // A stop seen by the watcher has already failed the capture, so no normal screenshot is left beside its -failed one.
+  if (isStopped()) {
+    return;
+  }
+
   await writeFile(output, image);
 }
 
 async function checkForStops(page: Page): Promise<void> {
-  const headings = await page.locator('h2').allTextContents();
+  // The same headings as the watcher in watchForStops, so both report the same pages.
+  const headings = await page.locator('h1, h2, h3').allTextContents();
   if (headings.some((text) => text.trim() === 'Oops')) {
     throw new OopsError();
   }
@@ -233,7 +248,9 @@ async function waitForQuoteLoading(page: Page, timeout = loadingTimeouts.get(pag
       { timeout }
     );
   } catch (error) {
-    throw new Error('Timed out waiting for quote loading screen to disappear.', { cause: error });
+    throw error instanceof errors.TimeoutError
+      ? new Error('Timed out waiting for quote loading screen to disappear.', { cause: error })
+      : error;
   }
 }
 
@@ -256,13 +273,18 @@ async function unexpectedPageError(page: Page, timeout: Error): Promise<Unexpect
   );
 }
 
-/** Stops the capture when the page shows an Oops heading or a declined quote, whenever either appears. */
-async function watchForStops(page: Page): Promise<{ failure: Promise<never> }> {
+/**
+ * Stops the capture when the page shows an Oops heading or a declined quote, whenever either appears.
+ * @returns `failure`, which rejects when the page stops, and `isStopped`, which tells whether it has.
+ */
+async function watchForStops(page: Page): Promise<{ failure: Promise<never>; isStopped: () => boolean }> {
   let stop: (error: Error) => void = () => undefined;
+  let stopped = false;
   const failure = new Promise<never>((_resolve, reject) => {
     stop = reject;
   });
   await page.exposeFunction('__stopOnPage', (reason: string) => {
+    stopped = true;
     stop(reason === 'declined' ? new DeclinedError() : new OopsError());
   });
   // A string, not a function: tsx (used by the npm scripts) wraps named functions in __name(), which does not exist
@@ -293,7 +315,7 @@ async function watchForStops(page: Page): Promise<{ failure: Promise<never> }> {
       check();
     })();`
   });
-  return { failure };
+  return { failure, isStopped: () => stopped };
 }
 
 function validateOptions(urlArgument: string, options: ScreenshotOptions) {
