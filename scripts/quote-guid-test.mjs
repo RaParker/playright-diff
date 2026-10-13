@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { describe, test } from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import { defaultQuoteGuidCount, readQuoteGuidList, selectQuoteGuids } from '../dist/quote-guid-list.js';
 import { readQuoteGuidMapping, requestQuoteGuid, saveQuoteGuidMapping } from '../dist/quote-guid.js';
 import { declinedPageHtml, quotePageHtml, quoteSummaryHtml, unsavedJourneyHtml } from './unsaved-journey-html.mjs';
@@ -986,6 +987,51 @@ ${policyB}
       assert.match(result.plain, /Skipping 1 repeated policy ID; each policy runs once\./);
       assert.match(result.plain, /Quote pages summary\n2 passed \(0 both declined\), 0 failed\.\n/);
       assert.equal(requests.filter((path) => path === `/tcas/${policyA}/1`).length, 1);
+    });
+  });
+
+  test('saves the failures so far and the unfinished policies while a run is going', async () => {
+    const handler = quoteJourneyHandler([]);
+    // Policy B's NHI page never loads, so the run can be stopped while B is still running.
+    const hangingHandler = (request, response) => {
+      if (request.url !== '/nhi/guid-b') {
+        handler(request, response);
+      }
+    };
+    await withServer(hangingHandler, async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base, { [`${policyB}-1`]: 'guid-b' });
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n`);
+      const child = spawn(process.execPath, [script, 'quote-pages', '--no-fetch', '--concurrency', '1', '--no-ocr'], {
+        cwd: directory,
+        env
+      });
+      const exited = new Promise((resolveExit) => child.once('close', resolveExit));
+
+      // act
+      let saved;
+      try {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          saved = await readFailed(directory).catch(() => undefined);
+          if (saved?.failed[0]?.issues[0]?.startsWith('No saved MRP')) {
+            break;
+          }
+
+          await delay(100);
+        }
+      } finally {
+        child.kill();
+        await exited;
+      }
+
+      // assert
+      assert.deepEqual(
+        saved.failed.map(({ policyDetailsId, issues }) => [policyDetailsId, issues[0].split(':')[0]]),
+        [
+          [policyA, 'No saved MRP for this quote'],
+          [policyB, 'Not finished']
+        ]
+      );
     });
   });
 

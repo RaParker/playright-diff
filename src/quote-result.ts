@@ -1,6 +1,6 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { readOptionalTextFile } from './fs-helpers.js';
+import { parseJson, readOptionalTextFile, replaceFile } from './fs-helpers.js';
 import { outputPath } from './output-paths.js';
 
 /** File name of the result each quote-page run writes into its `comparisons/<policyDetailsId>-<historyId>` folder. */
@@ -34,7 +34,7 @@ export interface QuoteResult {
 export async function writeQuoteResult(result: QuoteResult, root = outputPath('comparisons')): Promise<void> {
   const directory = resolve(root, `${result.policyDetailsId}-${result.historyId}`);
   await mkdir(directory, { recursive: true });
-  await writeFile(join(directory, quoteResultFileName), `${JSON.stringify(result, null, 2)}\n`);
+  await replaceFile(join(directory, quoteResultFileName), `${JSON.stringify(result, null, 2)}\n`);
 }
 
 /**
@@ -50,7 +50,7 @@ export async function readQuoteResult(directory: string): Promise<QuoteResult | 
     return undefined;
   }
 
-  const result: unknown = JSON.parse(content);
+  const result = parseJson(content, path);
   if (!isQuoteResult(result)) {
     throw new Error(
       `Quote result must be {"policyDetailsId", "historyId", "outcome": "compared"|"declined"|"failed", "validation", "issues", "startedAt", "finishedAt"}: ${path}`

@@ -11,7 +11,7 @@ import {
 import { color, failureColor } from './color.js';
 import { compare } from './compare.js';
 import { runConcurrently, validateConcurrency } from './concurrency.js';
-import { isMissing } from './fs-helpers.js';
+import { isMissing, parseJson } from './fs-helpers.js';
 import { runWithLogPrefix, withPrefixedConsole } from './log-context.js';
 import { writeFailedQuotePages, type FailedQuotePage } from './failed-quote-pages.js';
 import {
@@ -134,6 +134,9 @@ export async function quotePage(
 /** Default number of policies {@link quotePages} runs at once. */
 export const defaultQuotePagesConcurrency = 3;
 
+/** Issue saved for a policy a quote-pages run has not finished, so `retry-failed` reruns it if the run is stopped. */
+const unfinishedIssue = 'Not finished: the run stopped before this policy completed.';
+
 /** Characters of the policy details ID shown in each log line's prefix when policies run at once. */
 const logPrefixIdLength = 8;
 
@@ -154,8 +157,9 @@ type PolicyRunOutcome = { status: QuotePageResult } | { status: 'failed'; messag
  * @param historyId History ID used for every policy.
  * @param options Options passed to each {@link quotePage} run, and the concurrency.
  * @param failedPath File that the run's failed policies replace, for `quote-pages -- retry-failed`; not written when omitted.
- * After all runs, saves the failed policies in list order (an empty list when none failed), then prints a summary:
- * the counts, then each failed policy with its issues.
+ * It is saved as the run starts and after each policy, listing the policies not finished yet as failed too, so a run
+ * that is stopped part way leaves them all to retry. After all runs, saves the failed policies in list order (deleting
+ * the file when none failed), then prints a summary: the counts, then each failed policy with its issues.
  * @throws When the concurrency is out of range, or after all runs when any policy failed. Policies where
  * both sides declined are not failures.
  */
@@ -168,7 +172,9 @@ export async function quotePages(
   const concurrency = options.concurrency ?? defaultQuotePagesConcurrency;
   validateConcurrency(concurrency);
   const policyDetailsIds = removeRepeatedIds(requestedIds);
-  const outcomes: PolicyRunOutcome[] = [];
+  const outcomes: (PolicyRunOutcome | undefined)[] = policyDetailsIds.map(() => undefined);
+  const progress = failedQuotePagesProgress(failedPath, historyId);
+  progress.save(listFailures(policyDetailsIds, outcomes));
   const runAll = () =>
     runConcurrently(policyDetailsIds, concurrency, async (policyDetailsId, index) => {
       const position = `${index + 1}/${policyDetailsIds.length}`;
@@ -178,25 +184,19 @@ export async function quotePages(
         concurrency === 1
           ? await run()
           : await runWithLogPrefix(`[${position} ${policyDetailsId.slice(0, logPrefixIdLength)}]`, run);
+      progress.save(listFailures(policyDetailsIds, outcomes));
     });
   await (concurrency === 1 ? runAll() : withPrefixedConsole(runAll));
+  await progress.settled();
 
-  const failures: FailedQuotePage[] = [];
-  const validationFailures = new Set<string>();
-  let declined = 0;
-  for (const [index, outcome] of outcomes.entries()) {
-    const policyDetailsId = policyDetailsIds[index] as string;
-    if (outcome.status === 'declined') {
-      declined++;
-    } else if (outcome.status === 'failed') {
-      if (outcome.validation) {
-        validationFailures.add(policyDetailsId);
-      }
-
-      failures.push({ policyDetailsId, issues: outcome.message.split('\n') });
-    }
-  }
-
+  const failures = listFailures(policyDetailsIds, outcomes);
+  const validationFailures = new Set(
+    policyDetailsIds.filter((_policyDetailsId, index) => {
+      const outcome = outcomes[index];
+      return outcome?.status === 'failed' && outcome.validation;
+    })
+  );
+  const declined = outcomes.filter((outcome) => outcome?.status === 'declined').length;
   if (failedPath !== undefined) {
     await writeFailedQuotePages(failedPath, { historyId, failed: failures });
   }
@@ -211,6 +211,50 @@ export async function quotePages(
   if (failures.length > 0) {
     throw new Error(`${failures.length} of ${policyDetailsIds.length} quote pages failed; see the summary above.`);
   }
+}
+
+/**
+ * Lists a quote-pages run's failed policies in list order, with a policy that has not finished yet listed as failed
+ * with {@link unfinishedIssue}.
+ */
+function listFailures(policyDetailsIds: string[], outcomes: (PolicyRunOutcome | undefined)[]): FailedQuotePage[] {
+  return policyDetailsIds.flatMap((policyDetailsId, index) => {
+    const outcome = outcomes[index];
+    if (outcome === undefined) {
+      return [{ policyDetailsId, issues: [unfinishedIssue] }];
+    }
+
+    return outcome.status === 'failed' ? [{ policyDetailsId, issues: outcome.message.split('\n') }] : [];
+  });
+}
+
+/**
+ * Saves the failed-policies file while a run is going, one write at a time in the order asked for. A write that fails
+ * only warns, since the run's final save reports its own errors.
+ * @param failedPath File to save, or `undefined` to save nothing.
+ * @param historyId History ID of the run.
+ * @returns `save`, which queues a write of the given failures, and `settled`, which waits for the queued writes.
+ */
+function failedQuotePagesProgress(
+  failedPath: string | undefined,
+  historyId: number
+): { save: (failed: FailedQuotePage[]) => void; settled: () => Promise<void> } {
+  let writes = Promise.resolve();
+  return {
+    save: (failed) => {
+      if (failedPath === undefined) {
+        return;
+      }
+
+      writes = writes
+        .then(() => writeFailedQuotePages(failedPath, { historyId, failed }))
+        .catch((error: unknown) => {
+          const reason = error instanceof Error ? error.message : String(error);
+          console.log(color.Yellow(`Could not save the run's progress to ${failedPath}: ${reason}`));
+        });
+    },
+    settled: () => writes
+  };
 }
 
 /**
@@ -396,7 +440,7 @@ async function readQuoteGuid(mrpPath: string): Promise<string> {
     throw error;
   }
 
-  const mrp: unknown = JSON.parse(content);
+  const mrp = parseJson(content, mrpPath);
   if (mrp === null || typeof mrp !== 'object' || !('artemisQuoteGuid' in mrp)) {
     throw new Error(`MRP file must contain the "artemisQuoteGuid" property: ${mrpPath}`);
   }

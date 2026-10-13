@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
-import { retryWhileBusy } from '../dist/fs-helpers.js';
+import { parseJson, replaceFile, retryWhileBusy } from '../dist/fs-helpers.js';
 
 /** An operation that fails with each given error code in turn, then resolves with `'done'`. */
 function failingOperation(codes) {
@@ -79,5 +82,61 @@ describe('retryWhileBusy', () => {
     assert.equal(result, 'done');
     assert.equal(calls.count, 1);
     assert.deepEqual(delays, []);
+  });
+});
+
+describe('replaceFile', () => {
+  test('replaces the content and leaves no temporary file', async () => {
+    // arrange
+    const directory = await mkdtemp(join(tmpdir(), 'replace-file-'));
+    const path = join(directory, 'result.json');
+    await writeFile(path, 'old');
+
+    // act
+    await replaceFile(path, 'new');
+
+    // assert
+    assert.equal(await readFile(path, 'utf8'), 'new');
+    assert.deepEqual(await readdir(directory), ['result.json']);
+  });
+
+  test('rejects and leaves no temporary file when the folder does not exist', async () => {
+    // arrange
+    const directory = await mkdtemp(join(tmpdir(), 'replace-file-'));
+
+    // act
+    const replace = replaceFile(join(directory, 'missing', 'result.json'), 'new');
+
+    // assert
+    await assert.rejects(replace, { code: 'ENOENT' });
+    assert.deepEqual(await readdir(directory), []);
+  });
+});
+
+describe('parseJson', () => {
+  test('returns the parsed value', () => {
+    // arrange
+    const content = '{"a": [1]}';
+
+    // act
+    const value = parseJson(content, 'report.json');
+
+    // assert
+    assert.deepEqual(value, { a: [1] });
+  });
+
+  test('names the file when the content is not valid JSON', () => {
+    // arrange
+    const content = '{"a": [1';
+
+    // act
+    const parse = () => parseJson(content, 'D:/output/report.json');
+
+    // assert
+    assert.throws(parse, (error) => {
+      assert.ok(error.message.startsWith('D:/output/report.json is not valid JSON: '), error.message);
+      assert.ok(error.cause instanceof SyntaxError);
+      return true;
+    });
   });
 });

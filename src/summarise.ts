@@ -2,7 +2,7 @@ import { diffArrays } from 'diff';
 import { readFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { color, failureColor } from './color.js';
-import { readDirectoryNames, readFileNames, readOptionalTextFile } from './fs-helpers.js';
+import { parseJson, readDirectoryNames, readFileNames, readOptionalTextFile } from './fs-helpers.js';
 import { fetchedHistoryId, filterMissingMrpFiles } from './mrp-fetch.js';
 import { readQuoteGuidList } from './quote-guid-list.js';
 import { readQuoteResult, type QuoteResult } from './quote-result.js';
@@ -553,7 +553,7 @@ async function readComparisonReport(path: string): Promise<ComparisonReport | un
     return undefined;
   }
 
-  const report: unknown = JSON.parse(content);
+  const report = parseJson(content, path);
   if (!isComparisonReport(report)) {
     throw new Error(`Comparison report must have dimensions, changedPixels, changedPercent and regions: ${path}`);
   }

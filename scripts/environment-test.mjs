@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { spawn } from 'node:child_process';
 import { test } from 'node:test';
 import { loadEnvironment } from '../dist/environment.js';
 
@@ -40,13 +41,41 @@ test('environment preserves empty values, repeated references and quote-page URL
   assert.equal(values.URL, 'https://example.com/{policyDetailsId}//{historyId}?again=https://example.com');
 });
 
-test('environment rejects a missing reference with its variable name', async () => {
-  await assert.rejects(load('OUTPUT=${REPO_BASE_PATH}/output'), /REPO_BASE_PATH is referenced but not defined/);
+test('environment rejects a missing reference with its variable name when the setting is read', async () => {
+  // arrange
+  const values = await load('OUTPUT=${REPO_BASE_PATH}/output');
+
+  // act
+  const read = () => values.OUTPUT;
+
+  // assert
+  assert.throws(read, /REPO_BASE_PATH is referenced but not defined/);
 });
 
-test('environment rejects direct and indirect reference cycles', async () => {
-  await assert.rejects(load('A=${A}'), /Circular environment variable reference: A -> A/);
-  await assert.rejects(load('A=${B}\nB=${C}\nC=${A}'), /A -> B -> C -> A/);
+test('environment rejects direct and indirect reference cycles when the setting is read', async () => {
+  // arrange
+  const direct = await load('A=${A}');
+  const indirect = await load('A=${B}\nB=${C}\nC=${A}');
+
+  // act
+  const readDirect = () => direct.A;
+  const readIndirect = () => indirect.A;
+
+  // assert
+  assert.throws(readDirect, /Circular environment variable reference: A -> A/);
+  assert.throws(readIndirect, /A -> B -> C -> A/);
+});
+
+test('environment reads a setting without references when another references a missing name', async () => {
+  // arrange
+  const values = await load('DIFF_OUTPUT_DIR=D:/output\nPROJECT=${REPO_BASE_PATH}/project');
+
+  // act
+  const output = values.DIFF_OUTPUT_DIR;
+
+  // assert
+  assert.equal(output, 'D:/output');
+  assert.throws(() => values.PROJECT, /REPO_BASE_PATH is referenced but not defined/);
 });
 
 test('environment overrides can break file cycles and undefined overrides do not hide file values', async () => {
@@ -59,4 +88,24 @@ test('environment allows a missing .env file when settings are provided external
   const directory = await mkdtemp(join(tmpdir(), 'environment-missing-'));
   const values = await loadEnvironment(join(directory, '.env'), { OUTPUT: 'external' });
   assert.deepEqual(values, { OUTPUT: 'external' });
+});
+
+test('an action shows its help when .env references a name defined nowhere', async () => {
+  // arrange
+  const directory = await mkdtemp(join(tmpdir(), 'environment-help-'));
+  await writeFile(join(directory, '.env'), 'MRP_AND_QUOTE_PROJECT_DIR=${UNDEFINED_REPO_ROOT}/mrp-and-quote\n');
+
+  // act
+  const child = spawn(process.execPath, [resolve('dist/main.js'), 'quote-page', '--help'], { cwd: directory });
+  let output = '';
+  child.stdout.on('data', (data) => (output += data));
+  child.stderr.on('data', (data) => (output += data));
+  const code = await new Promise((resolveExit, reject) => {
+    child.once('error', reject);
+    child.once('close', resolveExit);
+  });
+
+  // assert
+  assert.equal(code, 0, output);
+  assert.match(output, /^Usage: npm run quote-page/);
 });

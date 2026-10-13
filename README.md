@@ -253,7 +253,10 @@ The exit code is non-zero if any policy failed. A policy where
 
 A list run replaces `quote-pages-failed.json` in the current directory with that run's failed
 policy IDs, history ID and issues; a run where nothing failed deletes the file. It is
-git-ignored. `npm run quote-pages -- retry-failed` reruns only those policies — passed
+git-ignored. The file is also saved as the run starts and after each policy, listing the
+policies not finished yet with the issue `Not finished: the run stopped before this policy
+completed.`, so a run stopped part way (for example with Ctrl+C) leaves its failures and
+every unfinished policy for `retry-failed`. `npm run quote-pages -- retry-failed` reruns only those policies — passed
 policies and their output are left alone — then replaces the file with the ones still
 failing (or deletes it when all pass), so repeated retries shrink the list. Replacement GUIDs
 already in `quote-guid-mapping.json` are reused. With no file it prints
@@ -391,8 +394,10 @@ Rules:
 
 - Existing environment variables take precedence over `.env`.
 - `${VARIABLE_NAME}` references another `.env` setting or environment variable. References
-  resolve recursively (forward references included); missing or circular references stop
-  the command with an error.
+  resolve recursively (forward references included) when a command reads the setting, so a
+  reference only some commands use (such as `${REPO_BASE_PATH}`) does not stop the others or
+  `--help`. A missing or circular reference in a setting the command reads stops it with an
+  error.
 - URL placeholders such as `{policyDetailsId}` are left alone until `quote-page` fills them.
 - Relative paths resolve from the current working directory.
 - URL shapes come from Quote Journey's `/api/developer/links` (for example
@@ -780,10 +785,12 @@ Before calling work done, run `./VerifyProject.ps1` and check it prints `Done` w
 assumptions pages, output clean-up, declined quotes, the quote GUID fallback and `quote-pages`.
 `scripts/tsx-watcher-test.mjs` runs the source through `tsx` (as the npm scripts do) to check
 that Oops and declines appearing mid-journey still stop a capture at once. Chromium must be installed, and the
-OCR test may download language data on its first run. Run a subset with `npm run test:compare` or `npm run test:quote-page` (the
-latter includes `scripts/quote-summary-test.mjs` and `scripts/quote-guid-test.mjs`).
+OCR test may download language data on its first run. Run a subset with `npm run test:compare` or `npm run test:quote-page` (every
+`scripts/*-test.mjs` except the compare and smoke tests). Both `npm test` and the subset pick
+up new `scripts/*-test.mjs` files by name, so a new test file needs no `package.json` change.
 
-**TypeScript versions:** builds and type checks use TypeScript 7 through the
+**TypeScript versions:** builds and type checks (including `VerifyProject.ps1`, through
+`npm run typecheck`) use TypeScript 7 through the
 `typescript-compiler` package alias. TypeScript 6 stays installed as `typescript` for
 ESLint's parser, which doesn't yet support the TypeScript 7 compiler API.
 

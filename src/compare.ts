@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import { createWorker, PSM } from 'tesseract.js';
 import { color } from './color.js';
 import { createSerialisedUntilSuccess } from './concurrency.js';
+import { replaceFile } from './fs-helpers.js';
 import { outputPath } from './output-paths.js';
 
 export interface CompareOptions {
@@ -307,8 +308,8 @@ type Report = {
 };
 
 async function writeReport(output: string, report: Report) {
-  await writeFile(join(output, 'report.json'), JSON.stringify(report, null, 2));
-  await writeFile(join(output, 'report.md'), formatReport(report));
+  await replaceFile(join(output, 'report.json'), JSON.stringify(report, null, 2));
+  await replaceFile(join(output, 'report.md'), formatReport(report));
 }
 
 function formatReport(report: Report) {

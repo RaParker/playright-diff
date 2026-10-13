@@ -1,5 +1,5 @@
-import { rm, writeFile } from 'node:fs/promises';
-import { readOptionalTextFile } from './fs-helpers.js';
+import { rm } from 'node:fs/promises';
+import { parseJson, readOptionalTextFile, replaceFile } from './fs-helpers.js';
 
 /** File, in the current working directory, listing the policies that failed in the last quote-pages run. */
 export const failedQuotePagesPath = 'quote-pages-failed.json';
@@ -28,7 +28,7 @@ export async function writeFailedQuotePages(path: string, failures: FailedQuoteP
     return;
   }
 
-  await writeFile(path, `${JSON.stringify(failures, null, 2)}\n`);
+  await replaceFile(path, `${JSON.stringify(failures, null, 2)}\n`);
 }
 
 /**
@@ -43,7 +43,7 @@ export async function readFailedQuotePages(path: string): Promise<FailedQuotePag
     return undefined;
   }
 
-  const saved: unknown = JSON.parse(content);
+  const saved = parseJson(content, path);
   if (!isFailedQuotePages(saved)) {
     throw new Error(
       `Failed quote pages must be {"historyId": <integer>, "failed": [{"policyDetailsId": "<32 hex>", "issues": [...]}]}: ${path}`

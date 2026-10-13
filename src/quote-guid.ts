@@ -1,7 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { readOptionalTextFile, retryWhileBusy } from './fs-helpers.js';
+import { parseJson, readOptionalTextFile, replaceFile } from './fs-helpers.js';
 
 /**
  * The latest pending read or update of each mapping file (by absolute path). Each one waits for the one before, so
@@ -118,7 +117,7 @@ async function readMappingFile(path: string): Promise<Record<string, string>> {
     return {};
   }
 
-  const mapping: unknown = JSON.parse(content);
+  const mapping = parseJson(content, path);
   if (
     mapping === null ||
     typeof mapping !== 'object' ||
@@ -129,21 +128,6 @@ async function readMappingFile(path: string): Promise<Record<string, string>> {
   }
 
   return mapping as Record<string, string>;
-}
-
-/**
- * Writes the content to a temporary file beside the target, then renames it over the target, retrying while another
- * process (such as a virus scanner) briefly holds the target open.
- */
-async function replaceFile(path: string, content: string): Promise<void> {
-  const temporaryPath = `${path}.${randomUUID()}.tmp`;
-  try {
-    await writeFile(temporaryPath, content);
-    await retryWhileBusy(() => rename(temporaryPath, path));
-  } catch (error) {
-    await rm(temporaryPath, { force: true });
-    throw error;
-  }
 }
 
 /** Today's local date as `YYYY-MM-DD`. */

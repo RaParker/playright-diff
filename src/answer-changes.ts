@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { replaceFile } from './fs-helpers.js';
 
 /** File name of the answer changes each quote-page run writes into its `comparisons/<policyDetailsId>-<historyId>` folder. */
 export const answerChangesFileName = 'answer-changes.json';
@@ -109,6 +110,6 @@ export async function writeAnswerChanges(path: string, report: AnswerChangesRepo
 
   const changes = Object.fromEntries(flows.map((flow) => [flow, report.changes[flow]]));
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify({ ...report, changes }, null, 2)}\n`);
+  await replaceFile(path, `${JSON.stringify({ ...report, changes }, null, 2)}\n`);
   return true;
 }

@@ -1,4 +1,5 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 
 /**
  * Checks whether a file system error means the path does not exist.
@@ -38,6 +39,42 @@ export async function retryWhileBusy<T>(
 
       await delay(busyRetryDelay * 2 ** (attempt - 1));
     }
+  }
+}
+
+/**
+ * Writes the content to a temporary file beside the target, then renames it over the target, so a reader never sees
+ * a partly written file and an interrupted write leaves the previous content. The rename is retried while another
+ * process (such as a virus scanner) briefly holds the target open (see {@link retryWhileBusy}).
+ * @param path File to replace; its folder must exist.
+ * @param content Content to write.
+ * @throws When the file cannot be written or renamed; the temporary file is removed.
+ */
+export async function replaceFile(path: string, content: string | Buffer): Promise<void> {
+  const temporaryPath = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, content);
+    await retryWhileBusy(() => rename(temporaryPath, path));
+  } catch (error) {
+    await rm(temporaryPath, { force: true });
+    throw error;
+  }
+}
+
+/**
+ * Parses a JSON file's content, naming the file when it is not valid JSON (for example a file a crash cut short).
+ * @param content The file's content.
+ * @param path File the content came from, for the error message.
+ * @returns The parsed value, still to be checked by the caller.
+ * @throws An `Error` naming the file when the content is not valid JSON.
+ */
+export function parseJson(content: string, path: string): unknown {
+  try {
+    return JSON.parse(content) as unknown;
+  } catch (error) {
+    throw new Error(`${path} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`, {
+      cause: error
+    });
   }
 }
 

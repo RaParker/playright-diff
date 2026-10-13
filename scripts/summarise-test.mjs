@@ -159,6 +159,22 @@ describe('quote result file', () => {
     assert.equal(result, undefined);
   });
 
+  test('rejects a result cut short, naming the file', async () => {
+    // arrange
+    const root = await mkdtemp(join(tmpdir(), 'quote-result-'));
+    const path = join(root, 'result.json');
+    await writeFile(path, '{"policyDetailsId": "ABC", "histo');
+
+    // act
+    const read = readQuoteResult(root);
+
+    // assert
+    await assert.rejects(read, (error) => {
+      assert.ok(error.message.startsWith(`${path} is not valid JSON: `), error.message);
+      return true;
+    });
+  });
+
   for (const [name, content] of [
     ['an array', []],
     ['a missing startedAt', { ...failedResult(failedPolicy, []), startedAt: undefined }],

@@ -1,8 +1,8 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { answerChangesFileName, type AnswerChangesByFlow, type AnswerChangesReport } from './answer-changes.js';
 import { color } from './color.js';
-import { readDirectoryNames, readOptionalTextFile } from './fs-helpers.js';
+import { parseJson, readDirectoryNames, readOptionalTextFile, replaceFile } from './fs-helpers.js';
 import { outputPath } from './output-paths.js';
 import { policyFolderPattern } from './summarise.js';
 
@@ -39,7 +39,7 @@ export async function summariseChangedAnswers(options: ChangedAnswersOptions = {
   const output = resolve(options.output ?? outputPath('changed-answers.json'));
   const changedAnswers = await collectChangedAnswers(root);
   await mkdir(dirname(output), { recursive: true });
-  await writeFile(output, `${JSON.stringify(changedAnswers, null, 2)}\n`);
+  await replaceFile(output, `${JSON.stringify(changedAnswers, null, 2)}\n`);
   printChangedQuestionCounts(root, output, changedAnswers);
 }
 
@@ -54,11 +54,15 @@ export async function collectChangedAnswers(root: string): Promise<ChangedAnswer
   const names = (await readDirectoryNames(root)).filter((name) => policyFolderPattern.test(name));
   // Read in parallel (there can be over a thousand folders), then keep folder order.
   const reports = await Promise.all(
-    names.map(async (name) => ({ name, text: await readOptionalTextFile(join(root, name, answerChangesFileName)) }))
+    names.map(async (name) => {
+      const path = join(root, name, answerChangesFileName);
+      return { name, path, text: await readOptionalTextFile(path) };
+    })
   );
   const changedAnswers: ChangedAnswers = {};
-  for (const { name, text } of reports) {
-    const changes = text === undefined ? {} : withoutIgnoredQuestion((JSON.parse(text) as AnswerChangesReport).changes);
+  for (const { name, path, text } of reports) {
+    const changes =
+      text === undefined ? {} : withoutIgnoredQuestion((parseJson(text, path) as AnswerChangesReport).changes);
     if (Object.keys(changes).length > 0) {
       changedAnswers[name] = changes;
     }
