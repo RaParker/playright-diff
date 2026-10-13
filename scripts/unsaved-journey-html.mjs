@@ -156,10 +156,10 @@ export const questionField = {
       data-options="${optionsAttribute(options)}">`,
   /**
    * @param {string} id Question id; each toggle's id is `Q` followed by it and `~Kday`, `~Kmonth` or `~Kyear`.
-   * @returns {string} Day, month and year dropdowns HTML, offering this year and the 25 before it.
+   * @param {string[]} [years] Years offered (default this year and the 25 before it).
+   * @returns {string} Day, month and year dropdowns HTML.
    */
-  date: (id) => {
-    const year = new Date().getFullYear();
+  date: (id, years = Array.from({ length: 26 }, (_value, index) => String(new Date().getFullYear() - index))) => {
     const parts = {
       day: Array.from({ length: 31 }, (_value, index) => String(index + 1)),
       month: [
@@ -176,7 +176,7 @@ export const questionField = {
         'November',
         'December'
       ],
-      year: Array.from({ length: 26 }, (_value, index) => String(year - index))
+      year: years
     };
     return `<div role="group">${Object.entries(parts)
       .map(

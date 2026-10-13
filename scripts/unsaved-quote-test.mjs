@@ -13,6 +13,15 @@ const manySections = Array.from({ length: 45 }, (_value, index) => `Section ${in
 const rebuildingCostSections = ['Cover details', 'Property circumstances', 'Contact details'];
 const claimValueMessage = 'Must be between £1 and £10,000,000.';
 const replacementDate = `1 January ${new Date().getFullYear() - 2}`;
+const renovationYears = ['2026', '2027', '2028', '2029', '2030', '2031'];
+
+/**
+ * @param {string} from Earliest allowed date (YYYY-MM-DD).
+ * @returns {string} The renovation end out-of-range error, as the journey reports it.
+ */
+function renovationEndMessage(from) {
+  return `The renovationEnd field needs to be between ${from} and 2031-10-13`;
+}
 
 /**
  * Builds a journey whose `section` (the second of three) shows `questions` with validation errors.
@@ -209,6 +218,31 @@ for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of
     ]),
     undefined,
     [`NHI: selecting date ${replacementDate} on Property circumstances.`]
+  ],
+  [
+    'selects the first allowed renovation end date from the date dropdowns when Continue reports it out of range',
+    questionJourney('Property circumstances', [
+      {
+        id: 'renovationEnd',
+        message: renovationEndMessage('2026-10-13'),
+        field: questionField.date('renovationEnd', renovationYears),
+        expected: '13 October 2026'
+      }
+    ]),
+    undefined,
+    ['NHI: selecting renovation end 2026-10-13 on Property circumstances.']
+  ],
+  [
+    'reports a renovation end date in the error summary that is not a real date',
+    questionJourney('Property circumstances', [
+      {
+        id: 'renovationEnd',
+        message: renovationEndMessage('2026-02-30'),
+        field: questionField.date('renovationEnd', renovationYears),
+        expected: '30 February 2026'
+      }
+    ]),
+    /Invalid renovation end date in error summary: 2026-02-30/
   ],
   [
     'types the criminal conviction and chooses the matching suggestion when Continue reports it missing',

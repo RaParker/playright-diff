@@ -428,11 +428,18 @@ page:
 Some errors come from the test data rather than the quote, so the action fixes them
 (`src/journey-fixes.ts`) and carries on:
 
-| Error summary text                                           | Fix (on section)                                                                                                                                                                                                              |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "The Cover start field needs to be between YYYY-MM-DD and …" | Opens `svg.av-icon-calendar` and picks the calendar `div` whose aria-label ends with the earliest allowed date (for example `October 6th, 2026`), skipping days outside the month (**Cover details**)                         |
-| "The Email address field contains invalid characters"        | Enters `nobody.special@nhitest.com` in `input[name="email"]` (**Contact details**)                                                                                                                                            |
-| "Enter the cost of rebuilding the property"                  | Selects **Choose another amount** (`label[id$="~Kother"]`) unless it already has the `active` class or is not offered (no BCIS estimate), then enters `249995` in `input[name="rebuildingCost"]` (**Property circumstances**) |
+- **"The Cover start field needs to be between YYYY-MM-DD and …"** (**Cover details**): opens
+  `svg.av-icon-calendar` and picks the calendar `div` whose aria-label ends with the earliest
+  allowed date (for example `October 6th, 2026`), skipping days outside the month.
+- **"The renovationEnd field needs to be between YYYY-MM-DD and …"** (**Property
+  circumstances**): picks the earliest allowed date (for example `13 October 2026`) from the
+  day, month and year dropdowns (`button.dropdown-toggle[id$="~Kday"]` and so on) of the
+  question showing the error ("When is the work due to be completed?").
+- **"The Email address field contains invalid characters"** (**Contact details**): enters
+  `nobody.special@nhitest.com` in `input[name="email"]`.
+- **"Enter the cost of rebuilding the property"** (**Property circumstances**): selects
+  **Choose another amount** (`label[id$="~Kother"]`) unless it already has the `active` class
+  or is not offered (no BCIS estimate), then enters `249995` in `input[name="rebuildingCost"]`.
 
 - Each fix first opens its section from the timeline
   (`div.av-timeline-all-sections > ul > li[title="…"]`), unless that `<h1>` heading is

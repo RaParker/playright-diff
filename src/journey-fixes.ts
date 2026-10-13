@@ -329,6 +329,13 @@ const journeyFixes: JourneyFix[] = [
     apply: (page, match) => selectCoverStart(page, match[1] ?? '')
   },
   {
+    name: 'renovation end',
+    pattern: /The renovationEnd field needs to be between (\d{4}-\d{2}-\d{2})\b/i,
+    section: 'Property circumstances',
+    describe: (match) => `selecting renovation end ${match[1]}`,
+    apply: (page, match) => selectRenovationEnd(page, match[0], match[1] ?? '')
+  },
+  {
     name: 'email address',
     pattern: /The Email address field contains invalid characters/i,
     section: 'Contact details',
@@ -350,6 +357,8 @@ const journeyFixes: JourneyFix[] = [
  * been fixed already:
  * - "The Cover start field needs to be between YYYY-MM-DD and ..." picks the earliest allowed date in the Cover start
  *   calendar on Cover details.
+ * - "The renovationEnd field needs to be between YYYY-MM-DD and ..." picks the earliest allowed date from the "When is
+ *   the work due to be completed?" day, month and year dropdowns on Property circumstances.
  * - "The Email address field contains invalid characters" enters {@link replacementEmail} on Contact details.
  * - "Enter the cost of rebuilding the property" selects "Choose another amount" (unless already selected, or not
  *   offered because there is no BCIS estimate) and enters {@link replacementRebuildingCost} on Property circumstances.
@@ -366,7 +375,8 @@ const journeyFixes: JourneyFix[] = [
  * @param applied Names of fixes already made in this flow; fixes made now are added, and fixes already in it are not
  * tried again, so an error that persists is reported rather than fixed in a loop.
  * @returns The section of the last fix made, or `undefined` when `errors` reports nothing left to fix.
- * @throws When the cover start date in the error is not a real date, or a section or field cannot be used.
+ * @throws When the cover start or renovation end date in the error is not a real date, or a section or field cannot be
+ * used.
  */
 export async function fixJourneyError(
   page: Page,
@@ -486,17 +496,24 @@ async function enterRebuildingCost(page: Page, label: string): Promise<void> {
 }
 
 async function selectCoverStart(page: Page, dateText: string): Promise<void> {
-  const date = new Date(`${dateText}T00:00:00Z`);
-  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== dateText) {
-    throw new Error(`Invalid cover start date in error summary: ${dateText}`);
-  }
-
+  const date = parseErrorDate(dateText, 'cover start');
   const day = date.getUTCDate();
   const suffix = day % 100 >= 11 && day % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] ?? 'th');
-  const month = date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
-  const label = `${month} ${day}${suffix}, ${date.getUTCFullYear()}`;
+  const label = `${monthName(date)} ${day}${suffix}, ${date.getUTCFullYear()}`;
   await page.locator('svg.av-icon-calendar').click();
   await page.locator(`div[aria-label$="${label}"]:not(.react-datepicker__day--outside-month)`).click();
+}
+
+async function selectRenovationEnd(page: Page, message: string, dateText: string): Promise<void> {
+  const date = parseErrorDate(dateText, 'renovation end');
+  // The id is read first, as answering the question can clear its error and so drop it from the locator.
+  const id = await page
+    .locator('div.av-input-error')
+    .filter({ has: page.locator('div.av-error-message', { hasText: message }) })
+    .first()
+    .getAttribute('id');
+  const question = page.locator(`[id="${id ?? ''}"]`);
+  await chooseDate(page, question, `${date.getUTCDate()} ${monthName(date)} ${date.getUTCFullYear()}`);
 }
 
 /** Questions showing `answer`'s error message that have its field. */
@@ -511,6 +528,19 @@ async function chooseDropdownItem(page: Page, text: string): Promise<void> {
     .locator(dropdownItemSelector)
     .filter({ hasText: exactText(text) })
     .click();
+}
+
+function parseErrorDate(dateText: string, field: string): Date {
+  const date = new Date(`${dateText}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== dateText) {
+    throw new Error(`Invalid ${field} date in error summary: ${dateText}`);
+  }
+
+  return date;
+}
+
+function monthName(date: Date): string {
+  return date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
 }
 
 function dropdownToggle(name: string): string {
