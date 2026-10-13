@@ -503,6 +503,35 @@ describe('quote-page NHI Oops fallback', () => {
     });
   });
 
+  test('logs why the original TCAS capture failed when the replacement takes its place', async () => {
+    const handler = quoteJourneyHandler(['orig-guid']);
+    const oopsTcasHandler = (request, response) => {
+      if (!request.url.startsWith('/tcas/')) {
+        handler(request, response);
+        return;
+      }
+
+      response.setHeader('Content-Type', 'text/html');
+      response.end('<h2>Oops</h2>');
+    };
+    await withServer(oopsTcasHandler, async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base);
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.ok(
+        result.plain.includes(
+          `TCAS: original capture failed, so the replacement takes its place: Website displayed <h2>Oops</h2>; stopping the journey. (${base}/tcas/${policyA}/1)`
+        ),
+        result.output
+      );
+    });
+  });
+
   test('reports the section, error summary and URL when the unsaved journey fails validation', async () => {
     await withServer(quoteJourneyHandler(['orig-guid'], 'new-guid', { errorOn: 'Property type' }), async (base) => {
       // arrange

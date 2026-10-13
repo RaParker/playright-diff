@@ -22,6 +22,10 @@ export const rebuildingCostFixName = 'rebuilding cost';
 
 /** Cover start date field, beside the Cover details calendar. */
 const coverStartInputSelector = 'input.hp-date-input-single';
+/** Month and year heading of each month the cover start calendar shows (it can show two), e.g. "August 2026". */
+const calendarMonthSelector = '.react-datepicker__current-month';
+/** Most months the calendar is moved to reach the cover start date, so a calendar that never shows it cannot loop. */
+const maxCalendarMonthMoves = 24;
 /** Selected answer of a button or image question: a filled button, or a ticked image. */
 const selectedChoiceSelector = 'button.btn-primary:not(.dropdown-toggle), label.hp-checked';
 
@@ -533,10 +537,43 @@ async function selectCoverStart(page: Page, dateText: string): Promise<FixedAnsw
   const suffix = day % 100 >= 11 && day % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] ?? 'th');
   const label = `${monthName(date)} ${day}${suffix}, ${date.getUTCFullYear()}`;
   await page.locator('svg.av-icon-calendar').click();
-  await page.locator(`div[aria-label$="${label}"]:not(.react-datepicker__day--outside-month)`).click();
+  const dayButton = page.locator(`div[aria-label$="${label}"]:not(.react-datepicker__day--outside-month)`);
+  await showCalendarMonth(page, date, dayButton, label);
+  await dayButton.click();
   await waitForCoverStartChange(page, before);
   const after = (await readValue(page.locator(coverStartInputSelector))) ?? dateText;
   return [{ question: 'cover start', before, after }];
+}
+
+/**
+ * Moves the cover start calendar a month at a time until it shows `dayButton`. The calendar opens on the month of the
+ * date already given, which can be months away from the earliest date the journey allows.
+ * @param page Page with the calendar open.
+ * @param date Date to show.
+ * @param dayButton The date's day in the calendar.
+ * @param label The date as the calendar names it, for the error.
+ * @throws When the calendar shows no month heading, or does not show the date within {@link maxCalendarMonthMoves}
+ * months.
+ */
+async function showCalendarMonth(page: Page, date: Date, dayButton: Locator, label: string): Promise<void> {
+  const heading = page.locator(calendarMonthSelector).first();
+  // The calendar renders after the icon is clicked; a day already shown needs no month heading.
+  await heading.or(dayButton).first().waitFor({ state: 'visible' });
+  for (let moves = 0; !(await dayButton.isVisible()); moves++) {
+    const shown = (await heading.textContent())?.trim() ?? '';
+    const shownMonth = new Date(`1 ${shown} UTC`);
+    if (moves === maxCalendarMonthMoves || Number.isNaN(shownMonth.getTime())) {
+      throw new Error(`The cover start calendar did not show ${label} (it shows "${shown}").`);
+    }
+
+    const target = date.getUTCFullYear() * 12 + date.getUTCMonth();
+    const current = shownMonth.getUTCFullYear() * 12 + shownMonth.getUTCMonth();
+    await page.locator(`button[aria-label="${target < current ? 'Previous' : 'Next'} Month"]`).click();
+    await page.waitForFunction(
+      ([selector, previous]) => document.querySelector(selector)?.textContent?.trim() !== previous,
+      [calendarMonthSelector, shown] as const
+    );
+  }
 }
 
 /**

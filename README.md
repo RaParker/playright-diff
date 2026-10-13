@@ -490,7 +490,9 @@ Some errors come from the test data rather than the quote, so the action fixes t
 
 - **"The Cover start field needs to be between YYYY-MM-DD and …"** (**Cover details**): opens
   `svg.av-icon-calendar` and picks the calendar `div` whose aria-label ends with the earliest
-  allowed date (for example `October 6th, 2026`), skipping days outside the month.
+  allowed date (for example `October 6th, 2026`), skipping days outside the month. The
+  calendar opens on the month of the date already given, so it is first moved with **Next
+  Month** or **Previous Month** until that day is shown (up to 24 months).
 - **"The renovationEnd field needs to be between YYYY-MM-DD and …"** (**Property
   circumstances**): picks the earliest allowed date (for example `13 October 2026`) from the
   day, month and year dropdowns (`button.dropdown-toggle[id$="~Kday"]` and so on) of the
@@ -743,7 +745,9 @@ exactly as the endpoint returned it. Logs show
 
 - **New replacement:** TCAS first runs concurrently for the original policy (the replacement
   isn't known yet), then runs again for the replacement once NHI has saved it. The second
-  capture overwrites `-tcas.png`, and only its result counts.
+  capture overwrites `-tcas.png`, and only its result counts. If the first capture failed, its
+  error is logged in grey (`TCAS: original capture failed, so the replacement takes its place:
+…`), since it is not part of the run's result.
 - **Mapped replacement:** TCAS waits for NHI, then runs only for the replacement.
 - Screenshot and report names keep the original policy ID and history ID.
 

@@ -351,6 +351,13 @@ async function captureAndCompare(
   if (replacementGuid === undefined || fallback === undefined) {
     originalTcasAttempt?.keep();
   } else {
+    // The original capture's failure is not reported with the run's result, so it is logged for investigating.
+    if (originalTcas.status === 'rejected') {
+      const reason: unknown = originalTcas.reason;
+      const message = reason instanceof Error ? reason.message : String(reason);
+      console.log(color.Gray(`TCAS: original capture failed, so the replacement takes its place: ${message}`));
+    }
+
     console.log(`TCAS: using replacement quote GUID ${replacementGuid} to match NHI.`);
     const replacementUrl = templateUrl(fallback.tcasReplacementUrlTemplate, { artemisQuoteGuid: replacementGuid });
     [tcas] = await Promise.allSettled([

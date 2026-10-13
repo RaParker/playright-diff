@@ -135,6 +135,57 @@ const cases = [
       'TCAS: clicking Get your quote again.'
     ]
   ],
+  [
+    // The calendar opens on the month already given (August), so it is moved on to the earliest allowed date's month.
+    'cover start recovery: calendar opens two months before the date',
+    `${cover}<div class="av-timeline-all-sections"><ul><li title="Cover details">Cover details</li>
+    <li title="Contact details">Contact details</li></ul></div>
+    <input class="hp-date-input-single" value="29 Aug 2026">
+    <span id="calendar"><svg class="av-icon-calendar" width="24" height="24"><rect width="24" height="24" /></svg></span>
+    <div id="picker" hidden><div class="react-datepicker__current-month">August 2026</div>
+    <button aria-label="Previous Month">Previous</button><button aria-label="Next Month">Next</button>
+    <div id="day" hidden aria-label="Choose Friday, October 2nd, 2026">2</div></div>
+    <button hidden>Get your quote</button>
+    <script>
+      const months = ['July 2026', 'August 2026', 'September 2026', 'October 2026'];
+      let shown = 1;
+      let selected = false;
+      const showSection = (section) => {
+        document.querySelector('h1').textContent = section;
+        document.getElementById('calendar').hidden = section !== 'Cover details';
+      };
+      // The month heading changes a moment after each click, as the calendar re-renders.
+      const move = (by) => setTimeout(() => {
+        shown += by;
+        document.querySelector('.react-datepicker__current-month').textContent = months[shown];
+        document.getElementById('day').hidden = months[shown] !== 'October 2026';
+      }, 50);
+      document.querySelector('[aria-label="Next Month"]').onclick = () => move(1);
+      document.querySelector('[aria-label="Previous Month"]').onclick = () => move(-1);
+      document.querySelector('li[title="Contact details"]').onclick = () => {
+        if (selected) {
+          document.querySelector('.av-card-error-summary')?.remove();
+          document.querySelector('button:not([aria-label])').hidden = false;
+        } else if (!document.querySelector('.av-card-error-summary')) {
+          showSection('Contact details');
+          document.body.insertAdjacentHTML('beforeend', '<div class="av-card-error-summary"><ul><li><a>The cover start field needs to be between 2026-10-02 and 2027-01-01</a></li></ul></div>');
+        }
+      };
+      document.querySelector('li[title="Cover details"]').onclick = () => showSection('Cover details');
+      document.querySelector('svg').onclick = () => { document.getElementById('picker').hidden = false; };
+      document.getElementById('day').onclick = () => {
+        selected = true;
+        document.querySelector('input').value = '02 Oct 2026';
+      };
+      document.querySelector('button:not([aria-label])').onclick = () => { document.body.innerHTML = "<h2>Welcome Alex, here's your quote</h2>"; };
+    </script>`,
+    undefined,
+    [
+      'TCAS: selecting cover start 2026-10-02 on Cover details.',
+      'TCAS: opening Cover details from the timeline.',
+      'TCAS: clicking div.av-timeline-all-sections > ul > li[title="Contact details"] again.'
+    ]
+  ],
   ['straight apostrophe', journey("<h2>Welcome Alex, here's your quote</h2>"), undefined],
   ['curly apostrophe', journey('<h2>Welcome Sam Smith, here&rsquo;s your quote</h2>'), undefined],
   ['conditional quote', journey('<h2>Welcome Mrs. Smith, here&rsquo;s your conditional quote</h2>'), undefined],
