@@ -37,6 +37,7 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 | `npm run summarise`                 | Summarise every quote-page result (alias `summarize`)       |
 | `npm run summarise differences`     | Show only the quote-page results that differ                |
 | `npm run summarise changed-answers` | Combine every policy's answer changes and count them        |
+| `npm run migrate-output`            | Move output from the old layout into one folder per policy  |
 
 Add `-- --help` to any command for its options (for example `npm run compare -- --help`).
 
@@ -59,6 +60,7 @@ running it; with no arguments it shows its help (`Get-Help ./Run-Project.ps1 -Ex
 ./Run-Project.ps1 -RetryDifferent
 ./Run-Project.ps1 -Summarise                                     # or -Summarize
 ./Run-Project.ps1 -Summarise -Mode changed-answers               # or -Mode differences
+./Run-Project.ps1 -MigrateOutput -Root D:/temp/old-output        # add -Apply to move the files
 ./Run-Project.ps1 -Task Verify   # Install, InstallBrowser, Build, Typecheck, Lint, Test,
                                  # TestCompare, TestQuotePage, Verify
 ```
@@ -176,8 +178,8 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
 
   Before capturing (once the inputs are valid), the policy's previous folder is deleted with
   everything in it. `quote-guid-mapping.json` is kept. Older versions wrote to `screenshots/`
-  and `comparisons/<ID>-<historyId>/` instead; summarise and `retry-different` do not read
-  those, so rerun the policies (or use a new `DIFF_OUTPUT_DIR`) after upgrading.
+  and `comparisons/<ID>-<historyId>/` instead; move that output with
+  [migrate-output](#migrate-output).
 
 - **Result:** every run with a valid policy and history ID ends by writing
   `<ID>-<historyId>/result.json` — `outcome` (`compared`, `declined` or `failed`),
@@ -382,6 +384,35 @@ Saved to …/changed-answers.json
 ```
 
 A question changed more than once for one policy (such as each claim) is counted each time.
+
+### migrate-output
+
+Older versions split each policy's output between `screenshots/` and
+`comparisons/<ID>-<historyId>/`, which `summarise`, `retry-different` and `changed-answers` no
+longer read. This command moves that output into one `<ID>-<historyId>/` folder per policy,
+[as quote-page now writes it](#quote-page).
+
+```sh
+npm run migrate-output                                   # list what would move
+npm run migrate-output -- --apply                        # move it
+npm run migrate-output -- --root D:/temp/old-output --apply
+```
+
+- **Moves:** `screenshots/<ID>-<h>-nhi.png` → `<ID>-<h>/nhi.png`, and likewise `tcas`, the
+  `-failed` and `-declined` `.png`/`.html` pages and the `-api` folders. Everything in
+  `comparisons/<ID>-<h>/` (report, diff, regions, `result.json`, `answer-changes.json`) moves
+  into the same folder, and `comparisons/.ocr-cache` moves to `.ocr-cache`.
+- **Reports:** each moved `report.json` and `report.md` is pointed at the policy's screenshots
+  in their new place, even when the report was written under another output folder.
+- **Dry run first:** without `--apply` nothing changes; it prints how many files and folders
+  would move and into how many policy folders.
+- **Nothing is overwritten:** an entry whose target already exists (for example from a run of
+  the new version) is left in place and listed. Entries that are not quote-page output, such
+  as `comparisons/run-<timestamp>` reports or `screenshots/screenshot.png`, are left in place
+  and listed too. `screenshots/`, `comparisons/` and the old policy folders are removed only
+  when left empty.
+- **Root:** `--root` migrates another folder; without it, `DIFF_OUTPUT_DIR` (or the current
+  working directory) is used.
 
 ## Configuration
 

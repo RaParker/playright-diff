@@ -57,6 +57,10 @@ Describe 'Run-Project.ps1 command lines' {
 
         @{ Name = 'summarise passes the changed-answers mode'; Arguments = @('-Summarise', '-Mode', 'changed-answers'); Expected = '{cli} summarise changed-answers' }
 
+        @{ Name = 'migrate-output lists what would move'; Arguments = @('-MigrateOutput'); Expected = '{cli} migrate-output' }
+
+        @{ Name = 'migrate-output resolves Root and passes Apply'; Arguments = @('-MigrateOutput', '-Root', 'scripts', '-Apply'); Expected = '{cli} migrate-output --root {root}\scripts --apply' }
+
         @{ Name = 'npm task runs its npm script'; Arguments = @('-Task', 'TestQuotePage'); Expected = 'npm run test:quote-page' }
 
         @{ Name = 'Verify task runs VerifyProject.ps1'; Arguments = @('-Task', 'Verify'); Expected = '{root}\VerifyProject.ps1' }
@@ -103,6 +107,10 @@ Describe 'Run-Project.ps1 validation' {
         @{ Name = 'an unknown task'; Arguments = @('-Task', 'Deploy'); Message = "*parameter 'Task'*" }
 
         @{ Name = 'an unknown summarise mode'; Arguments = @('-Summarise', '-Mode', 'everything'); Message = "*parameter 'Mode'*" }
+
+        @{ Name = 'a missing migrate-output Root'; Arguments = @('-MigrateOutput', '-Root', 'missing-folder'); Message = '*Output folder "missing-folder" does not exist*' }
+
+        @{ Name = 'Apply without MigrateOutput'; Arguments = @('-Summarise', '-Apply'); Message = '*Parameter set cannot be resolved*' }
 
         @{ Name = 'Mode without Summarise'; Arguments = @('-RetryFailed', '-Mode', 'differences'); Message = '*Parameter set cannot be resolved*' }
     ) {

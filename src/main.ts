@@ -16,10 +16,11 @@ import { screenshot, ValidationError } from './screenshot.js';
 import { loadEnvironment } from './environment.js';
 import { outputPath, setOutputRoot } from './output-paths.js';
 import { intervalToMs } from './interval.js';
+import { migrateOutput } from './migrate-output.js';
 import { summariseChangedAnswers } from './changed-answers.js';
 import { collectQuoteResults, listDifferentPolicies, summariseQuoteResults } from './summarise.js';
 
-const help = `Usage: npm start -- <screenshot|compare|quote-page|quote-pages|summarise> [arguments] [options]
+const help = `Usage: npm start -- <screenshot|compare|quote-page|quote-pages|summarise|migrate-output> [arguments] [options]
 Use npm run <action> -- --help for action options.
 Each policy's output (screenshots, API responses, comparison report and result) is kept in
 <policyDetailsId>-<historyId>/ in DIFF_OUTPUT_DIR (.env or environment), or the current directory when it is
@@ -107,6 +108,22 @@ Notes:
   - The exit code is 0 whatever the results, and 1 only when a file cannot be read (such as an
     invalid result.json or report.json, or a missing GUID list).`;
 
+const migrateOutputHelp = `Usage: npm run migrate-output [-- options]
+
+Moves output from the old layout (screenshots/ and comparisons/<policyDetailsId>-<historyId>/) into one
+<policyDetailsId>-<historyId>/ folder per policy, as quote-page now writes it, and points each moved
+report.json and report.md at the screenshots' new place. comparisons/.ocr-cache moves to .ocr-cache.
+
+Options:
+  --apply           Move the files (without it, only lists what would move)
+  --root <folder>   Output folder to migrate (default: DIFF_OUTPUT_DIR, or the current directory)
+  -h, --help        Show help
+
+Notes:
+  - Nothing is overwritten: an entry whose target already exists is left in place and listed.
+  - Entries that are not quote-page output (such as comparisons/run-<timestamp>) are left in place
+    and listed. screenshots/ and comparisons/ are removed only when left empty.`;
+
 /** What `summarise` can be given after its name: only the differences, or the changed answers. */
 const summariseModes = new Set(summariseModeNames);
 
@@ -149,6 +166,11 @@ async function main(): Promise<void> {
 
   if (action === 'summarise' || action === 'summarize') {
     await runSummarise(args);
+    return;
+  }
+
+  if (action === 'migrate-output') {
+    await runMigrateOutput(args);
     return;
   }
 
@@ -337,6 +359,34 @@ async function runSummarise(args: string[]): Promise<void> {
     mrpAndQuoteOutputDir: optional(environment, 'MRP_AND_QUOTE_OUTPUT_DIR'),
     differentOnly: positionals[0] === 'differences'
   });
+}
+
+async function runMigrateOutput(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      apply: { type: 'boolean' },
+      root: { type: 'string' },
+      help: { type: 'boolean', short: 'h' }
+    }
+  });
+  if (values.help === true) {
+    console.log(migrateOutputHelp);
+    return;
+  }
+
+  if (positionals.length > 0) {
+    throw new Error(
+      usageError(
+        `migrate-output takes no arguments (got ${positionals.join(' ')}).`,
+        'Usage: npm run migrate-output [-- --apply] [--root <folder>]',
+        'migrate-output'
+      )
+    );
+  }
+
+  await migrateOutput({ root: values.root, apply: values.apply === true });
 }
 
 /**

@@ -3,9 +3,9 @@
 Runs any of this project's commands or development tasks with validated parameters.
 
 .DESCRIPTION
-One entry point for the playwright-diff CLI (screenshot, compare, quote-page, quote-pages, summarise) and its
-development tasks. Each command is a switch with its own parameter set, so tab completion only offers
-options that apply, and inputs are validated before Node starts.
+One entry point for the playwright-diff CLI (screenshot, compare, quote-page, quote-pages, summarise,
+migrate-output) and its development tasks. Each command is a switch with its own parameter set, so tab completion
+only offers options that apply, and inputs are validated before Node starts.
 
 CLI commands run src/main.ts through tsx (as the npm scripts do) from the project root, so .env,
 quote-guid-mapping.json and quote-pages-failed.json are always read from there. Each policy's output folder
@@ -87,6 +87,16 @@ retrieved, and totals including the GUID list size and Oops pages. Alias: -Summa
 Summarise only: differences (only the policies whose screenshots differed) or changed-answers (combine and count
 every policy's answer changes). Without it, the full summary is shown.
 
+.PARAMETER MigrateOutput
+Move output from the old layout (screenshots/ and comparisons/<policyDetailsId>-<historyId>/) into one
+<policyDetailsId>-<historyId>/ folder per policy. Without -Apply it only lists what would move.
+
+.PARAMETER Apply
+MigrateOutput only: move the files rather than listing them.
+
+.PARAMETER Root
+MigrateOutput only: output folder to migrate (default: DIFF_OUTPUT_DIR, or the project root).
+
 .PARAMETER NoOcr
 Compare pixels without extracting text.
 
@@ -130,6 +140,12 @@ Test (all suites), TestCompare, TestQuotePage or Verify (VerifyProject.ps1).
 
 .EXAMPLE
 ./Run-Project.ps1 -Summarise -Mode changed-answers
+
+.EXAMPLE
+./Run-Project.ps1 -MigrateOutput -Root D:/temp/playright-diff-output-full
+
+.EXAMPLE
+./Run-Project.ps1 -MigrateOutput -Root D:/temp/playright-diff-output-full -Apply
 
 .EXAMPLE
 ./Run-Project.ps1 -Task Verify
@@ -223,6 +239,16 @@ param(
     [Parameter(ParameterSetName = 'Summarise')]
     [ValidateSet('differences', 'changed-answers')]
     [string]$Mode,
+
+    [Parameter(Mandatory, ParameterSetName = 'MigrateOutput')]
+    [switch]$MigrateOutput,
+
+    [Parameter(ParameterSetName = 'MigrateOutput')]
+    [switch]$Apply,
+
+    [Parameter(ParameterSetName = 'MigrateOutput')]
+    [ValidateScript({ Test-Path -LiteralPath $_ -PathType Container }, ErrorMessage = 'Output folder "{0}" does not exist.')]
+    [string]$Root,
 
     [Parameter(ParameterSetName = 'Compare')]
     [Parameter(ParameterSetName = 'QuotePage')]
@@ -326,6 +352,15 @@ function Get-CliArguments {
             $arguments = @('summarise')
             if ($Mode) {
                 $arguments += $Mode
+            }
+
+            return $arguments
+        }
+
+        'MigrateOutput' {
+            $arguments = @('migrate-output') + (Get-OptionArguments @{ root = Resolve-UserPath $Root })
+            if ($Apply) {
+                $arguments += @('--apply')
             }
 
             return $arguments
