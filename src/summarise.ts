@@ -3,7 +3,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { color, failureColor } from './color.js';
 import type { ComparisonReportBasics } from './compare.js';
-import { parseJson, readDirectoryNames, readFileNames, readOptionalTextFile } from './fs-helpers.js';
+import { isMissing, parseJson, readDirectoryNames, readOptionalTextFile } from './fs-helpers.js';
 import { fetchedHistoryId, filterMissingMrpFiles } from './mrp-fetch.js';
 import { readQuoteGuidList } from './quote-guid-list.js';
 import { readQuoteResult, type QuoteResult } from './quote-result.js';
@@ -15,8 +15,11 @@ const lowOcrConfidence = 60;
 /** How many of the most common text changes to list. */
 const commonTextChangeLimit = 10;
 
-/** A flow's failure page, `<policyDetailsId>-<historyId>-<flow>-failed.html`, saved in the screenshots folder. */
-const failurePagePattern = /^([0-9a-f]{32}-\d+)-(nhi|tcas)-failed\.html$/i;
+/** Flows whose failure page, `<flow>-failed.html` in the policy's folder, is checked for Oops. */
+const oopsFlows = [
+  { flow: 'NHI', file: 'nhi-failed.html' },
+  { flow: 'TCAS', file: 'tcas-failed.html' }
+] as const;
 
 /** The Oops heading quote-page stops on (see `OopsError`). */
 const oopsHeadingPattern = /<h[1-3][^>]*>\s*Oops\s*<\/h[1-3]>/i;
@@ -46,7 +49,7 @@ export interface ComparedPolicy {
   textDifferences: TextDifference[];
 }
 
-/** Everything the summarise command found in a comparisons folder. */
+/** Everything the summarise command found in the output folder. */
 export interface QuoteResultsSummary {
   root: string;
   compared: ComparedPolicy[];
@@ -60,10 +63,8 @@ export interface QuoteResultsSummary {
 
 /** Where the summarise command looks; relative paths resolve from the current working directory. */
 export interface SummariseOptions {
-  /** Comparisons folder (default: `comparisons` in the output folder, see {@link outputPath}). */
+  /** Folder holding the policy folders (default: the output folder, see {@link outputPath}). */
   root?: string;
-  /** Screenshots folder, searched for Oops failure pages (default: `screenshots` in the output folder). */
-  screenshots?: string;
   /** GUID list (`QUOTE_GUID_LIST_PATH`); the GUID list totals are left out unless this and the next are set. */
   guidListPath?: string;
   /** mrp-and-quote's output folder (`MRP_AND_QUOTE_OUTPUT_DIR`), checked for each listed policy's MRP record. */
@@ -84,28 +85,28 @@ export interface OopsCount {
 export interface GuidListStatus {
   path: string;
   total: number;
-  /** Listed policies with no recorded result: no `comparisons/<policyDetailsId>-1` folder, or one without a result. */
+  /** Listed policies with no recorded result: no `<policyDetailsId>-1` folder, or one without a result. */
   withoutResult: string[];
   /** Listed policies with no `<policyDetailsId>-1-mrp.json` in mrp-and-quote's output folder. */
   missingMrp: string[];
 }
 
 /**
- * Prints a summary of every quote-page result in a comparisons folder: the visual and text differences of each
+ * Prints a summary of every quote-page result in the output folder: the visual and text differences of each
  * compared policy, the most common text changes, each failed policy with its issues, failures grouped by reason,
  * the MRP records not retrieved, and the totals (including the GUID list size and Oops pages). With `differentOnly`, it
  * prints only the differences, the most common text changes and how many compared policies differ.
- * @param options Folders to read, optionally the GUID list and MRP folder, and whether to print only the differences.
+ * @param options Folder to read, optionally the GUID list and MRP folder, and whether to print only the differences.
  * @throws When a `result.json`, `report.json` or the GUID list cannot be read or parsed.
  */
 export async function summariseQuoteResults(options: SummariseOptions = {}): Promise<void> {
-  const summary = await collectQuoteResults(options.root ?? outputPath('comparisons'));
+  const summary = await collectQuoteResults(options.root ?? outputPath());
   if (options.differentOnly === true) {
     printDifferentPolicies(summary);
     return;
   }
 
-  const oops = await countOopsPages(options.screenshots ?? outputPath('screenshots'), summary);
+  const oops = await countOopsPages(summary);
   const guidList =
     options.guidListPath === undefined || options.mrpAndQuoteOutputDir === undefined
       ? undefined
@@ -114,11 +115,11 @@ export async function summariseQuoteResults(options: SummariseOptions = {}): Pro
 }
 
 /**
- * Reads each `<root>/<policyDetailsId>-<historyId>` folder; other folders, such as the OCR cache or
- * `run-<timestamp>` reports, are skipped. A folder's `result.json` (written by quote-page) gives its outcome; a folder with
+ * Reads each `<root>/<policyDetailsId>-<historyId>` folder; other folders, such as the OCR cache, are
+ * skipped. A folder's `result.json` (written by quote-page) gives its outcome; a folder with
  * only a `report.json`, from a run before results were saved, counts as compared, since a report exists only when
  * both sides were captured.
- * @param root Comparisons folder.
+ * @param root Folder holding the policy folders.
  * @returns The compared, declined, failed and unrecorded policies, each sorted by folder name.
  * @throws When a `result.json` or `report.json` cannot be read or parsed.
  */
@@ -154,49 +155,38 @@ export async function collectQuoteResults(root: string): Promise<QuoteResultsSum
 }
 
 /**
- * Counts each flow's saved failure pages (`-nhi-failed.html`, `-tcas-failed.html`) that show the Oops heading, and
- * how many of those policies still compared or declined, for example after NHI retried with a replacement quote GUID.
- * A page saved before its policy's last recorded run started is left over from an earlier run (one that stopped
- * before clearing old output, such as for a missing MRP), so it is not counted.
- * @param screenshots Screenshots folder.
- * @param summary The comparisons summary, to tell which policies recovered and when each last run started.
+ * Counts each flow's saved failure pages (`nhi-failed.html`, `tcas-failed.html` in each policy's folder) that show the
+ * Oops heading, and how many of those policies still compared or declined, for example after NHI retried with a
+ * replacement quote GUID. A page saved before its policy's last recorded run started is left over from an earlier run
+ * (one that stopped before clearing old output, such as for a missing MRP), so it is not counted.
+ * @param summary The results summary, giving the folder to read, which policies recovered and when each last run
+ * started.
  * @returns One count for NHI, then one for TCAS.
  * @throws When a failure page cannot be read.
  */
-export async function countOopsPages(screenshots: string, summary: QuoteResultsSummary): Promise<OopsCount[]> {
-  const folder = resolve(screenshots);
+export async function countOopsPages(summary: QuoteResultsSummary): Promise<OopsCount[]> {
   const recoveredNames = new Set([...summary.compared.map(({ name }) => name), ...summary.declined]);
-  const counts: Record<string, OopsCount> = {
-    nhi: { flow: 'NHI', total: 0, recovered: 0 },
-    tcas: { flow: 'TCAS', total: 0, recovered: 0 }
-  };
-  const pages = (await readFileNames(folder)).flatMap((file) => {
-    const [, name, flow] = failurePagePattern.exec(file) ?? [];
-    return name === undefined || flow === undefined
-      ? []
-      : [{ path: join(folder, file), name: name.toUpperCase(), flow: flow.toLowerCase() }];
-  });
-  const oopsPages = await Promise.all(
-    pages.map(async (page) =>
-      (await isCurrentOopsPage(page.path, summary.runStarts.get(page.name))) ? page : undefined
-    )
+  const names = (await readDirectoryNames(summary.root)).filter((name) => policyFolderPattern.test(name));
+  return Promise.all(
+    oopsFlows.map(async ({ flow, file }) => {
+      const oops = await Promise.all(
+        names.map((name) => isCurrentOopsPage(join(summary.root, name, file), summary.runStarts.get(name)))
+      );
+      const oopsNames = names.filter((_name, index) => oops[index] === true);
+      return {
+        flow,
+        total: oopsNames.length,
+        recovered: oopsNames.filter((name) => recoveredNames.has(name)).length
+      };
+    })
   );
-  for (const page of oopsPages) {
-    const count = page === undefined ? undefined : counts[page.flow];
-    if (page !== undefined && count !== undefined) {
-      count.total++;
-      count.recovered += recoveredNames.has(page.name) ? 1 : 0;
-    }
-  }
-
-  return Object.values(counts);
 }
 
 /**
- * Compares the GUID list with the comparisons folders and mrp-and-quote's output folder.
+ * Compares the GUID list with the policy folders and mrp-and-quote's output folder.
  * @param guidListPath GUID list file, one policy ID per line.
  * @param mrpAndQuoteOutputDir mrp-and-quote's output folder.
- * @param summary The comparisons summary, to tell which listed policies have run.
+ * @param summary The results summary, to tell which listed policies have run.
  * @returns The list's size, its policies with no recorded result, and those whose MRP record was not retrieved.
  * @throws When the GUID list cannot be read or has an invalid line.
  */
@@ -222,7 +212,7 @@ export async function collectGuidListStatus(
 /**
  * Lists the compared policies whose NHI and TCAS screenshots differ (any changed pixel), the policies the summary
  * counts as different, for `quote-pages -- retry-different`.
- * @param summary The comparisons summary.
+ * @param summary The results summary.
  * @returns Each different policy's ID and history ID, taken from its folder name, in folder order.
  */
 export function listDifferentPolicies(summary: QuoteResultsSummary): { policyDetailsId: string; historyId: number }[] {
@@ -333,7 +323,7 @@ function printDifferentPolicies({ root, compared }: QuoteResultsSummary): void {
 
 /**
  * Prints the visual-only differences, text differences and most common text changes. With `folderRoot`, each policy
- * is labelled with its full comparisons folder path, so terminals can open it, rather than its folder name.
+ * is labelled with its full policy folder path, so terminals can open it, rather than its folder name.
  */
 function printDifferenceSections(compared: ComparedPolicy[], folderRoot?: string): void {
   printVisualOnlyDifferences(compared.filter(isVisualOnly), folderRoot);
@@ -533,9 +523,22 @@ async function readPolicyFolder(
   return { name, result, report: needsReport ? await readComparisonReport(join(directory, 'report.json')) : undefined };
 }
 
-/** True when the page shows Oops and was saved during the policy's last recorded run (or no run was recorded). */
+/**
+ * True when the page exists, shows Oops and was saved during the policy's last recorded run (or no run was recorded).
+ */
 async function isCurrentOopsPage(path: string, runStartedAt: string | undefined): Promise<boolean> {
-  if (runStartedAt !== undefined && (await stat(path)).mtimeMs < Date.parse(runStartedAt)) {
+  let modified: number;
+  try {
+    modified = (await stat(path)).mtimeMs;
+  } catch (error) {
+    if (isMissing(error)) {
+      return false;
+    }
+
+    throw error;
+  }
+
+  if (runStartedAt !== undefined && modified < Date.parse(runStartedAt)) {
     return false;
   }
 

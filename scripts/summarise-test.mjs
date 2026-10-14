@@ -69,40 +69,41 @@ async function writeReport(root, name, { changedPixels = 0, afterHeight = 100, r
 const fixtureDirectories = [];
 after(() => Promise.all(fixtureDirectories.map((directory) => rm(directory, { recursive: true, force: true }))));
 
-/** A project folder with one policy of each kind, an OCR cache, a run-<timestamp> report and Oops pages. */
+/**
+ * A project folder (also the output folder) with one policy of each kind, an OCR cache, a standalone comparison
+ * report and Oops pages.
+ */
 async function projectFixture() {
   const directory = await mkdtemp(join(tmpdir(), 'summarise-'));
   fixtureDirectories.push(directory);
-  const comparisons = join(directory, 'comparisons');
-  await writeReport(comparisons, `${identicalPolicy}-1`);
-  await writeReport(comparisons, `${textPolicy}-1`, {
+  const root = directory;
+  await writeReport(root, `${identicalPolicy}-1`);
+  await writeReport(root, `${textPolicy}-1`, {
     changedPixels: 30,
     regions: [
       region(1, 'PAY ANNUALLY\n\n£137.63\n\na year', 'PAY ANNUALLY\n\n£137.62\n\na year'),
       region(2, 'frais ved', 'frases ved', [40, 90])
     ]
   });
-  await writeReport(comparisons, `${visualPolicy}-1`, { changedPixels: 144, afterHeight: 120 });
-  await writeQuoteResult({ ...failedResult(textPolicy, []), outcome: 'compared', validation: false }, comparisons);
+  await writeReport(root, `${visualPolicy}-1`, { changedPixels: 144, afterHeight: 120 });
+  await writeQuoteResult({ ...failedResult(textPolicy, []), outcome: 'compared', validation: false }, root);
   await writeQuoteResult(
     failedResult(failedPolicy, [
       'Quote capture failed; comparison skipped.',
       'NHI: Website displayed <h2>Oops</h2>; stopping the journey. (https://quotes.example/q/1)'
     ]),
-    comparisons
+    root
   );
-  await writeQuoteResult({ ...failedResult(declinedPolicy, []), outcome: 'declined', validation: false }, comparisons);
-  await mkdir(join(comparisons, `${unrecordedPolicy}-1`));
-  await mkdir(join(comparisons, '.ocr-cache'));
-  await writeReport(comparisons, 'run-2026-10-12', { changedPixels: 5 });
+  await writeQuoteResult({ ...failedResult(declinedPolicy, []), outcome: 'declined', validation: false }, root);
+  await mkdir(join(root, `${unrecordedPolicy}-1`));
+  await mkdir(join(root, '.ocr-cache'));
+  await writeReport(join(root, 'comparisons'), 'run-2026-10-12', { changedPixels: 5 });
 
-  const screenshots = join(directory, 'screenshots');
-  await mkdir(screenshots);
-  await writeFile(join(screenshots, `${identicalPolicy}-1-nhi-failed.html`), '<body><h2 class="x"> Oops </h2></body>');
-  await writeFile(join(screenshots, `${failedPolicy}-1-nhi-failed.html`), '<h2>Oops</h2>');
-  await writeFile(join(screenshots, `${failedPolicy}-1-tcas-failed.html`), '<h2>Oops</h2>');
-  await writeFile(join(screenshots, `${visualPolicy}-1-tcas-failed.html`), '<h1>Cover details</h1>');
-  await writeFile(join(screenshots, `${identicalPolicy}-1-nhi.png`), '');
+  await writeFile(join(root, `${identicalPolicy}-1`, 'nhi-failed.html'), '<body><h2 class="x"> Oops </h2></body>');
+  await writeFile(join(root, `${failedPolicy}-1`, 'nhi-failed.html'), '<h2>Oops</h2>');
+  await writeFile(join(root, `${failedPolicy}-1`, 'tcas-failed.html'), '<h2>Oops</h2>');
+  await writeFile(join(root, `${visualPolicy}-1`, 'tcas-failed.html'), '<h1>Cover details</h1>');
+  await writeFile(join(root, `${identicalPolicy}-1`, 'nhi.png'), '');
 
   const mrp = join(directory, 'mrp');
   await mkdir(mrp);
@@ -117,7 +118,7 @@ async function projectFixture() {
       .map((guid) => guid.toLowerCase())
       .join('\n')
   );
-  return { directory, comparisons, screenshots, mrp, guidList };
+  return { directory, root, mrp, guidList };
 }
 
 async function runCli(directory, args, env = {}) {
@@ -296,10 +297,10 @@ describe('countTextChanges', () => {
 describe('collectQuoteResults', () => {
   test('sorts policy folders by outcome and skips other folders', async () => {
     // arrange
-    const { comparisons } = await projectFixture();
+    const { root } = await projectFixture();
 
     // act
-    const summary = await collectQuoteResults(comparisons);
+    const summary = await collectQuoteResults(root);
 
     // assert
     assert.deepEqual(
@@ -316,10 +317,10 @@ describe('collectQuoteResults', () => {
 
   test('reduces text changes to the changed lines and flags low OCR confidence', async () => {
     // arrange
-    const { comparisons } = await projectFixture();
+    const { root } = await projectFixture();
 
     // act
-    const summary = await collectQuoteResults(comparisons);
+    const summary = await collectQuoteResults(root);
 
     // assert
     const policy = summary.compared.find(({ name }) => name === `${textPolicy}-1`);
@@ -363,10 +364,10 @@ describe('collectQuoteResults', () => {
 
   test('reports a difference in page size', async () => {
     // arrange
-    const { comparisons } = await projectFixture();
+    const { root } = await projectFixture();
 
     // act
-    const summary = await collectQuoteResults(comparisons);
+    const summary = await collectQuoteResults(root);
 
     // assert
     const policy = summary.compared.find(({ name }) => name === `${visualPolicy}-1`);
@@ -391,11 +392,11 @@ describe('collectQuoteResults', () => {
 describe('countOopsPages', () => {
   test('counts Oops failure pages per flow and those whose policy later compared', async () => {
     // arrange
-    const { comparisons, screenshots } = await projectFixture();
-    const summary = await collectQuoteResults(comparisons);
+    const { root } = await projectFixture();
+    const summary = await collectQuoteResults(root);
 
     // act
-    const counts = await countOopsPages(screenshots, summary);
+    const counts = await countOopsPages(summary);
 
     // assert
     assert.deepEqual(counts, [
@@ -408,13 +409,13 @@ describe('countOopsPages', () => {
 describe('countOopsPages with earlier runs', () => {
   test("skips an Oops page saved before the policy's last run started", async () => {
     // arrange
-    const { comparisons, screenshots } = await projectFixture();
+    const { root } = await projectFixture();
     const stale = new Date('1999-12-31T00:00:00.000Z');
-    await utimes(join(screenshots, `${failedPolicy}-1-tcas-failed.html`), stale, stale);
-    const summary = await collectQuoteResults(comparisons);
+    await utimes(join(root, `${failedPolicy}-1`, 'tcas-failed.html'), stale, stale);
+    const summary = await collectQuoteResults(root);
 
     // act
-    const counts = await countOopsPages(screenshots, summary);
+    const counts = await countOopsPages(summary);
 
     // assert
     assert.deepEqual(counts, [
@@ -425,13 +426,13 @@ describe('countOopsPages with earlier runs', () => {
 
   test('counts an old Oops page when the policy has no recorded run', async () => {
     // arrange
-    const { comparisons, screenshots } = await projectFixture();
+    const { root } = await projectFixture();
     const stale = new Date('1999-12-31T00:00:00.000Z');
-    await utimes(join(screenshots, `${identicalPolicy}-1-nhi-failed.html`), stale, stale);
-    const summary = await collectQuoteResults(comparisons);
+    await utimes(join(root, `${identicalPolicy}-1`, 'nhi-failed.html'), stale, stale);
+    const summary = await collectQuoteResults(root);
 
     // act
-    const counts = await countOopsPages(screenshots, summary);
+    const counts = await countOopsPages(summary);
 
     // assert
     assert.deepEqual(counts[0], { flow: 'NHI', total: 2, recovered: 1 });
@@ -441,8 +442,8 @@ describe('countOopsPages with earlier runs', () => {
 describe('listDifferentPolicies', () => {
   test('lists only compared policies with changed pixels, skipping identical, declined, failed and unrecorded ones', async () => {
     // arrange
-    const { comparisons } = await projectFixture();
-    const summary = await collectQuoteResults(comparisons);
+    const { root } = await projectFixture();
+    const summary = await collectQuoteResults(root);
 
     // act
     const different = listDifferentPolicies(summary);
@@ -472,8 +473,8 @@ describe('listDifferentPolicies', () => {
 describe('collectGuidListStatus', () => {
   test('counts the list, the policies not run and the MRP records not retrieved', async () => {
     // arrange
-    const { comparisons, mrp, guidList } = await projectFixture();
-    const summary = await collectQuoteResults(comparisons);
+    const { root, mrp, guidList } = await projectFixture();
+    const summary = await collectQuoteResults(root);
 
     // act
     const status = await collectGuidListStatus(guidList, mrp, summary);
@@ -582,7 +583,7 @@ describe('summarise command', () => {
     }
   });
 
-  test('differences labels each policy with its full comparisons folder path', async () => {
+  test('differences labels each policy with its full policy folder path', async () => {
     // arrange
     const { directory } = await projectFixture();
 
@@ -592,7 +593,7 @@ describe('summarise command', () => {
     // assert
     assert.equal(code, 0, output);
     const [, root] = /Different quote results \((.+)\)\n/.exec(output) ?? [];
-    assert.ok(root?.endsWith('comparisons'), output);
+    assert.match(root ?? '', /summarise-\w+$/, output);
     assert.ok(output.includes(`\n  ${join(root, `${visualPolicy}-1`)}  0.10% changed`), output);
     assert.ok(output.includes(`\n${join(root, `${textPolicy}-1`)}  0.02% changed`), output);
   });

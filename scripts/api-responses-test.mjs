@@ -183,8 +183,8 @@ describe('API responses', () => {
 
 describe('apiResponsesFolder', () => {
   for (const [screenshotPath, expected] of [
-    [join('screenshots', 'ID-1-nhi.png'), join('screenshots', 'ID-1-nhi-api')],
-    [join('screenshots', 'ID-1-tcas.jpeg'), join('screenshots', 'ID-1-tcas-api')]
+    [join('ID-1', 'nhi.png'), join('ID-1', 'nhi-api')],
+    [join('ID-1', 'tcas.jpeg'), join('ID-1', 'tcas-api')]
   ]) {
     test(`gives ${expected} for ${screenshotPath}`, () => {
       // arrange

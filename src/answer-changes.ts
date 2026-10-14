@@ -3,7 +3,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { replaceFile } from './fs-helpers.js';
 
-/** File name of the answer changes each quote-page run writes into its `comparisons/<policyDetailsId>-<historyId>` folder. */
+/** File name of the answer changes each quote-page run writes into its `<policyDetailsId>-<historyId>` output folder. */
 export const answerChangesFileName = 'answer-changes.json';
 
 /** Question name the cover start fix records its changes under. */

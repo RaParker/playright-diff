@@ -139,7 +139,7 @@ Good to know:
 - Regions group adjacent changed 32-pixel tiles plus 40 pixels of context. Nearby changes
   may share a region, and crop edges can truncate long text.
 - OCR runs locally — images are never uploaded. Language data downloads on first use and
-  is cached in `comparisons/.ocr-cache`.
+  is cached in `.ocr-cache` in the output folder.
 - OCR can misread small or stylised text. Check the crops and confidence before treating a
   reported text change as definitive.
 
@@ -158,15 +158,29 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
 - **Input:** `MRP_AND_QUOTE_OUTPUT_DIR/<ID>-<historyId>-mrp.json`, whose top-level
   `artemisQuoteGuid` fills `{artemisQuoteGuid}` in the NHI URL template. The TCAS template
   uses `{policyDetailsId}` and `{historyId}`. All values are URL-encoded.
-- **Output:** `screenshots/<ID>-<historyId>-nhi.png` and `-tcas.png`, plus the report
-  directory `comparisons/<ID>-<historyId>`. Before capturing (once the inputs are valid), the
-  previous run's output for that policy and history ID is deleted: its `-nhi`/`-tcas`
-  screenshots and HTML (including `-failed` and `-declined`), its API response folders,
-  `comparisons/<ID>-<historyId>`,
-  and every other `comparisons/` report whose `report.json` compares them (such as
-  `run-<timestamp>` reports from older versions). `quote-guid-mapping.json` is kept.
+- **Output:** everything for one policy and history ID goes in one folder,
+  `<ID>-<historyId>/` in the [output folder](#configuration). Files appear only when they
+  apply; for example there is no comparison unless both sides quoted:
+
+  ```text
+  <ID>-<historyId>/
+  ├── nhi.png, tcas.png              screenshots (NHI = before, TCAS = after)
+  ├── nhi-failed.png, .html          when a flow failed (likewise tcas-failed)
+  ├── nhi-declined.png, .html        when a flow declined (likewise tcas-declined)
+  ├── nhi-api/, tcas-api/            API responses (see below)
+  ├── diff.png, region-N-before.png, region-N-after.png
+  ├── report.md, report.json         the comparison
+  ├── result.json                    how the run ended (see below)
+  └── answer-changes.json            answers a flow changed (see below)
+  ```
+
+  Before capturing (once the inputs are valid), the policy's previous folder is deleted with
+  everything in it. `quote-guid-mapping.json` is kept. Older versions wrote to `screenshots/`
+  and `comparisons/<ID>-<historyId>/` instead; summarise and `retry-different` do not read
+  those, so rerun the policies (or use a new `DIFF_OUTPUT_DIR`) after upgrading.
+
 - **Result:** every run with a valid policy and history ID ends by writing
-  `comparisons/<ID>-<historyId>/result.json` — `outcome` (`compared`, `declined` or `failed`),
+  `<ID>-<historyId>/result.json` — `outcome` (`compared`, `declined` or `failed`),
   `validation`, the failure `issues` (one line each), `startedAt` and `finishedAt` — for
   [summarise](#summarise). A run that stops before capturing (for example with no saved MRP)
   writes only this file and leaves the previous screenshots alone. If the file cannot be
@@ -174,11 +188,11 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   or fails on its own result.
 - **Answer changes:** when a flow changed or added answers so the journey would accept the
   test data (see [Journey error auto-fixes](#journey-error-auto-fixes)), the run also writes
-  `comparisons/<ID>-<historyId>/answer-changes.json`, whether it compared, declined or failed.
+  `<ID>-<historyId>/answer-changes.json`, whether it compared, declined or failed.
   See [Answer changes file](#answer-changes-file) for its format.
 - **API responses:** every JSON response each flow's page gets from the site's own API
   (`/api/` on the page's origin) is saved, whether the capture succeeds or fails, in
-  `screenshots/<ID>-<historyId>-nhi-api/` and `-tcas-api/`. Each response is one file,
+  `<ID>-<historyId>/nhi-api/` and `tcas-api/`. Each response is one file,
   numbered in the order it arrived, such as `001-GET-quote-summary-<guid>.json`, holding the
   `url`, `method`, `status`, `requestBody` and `body` (parsed when they are JSON). An NHI Oops
   attempt and its replacement journey, or the original and replacement TCAS captures, share
@@ -238,8 +252,8 @@ be told apart. Each policy needs two Chromium browsers and possibly an OCR worke
 concurrency with care.
 
 Running policies at the same time is safe: a policy listed more than once (in any case) runs
-once, at its first position, so each run writes only its own screenshots,
-`comparisons/<policyDetailsId>-<historyId>` folder and result. Reads and updates of
+once, at its first position, so each run writes only its own
+`<policyDetailsId>-<historyId>` folder. Reads and updates of
 `quote-guid-mapping.json` run one at a time and replace the file in one step (retrying for
 up to about 1.5 s while another program, such as a virus scanner, holds it open). OCR workers
 load one at a time until one has loaded, so the shared language-data cache is written once
@@ -279,7 +293,7 @@ stopped with Ctrl+C.
 
 #### Retrying differences
 
-`npm run quote-pages -- retry-different` reruns every policy in `comparisons/` whose
+`npm run quote-pages -- retry-different` reruns every policy folder in the output folder whose
 `report.json` has changed pixels — the policies [summarise](#summarise) counts as different —
 each with the history ID from its folder name. Identical, both-declined, failed and unrecorded
 policies are left alone (use `retry-failed` for failures). Use it after changing how pages are
@@ -290,9 +304,9 @@ different it prints `No different quote pages to retry` and exits successfully.
 
 ### summarise
 
-Summarises every `comparisons/<ID>-<historyId>` folder, so you can review a whole run (or
-several) at once. `npm run summarize` does the same. Other folders, such as `.ocr-cache` and
-`run-<timestamp>` reports, are skipped. The exit code is 0 whatever the results.
+Summarises every `<ID>-<historyId>` folder in the output folder, so you can review a whole
+run (or several) at once. `npm run summarize` does the same. Other folders, such as
+`.ocr-cache`, `screenshots` and `comparisons`, are skipped. The exit code is 0 whatever the results.
 
 ```sh
 npm run summarise
@@ -323,8 +337,8 @@ Oops pages: NHI 957 (953 later compared or declined), TCAS 10 (1 later compared 
 - **GUID list:** read from `QUOTE_GUID_LIST_PATH` and `MRP_AND_QUOTE_OUTPUT_DIR` in `.env`.
   Unlike for the other commands, both are optional; without them the GUID list line and MRP
   section are skipped.
-- **Oops pages:** counts the `screenshots/<ID>-<historyId>-nhi-failed.html` and
-  `-tcas-failed.html` pages that show the Oops heading. A policy that "later compared or
+- **Oops pages:** counts the `<ID>-<historyId>/nhi-failed.html` and
+  `tcas-failed.html` pages that show the Oops heading. A policy that "later compared or
   declined" recovered, usually through the [NHI Oops fallback](#nhi-oops-fallback). A page
   saved before the policy's last recorded run started (`startedAt`) is left over from an earlier
   run and is not counted.
@@ -339,7 +353,7 @@ This prints the Visual-only differences, Text differences and Most common text c
 sections, then how many of the compared policies differ (the policies
 [`retry-different`](#quote-pages) reruns), for example `404 different of 1237 compared.`
 Failures, MRP records, the GUID list and Oops pages are left out. Each policy is shown by the
-full path of its comparisons folder rather than its folder name, so you can Ctrl+click it in
+full path of its policy folder rather than its folder name, so you can Ctrl+click it in
 most terminals to open the screenshots and report.
 
 To see which answers the [journey fixes](#answer-changes-file) changed across every policy,
@@ -349,7 +363,7 @@ add `changed-answers`:
 npm run summarise changed-answers
 ```
 
-This combines every `comparisons/<ID>-<historyId>/answer-changes.json` into one
+This combines every `<ID>-<historyId>/answer-changes.json` into one
 `changed-answers.json` in the output folder (`DIFF_OUTPUT_DIR`), replacing any earlier one. Its
 keys are the policy folder names, each holding that policy's `nhi` and `tcas` changes by section,
 as in its own file. Cover start changes are left out, since nearly every run moves the cover
@@ -357,7 +371,7 @@ start into range, and so is any section, flow or policy left with no other chang
 prints how many times each question was changed, most changed first, and the totals:
 
 ```text
-Changed answers (…/comparisons; cover start ignored)
+Changed answers (…/playright-diff-output; cover start ignored)
   70× NHI   Property circumstances  rebuilding cost
    4× NHI   Contact details         email address
    4× TCAS  Contact details         email address
@@ -376,25 +390,26 @@ Every command reads `.env` in the current working directory. `quote-page`, `quot
 committed `.env` targets the feature-dev environment and writes output to
 `D:/temp/playright-diff-output`.
 
-| Variable                                      | Used by       | Purpose                                                                                            |
-| --------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------- |
-| `DIFF_OUTPUT_DIR`                             | all commands  | Optional folder holding `screenshots/` and `comparisons/` (default: the current working directory) |
-| `MRP_AND_QUOTE_OUTPUT_DIR`                    | both          | Folder containing `<ID>-<historyId>-mrp.json` files                                                |
-| `MRP_AND_QUOTE_PROJECT_DIR`                   | `quote-pages` | Optional mrp-and-quote project folder the MRP fetch runs in                                        |
-| `QUOTE_PAGE_TIMEOUT`                          | both          | Optional step timeout per capture, e.g. `45s` or `1m` (default `30s`)                              |
-| `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE`   | both          | NHI quote URL, with `{artemisQuoteGuid}`                                                           |
-| `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE`      | both          | Unsaved replacement journey URL (`nhi=false`)                                                      |
-| `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE`  | both          | TCAS quote URL, with `{policyDetailsId}` and `{historyId}`                                         |
-| `QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE` | both          | TCAS quote summary URL for a replacement GUID, with `{artemisQuoteGuid}`                           |
-| `QUOTE_JOURNEY_QUOTE_GUID_URL`                | both          | [NHI Oops fallback](#nhi-oops-fallback) endpoint                                                   |
-| `QUOTE_JOURNEY_AGENT_ID`                      | both          | Fallback request `agentId`                                                                         |
-| `QUOTE_JOURNEY_BRANCH_CODE`                   | both          | Fallback request `branchCode`                                                                      |
-| `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both          | Fallback request `callMediaUser`                                                                   |
-| `QUOTE_GUID_LIST_PATH`                        | `quote-pages` | GUID list file, one policy ID per line (also used by `retry-failed`)                               |
+| Variable                                      | Used by       | Purpose                                                                                                   |
+| --------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- |
+| `DIFF_OUTPUT_DIR`                             | all commands  | Optional folder holding each policy's `<ID>-<historyId>/` folder (default: the current working directory) |
+| `MRP_AND_QUOTE_OUTPUT_DIR`                    | both          | Folder containing `<ID>-<historyId>-mrp.json` files                                                       |
+| `MRP_AND_QUOTE_PROJECT_DIR`                   | `quote-pages` | Optional mrp-and-quote project folder the MRP fetch runs in                                               |
+| `QUOTE_PAGE_TIMEOUT`                          | both          | Optional step timeout per capture, e.g. `45s` or `1m` (default `30s`)                                     |
+| `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE`   | both          | NHI quote URL, with `{artemisQuoteGuid}`                                                                  |
+| `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE`      | both          | Unsaved replacement journey URL (`nhi=false`)                                                             |
+| `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE`  | both          | TCAS quote URL, with `{policyDetailsId}` and `{historyId}`                                                |
+| `QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE` | both          | TCAS quote summary URL for a replacement GUID, with `{artemisQuoteGuid}`                                  |
+| `QUOTE_JOURNEY_QUOTE_GUID_URL`                | both          | [NHI Oops fallback](#nhi-oops-fallback) endpoint                                                          |
+| `QUOTE_JOURNEY_AGENT_ID`                      | both          | Fallback request `agentId`                                                                                |
+| `QUOTE_JOURNEY_BRANCH_CODE`                   | both          | Fallback request `branchCode`                                                                             |
+| `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both          | Fallback request `callMediaUser`                                                                          |
+| `QUOTE_GUID_LIST_PATH`                        | `quote-pages` | GUID list file, one policy ID per line (also used by `retry-failed`)                                      |
 
 All variables listed for a command are required, except `DIFF_OUTPUT_DIR`, `MRP_AND_QUOTE_PROJECT_DIR` (default: the
-output folder's parent) and `QUOTE_PAGE_TIMEOUT`. `screenshots/` and `comparisons/` paths in this
-README (including defaults and the OCR cache) are inside `DIFF_OUTPUT_DIR` when it is set; paths
+output folder's parent) and `QUOTE_PAGE_TIMEOUT`. Policy folders, `screenshots/` and
+`comparisons/` paths in this README (including defaults and the OCR cache) are inside
+`DIFF_OUTPUT_DIR` when it is set; paths
 you pass yourself, such as `--output`, are not. `quote-guid-mapping.json` and
 `quote-pages-failed.json` always stay in the current working directory. `QUOTE_PAGE_TIMEOUT` is a whole number with an
 optional `s`, `m`, `h` or `d` suffix (milliseconds without one), from 1 ms to 8 hours, matching
@@ -592,7 +607,7 @@ property, as "I live here permanently" ticks You there, which can clear that err
 
 #### Answer changes file
 
-Every answer a fix changes is saved in `comparisons/<ID>-<historyId>/answer-changes.json`,
+Every answer a fix changes is saved in `<ID>-<historyId>/answer-changes.json`,
 grouped by flow (`nhi`, then `tcas`) and then by section, in the order the changes were
 made. A question changed more than once (such as each claim) has one entry each time. Flows
 with no changes are left out. When nothing was changed the file is not written, and any file
@@ -692,7 +707,7 @@ so it never triggers the [NHI fallback](#nhi-oops-fallback).
 
 If navigation or a Playwright step fails after the page opens, the current page is saved
 next to the intended output with a `-failed.png` suffix (for example
-`ABCDEF1234567890ABCDEF1234567890-42-tcas-failed.png`), along with its rendered DOM as
+`ABCDEF1234567890ABCDEF1234567890-42/tcas-failed.png`), along with its rendered DOM as
 `-failed.html` (`document.documentElement.outerHTML`, so it holds what React built, not the
 served source; typed input values are not included). Use the HTML to build test fixtures.
 The original error is still reported. If the failure screenshot or HTML can't be saved, that
@@ -785,7 +800,7 @@ The Quote Journey API reference is in [docs/api-documentation.json](docs/api-doc
   answer, or delete the mapping entry to request a new GUID.
 - **NHI keeps showing Oops** — the mapped GUID in `quote-guid-mapping.json` is bad; delete its
   entry to request a new one. After a successful retry, the first attempt's
-  `-nhi-failed.png` stays in `screenshots/` — this is expected.
+  `nhi-failed.png` stays in the policy's folder — this is expected.
 
 ## Development
 

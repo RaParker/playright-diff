@@ -10,6 +10,11 @@ import { outputPath } from './output-paths.js';
 
 export interface CompareOptions {
   output?: string;
+  /**
+   * Write into the output directory even when it already exists, as quote-page does beside a policy's screenshots.
+   * Otherwise the directory must be new, so inputs and previous reports are not overwritten.
+   */
+  reuseOutput?: boolean;
   threshold?: number;
   language?: string;
   useOcr?: boolean;
@@ -30,7 +35,7 @@ export async function compare(
   const paths = [resolve(beforeArgument), resolve(afterArgument)] as const;
   const [a, b] = await Promise.all([load(paths[0]), load(paths[1])]);
   const { width, height, highlight, changedPixels, boxes } = detectChanges(a, b, threshold);
-  const output = await createOutputDirectory(options.output);
+  const output = await createOutputDirectory(options.output, options.reuseOutput ?? false);
   await sharp(highlight, { raw: { width, height, channels: 3 } })
     .png()
     .toFile(join(output, 'diff.png'));
@@ -178,14 +183,14 @@ function groupChangedTiles(
   return boxes;
 }
 
-async function createOutputDirectory(outputArgument?: string) {
-  // A fresh directory prevents overwriting inputs or previous reports.
+async function createOutputDirectory(outputArgument: string | undefined, reuseOutput: boolean) {
+  // Unless reused, a fresh directory prevents overwriting inputs or previous reports.
   const output =
     outputArgument !== undefined && outputArgument.length > 0
       ? resolve(outputArgument)
       : outputPath('comparisons', `run-${Date.now()}`);
   await mkdir(dirname(output), { recursive: true });
-  await mkdir(output, { recursive: false });
+  await mkdir(output, { recursive: reuseOutput });
   return output;
 }
 
@@ -237,7 +242,7 @@ async function processRegions(
   language: string,
   useOcr: boolean
 ) {
-  const cachePath = outputPath('comparisons', '.ocr-cache');
+  const cachePath = outputPath('.ocr-cache');
   let worker: OcrWorker | undefined;
   const regions = [];
   try {

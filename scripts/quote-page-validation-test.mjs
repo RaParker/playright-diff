@@ -52,7 +52,7 @@ async function fixture() {
 
 /** Reads the failed result quote-page saved for a policy, as the summarise command does. */
 async function readFailedResult(directory, basename = 'ABCDEF1234567890ABCDEF1234567890-42') {
-  const result = JSON.parse(await readFile(join(directory, 'comparisons', basename, 'result.json'), 'utf8'));
+  const result = JSON.parse(await readFile(join(directory, basename, 'result.json'), 'utf8'));
   assert.equal(result.outcome, 'failed');
   return result;
 }
@@ -105,7 +105,11 @@ test('quote-page saves a failed result for a missing MRP file without taking scr
   // assert
   assert.notEqual(result.code, 0);
   assert.match(result.output, /No saved MRP for this quote/);
-  assert.deepEqual((await readdir(directory)).sort(), ['ABCDEF1234567890ABCDEF1234567890-42-mrp.json', 'comparisons']);
+  assert.deepEqual((await readdir(directory)).sort(), [
+    '11111111111111111111111111111111-42',
+    'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'
+  ]);
+  assert.deepEqual(await readdir(join(directory, '11111111111111111111111111111111-42')), ['result.json']);
   const saved = await readFailedResult(directory, '11111111111111111111111111111111-42');
   assert.equal(saved.validation, false);
   assert.match(saved.issues[0], /No saved MRP for this quote/);
@@ -114,8 +118,8 @@ test('quote-page saves a failed result for a missing MRP file without taking scr
 test('quote-page reports its own error when the result cannot be saved', async () => {
   // arrange
   const { directory, env } = await fixture();
-  // A file where the comparisons folder belongs, so the result cannot be written.
-  await writeFile(join(directory, 'comparisons'), '');
+  // A file where the policy's folder belongs, so the result cannot be written.
+  await writeFile(join(directory, '11111111111111111111111111111111-42'), '');
 
   // act
   const result = await run(directory, env, ['11111111111111111111111111111111', '42']);
@@ -163,9 +167,10 @@ for (const [name, content, expected] of [
     assert.match(result.output, expected);
     // Only the failed result is saved; no screenshots are taken.
     assert.deepEqual((await readdir(directory)).sort(), [
-      'ABCDEF1234567890ABCDEF1234567890-42-mrp.json',
-      'comparisons'
+      'ABCDEF1234567890ABCDEF1234567890-42',
+      'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'
     ]);
+    assert.deepEqual(await readdir(join(directory, 'ABCDEF1234567890ABCDEF1234567890-42')), ['result.json']);
     assert.match((await readFailedResult(directory)).issues.join('\n'), expected);
   });
 }
@@ -194,9 +199,10 @@ for (const [name, template, expected, setting = 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_UR
     assert.match(result.output, expected);
     // Only the failed result is saved; no screenshots are taken.
     assert.deepEqual((await readdir(directory)).sort(), [
-      'ABCDEF1234567890ABCDEF1234567890-42-mrp.json',
-      'comparisons'
+      'ABCDEF1234567890ABCDEF1234567890-42',
+      'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'
     ]);
+    assert.deepEqual(await readdir(join(directory, 'ABCDEF1234567890ABCDEF1234567890-42')), ['result.json']);
     assert.match((await readFailedResult(directory)).issues.join('\n'), expected);
   });
 }
@@ -250,18 +256,12 @@ for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].ma
         requests.some((path) => path.startsWith('/tcas/')),
         true
       );
-      assert.deepEqual(await readdir(join(directory, 'comparisons', 'ABCDEF1234567890ABCDEF1234567890-42')), [
-        'result.json'
-      ]);
       assert.match((await readFailedResult(directory)).issues.join('\n'), /Website displayed <h2>Oops<\/h2>/);
       assert.doesNotMatch(result.output, /Report:/);
+      // The other flow's screenshot and this flow's failure page, but no comparison.
       assert.deepEqual(
-        (await readdir(join(directory, 'screenshots'))).sort(),
-        [
-          `ABCDEF1234567890ABCDEF1234567890-42-${flow === 'nhi' ? 'tcas' : 'nhi'}.png`,
-          `ABCDEF1234567890ABCDEF1234567890-42-${flow}-failed.html`,
-          `ABCDEF1234567890ABCDEF1234567890-42-${flow}-failed.png`
-        ].sort()
+        (await readdir(join(directory, 'ABCDEF1234567890ABCDEF1234567890-42'))).sort(),
+        [`${flow === 'nhi' ? 'tcas' : 'nhi'}.png`, `${flow}-failed.html`, `${flow}-failed.png`, 'result.json'].sort()
       );
     } finally {
       server.closeAllConnections();
@@ -298,18 +298,18 @@ test('quote-page stops after an HTTP failure and respects environment over .env'
     assert.match(result.output, /TCAS: Website returned HTTP 503/);
     assert.deepEqual((await readdir(directory)).sort(), [
       '.env',
-      'ABCDEF1234567890ABCDEF1234567890-42-mrp.json',
-      'comparisons',
-      'screenshots'
+      'ABCDEF1234567890ABCDEF1234567890-42',
+      'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'
     ]);
     const saved = await readFailedResult(directory);
     assert.equal(saved.issues[0], 'Quote capture failed; comparison skipped.');
     assert.equal(saved.validation, false);
-    assert.deepEqual((await readdir(join(directory, 'screenshots'))).sort(), [
-      'ABCDEF1234567890ABCDEF1234567890-42-nhi-failed.html',
-      'ABCDEF1234567890ABCDEF1234567890-42-nhi-failed.png',
-      'ABCDEF1234567890ABCDEF1234567890-42-tcas-failed.html',
-      'ABCDEF1234567890ABCDEF1234567890-42-tcas-failed.png'
+    assert.deepEqual((await readdir(join(directory, 'ABCDEF1234567890ABCDEF1234567890-42'))).sort(), [
+      'nhi-failed.html',
+      'nhi-failed.png',
+      'result.json',
+      'tcas-failed.html',
+      'tcas-failed.png'
     ]);
     assert.equal(await readFile(join(directory, '.env'), 'utf8'), 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=invalid');
   } finally {

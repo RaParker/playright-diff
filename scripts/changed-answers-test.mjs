@@ -31,7 +31,7 @@ const coverStart = {
   error: 'The Cover start field needs to be between 2026-10-13 and 2026-11-27'
 };
 
-/** Temp folders made by `comparisonsFixture`, which the tests still read, removed once they have all run. */
+/** Temp folders made by `outputFixture`, which the tests still read, removed once they have all run. */
 const fixtureDirectories = [];
 after(() => Promise.all(fixtureDirectories.map((directory) => rm(directory, { recursive: true, force: true }))));
 
@@ -43,11 +43,11 @@ async function writeAnswerChangesFile(root, policyDetailsId, changes) {
   );
 }
 
-/** A comparisons folder with two changed policies, one changing only the cover start, one unchanged and an OCR cache. */
-async function comparisonsFixture() {
+/** An output folder with two changed policies, one changing only the cover start, one unchanged and an OCR cache. */
+async function outputFixture() {
   const directory = await mkdtemp(join(tmpdir(), 'changed-answers-'));
   fixtureDirectories.push(directory);
-  const root = join(directory, 'comparisons');
+  const root = directory;
   await writeAnswerChangesFile(root, firstPolicy, {
     nhi: { 'Property circumstances': [rebuildingCost], 'Household details': [claimValue, claimValue] },
     tcas: { 'Cover details': [coverStart] }
@@ -80,7 +80,7 @@ async function runCli(directory, args) {
 describe('changed answers', () => {
   test('combines each policy’s changes by folder name, without the cover start', async () => {
     // arrange
-    const { root } = await comparisonsFixture();
+    const { root } = await outputFixture();
 
     // act
     const changedAnswers = await collectChangedAnswers(root);
@@ -96,7 +96,7 @@ describe('changed answers', () => {
 
   test('leaves out a policy that changed only the cover start', async () => {
     // arrange
-    const { root } = await comparisonsFixture();
+    const { root } = await outputFixture();
 
     // act
     const changedAnswers = await collectChangedAnswers(root);
@@ -107,7 +107,7 @@ describe('changed answers', () => {
 
   test('skips folders without answer changes and folders that are not policies', async () => {
     // arrange
-    const { root } = await comparisonsFixture();
+    const { root } = await outputFixture();
 
     // act
     const changedAnswers = await collectChangedAnswers(root);
@@ -116,7 +116,7 @@ describe('changed answers', () => {
     assert.deepEqual(Object.keys(changedAnswers), [`${firstPolicy}-1`, `${secondPolicy}-1`]);
   });
 
-  test('finds nothing when the comparisons folder does not exist', async (context) => {
+  test('finds nothing when the output folder does not exist', async (context) => {
     // arrange
     const directory = await mkdtemp(join(tmpdir(), 'changed-answers-'));
     context.after(() => rm(directory, { recursive: true, force: true }));
@@ -131,7 +131,7 @@ describe('changed answers', () => {
 
   test('counts each question by flow and section, most changed first', async () => {
     // arrange
-    const { root } = await comparisonsFixture();
+    const { root } = await outputFixture();
 
     // act
     const counts = countChangedQuestions(await collectChangedAnswers(root));
@@ -148,7 +148,7 @@ describe('changed answers', () => {
 describe('summarise changed-answers command', () => {
   test('saves the combined changes to changed-answers.json in the output folder', async () => {
     // arrange
-    const { directory, root } = await comparisonsFixture();
+    const { directory, root } = await outputFixture();
 
     // act
     const { code, output } = await runCli(directory, ['summarise', 'changed-answers']);
@@ -162,14 +162,14 @@ describe('summarise changed-answers command', () => {
 
   test('prints the count of each changed question and the totals', async () => {
     // arrange
-    const { directory } = await comparisonsFixture();
+    const { directory } = await outputFixture();
 
     // act
     const { code, output } = await runCli(directory, ['summarise', 'changed-answers']);
 
     // assert
     assert.equal(code, 0, output);
-    assert.match(output, /Changed answers \(.+comparisons; cover start ignored\)\n/);
+    assert.match(output, /Changed answers \(.+changed-answers-\w+; cover start ignored\)\n/);
     assert.match(output, /\n {2}2× NHI {3}Household details {7}claim value\n/);
     assert.match(output, /\n {2}1× NHI {3}Property circumstances {2}rebuilding cost\n/);
     assert.match(output, /\n {2}1× TCAS {2}Property circumstances {2}rebuilding cost\n/);

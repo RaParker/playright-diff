@@ -160,7 +160,7 @@ describe('answer changes', () => {
     // arrange
     const directory = await mkdtemp(join(tmpdir(), 'answer-changes-'));
     context.after(() => rm(directory, { recursive: true, force: true }));
-    const path = join(directory, 'comparisons', 'ABC-1', 'answer-changes.json');
+    const path = join(directory, 'ABC-1', 'answer-changes.json');
     const change = { question: 'bedrooms', before: null, after: '3', error: 'Please select the number of bedrooms.' };
 
     // act

@@ -145,3 +145,26 @@ test('comparison lists only regions whose recognised text changed', { timeout: 1
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('reuseOutput writes the report into an existing folder beside the images', async () => {
+  // arrange
+  const dir = await mkdtemp(join(tmpdir(), 'image-compare-reuse-'));
+  try {
+    const [before, after] = [join(dir, 'nhi.png'), join(dir, 'tcas.png')];
+    for (const path of [before, after]) {
+      await sharp({ create: { width: 40, height: 20, channels: 3, background: '#fff' } })
+        .png()
+        .toFile(path);
+    }
+
+    // act
+    await compare(before, after, { output: dir, reuseOutput: true, useOcr: false });
+
+    // assert
+    const report = JSON.parse(await readFile(join(dir, 'report.json'), 'utf8'));
+    assert.equal(report.changedPixels, 0);
+    assert.equal(report.before, before);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -87,8 +87,9 @@ export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
 
 /**
  * Captures the NHI and TCAS versions of one quote and compares them. Any answers a flow changed so the journey would
- * accept the test data are saved to `comparisons/<policyDetailsId>-<historyId>/answer-changes.json`, whether the run
- * compared, declined or failed.
+ * accept the test data are saved to `<policyDetailsId>-<historyId>/answer-changes.json` in the output folder, whether
+ * the run compared, declined or failed. The screenshots, API responses and comparison report are saved in that folder
+ * too.
  * @param policyArgument TCAS policy details ID (32 hexadecimal characters).
  * @param historyId TCAS history ID.
  * @param options Input folder, URL templates and the optional NHI Oops fallback.
@@ -325,12 +326,12 @@ async function captureAndCompare(
     policyDetailsId,
     historyId: String(historyId)
   });
-  const nhiPath = outputPath('screenshots', `${basename}-nhi.png`);
-  const tcasPath = outputPath('screenshots', `${basename}-tcas.png`);
+  const nhiPath = outputPath(basename, 'nhi.png');
+  const tcasPath = outputPath(basename, 'tcas.png');
   const mappingPath = resolve(fallback?.mappingPath ?? 'quote-guid-mapping.json');
   const mappedGuid = fallback === undefined ? undefined : (await readQuoteGuidMapping(mappingPath))[artemisQuoteGuid];
   // Inputs are valid, so clear the previous run's results before writing new ones.
-  await removeQuoteOutput(basename, ['nhi', 'tcas']);
+  await removeQuoteOutput(basename);
   // A mapped replacement means TCAS must wait for NHI to save it; otherwise the original TCAS policy runs alongside.
   const originalTcasAttempt =
     mappedGuid === undefined
@@ -398,7 +399,7 @@ async function captureAndCompare(
     );
   }
 
-  await compare(nhiPath, tcasPath, { output: outputPath('comparisons', basename), useOcr: options.useOcr });
+  await compare(nhiPath, tcasPath, { output: outputPath(basename), reuseOutput: true, useOcr: options.useOcr });
   return 'compared';
 }
 
@@ -416,8 +417,8 @@ async function saveQuoteResult(result: QuoteResult): Promise<void> {
 }
 
 /**
- * Saves the answers a run changed, beside its comparison report (after the comparison, which needs a new folder). Only
- * warns when it cannot, like {@link saveQuoteResult}.
+ * Saves the answers a run changed in the policy's output folder. Only warns when it cannot, like
+ * {@link saveQuoteResult}.
  */
 async function saveAnswerChanges(
   policyDetailsId: string,
@@ -425,7 +426,7 @@ async function saveAnswerChanges(
   changes: AnswerChangesByFlow
 ): Promise<void> {
   const basename = `${policyDetailsId}-${historyId}`;
-  const path = outputPath('comparisons', basename, answerChangesFileName);
+  const path = outputPath(basename, answerChangesFileName);
   try {
     if (await writeAnswerChanges(path, { policyDetailsId, historyId, changes })) {
       console.log(color.Gray(`Answer changes saved to ${path}`));

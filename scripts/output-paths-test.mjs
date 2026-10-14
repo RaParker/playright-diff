@@ -10,24 +10,24 @@ describe('outputPath', () => {
   afterEach(() => setOutputRoot(undefined));
 
   for (const [name, root, expected] of [
-    ['uses the current working directory when no output folder is set', undefined, resolve('screenshots', 'a.png')],
-    ['uses the current working directory when the output folder is blank', '  ', resolve('screenshots', 'a.png')],
-    ['uses the configured output folder', 'D:/temp/diff-output', resolve('D:/temp/diff-output/screenshots/a.png')],
-    ['resolves a relative output folder from the current working directory', 'out', resolve('out/screenshots/a.png')]
+    ['uses the current working directory when no output folder is set', undefined, resolve('ID-1', 'a.png')],
+    ['uses the current working directory when the output folder is blank', '  ', resolve('ID-1', 'a.png')],
+    ['uses the configured output folder', 'D:/temp/diff-output', resolve('D:/temp/diff-output/ID-1/a.png')],
+    ['resolves a relative output folder from the current working directory', 'out', resolve('out/ID-1/a.png')]
   ]) {
     test(name, () => {
       // arrange
       setOutputRoot(root);
 
       // act
-      const path = outputPath('screenshots', 'a.png');
+      const path = outputPath('ID-1', 'a.png');
 
       // assert
       assert.equal(path, expected);
     });
   }
 
-  test('writes quote results into comparisons under the configured output folder', async (context) => {
+  test('writes quote results into the policy folder under the configured output folder', async (context) => {
     // arrange
     const root = await mkdtemp(join(tmpdir(), 'output-paths-test-'));
     context.after(() => rm(root, { recursive: true, force: true }));
@@ -46,7 +46,7 @@ describe('outputPath', () => {
     await writeQuoteResult(result);
 
     // assert
-    const saved = await readFile(join(root, 'comparisons', `${result.policyDetailsId}-1`, 'result.json'), 'utf8');
+    const saved = await readFile(join(root, `${result.policyDetailsId}-1`, 'result.json'), 'utf8');
     assert.deepEqual(JSON.parse(saved), result);
   });
 });

@@ -30,7 +30,7 @@ const maxPathNameLength = 80;
 
 /**
  * Gives the folder that holds the API responses of a screenshot's capture: the screenshot's path without its extension,
- * plus {@link apiResponsesSuffix} (for example `screenshots/<ID>-1-nhi-api` for `screenshots/<ID>-1-nhi.png`).
+ * plus {@link apiResponsesSuffix} (for example `<ID>-1/nhi-api` for `<ID>-1/nhi.png`).
  * @param screenshotPath Path of the screenshot.
  * @returns The folder path.
  */

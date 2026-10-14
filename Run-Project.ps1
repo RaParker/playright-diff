@@ -8,9 +8,9 @@ development tasks. Each command is a switch with its own parameter set, so tab c
 options that apply, and inputs are validated before Node starts.
 
 CLI commands run src/main.ts through tsx (as the npm scripts do) from the project root, so .env,
-quote-guid-mapping.json and quote-pages-failed.json are always read from there. The screenshots and comparisons
-folders are written to DIFF_OUTPUT_DIR (.env or environment), or the project root when it is not set. Relative
-paths you pass are resolved from your current directory first.
+quote-guid-mapping.json and quote-pages-failed.json are always read from there. Each policy's output folder
+(<policyDetailsId>-<historyId>) is written to DIFF_OUTPUT_DIR (.env or environment), or the project root when it is
+not set. Relative paths you pass are resolved from your current directory first.
 
 Use -WhatIf to print the command without running it. The script exits with the command's exit code.
 
@@ -76,11 +76,11 @@ One GUID list entry to run (32 hex characters, case-insensitive).
 Rerun only the policies saved in quote-pages-failed.json by the last quote-pages run.
 
 .PARAMETER RetryDifferent
-Rerun every policy in comparisons whose screenshots differed (the summarise "differences" count). Leaves
+Rerun every policy in DIFF_OUTPUT_DIR whose screenshots differed (the summarise "differences" count). Leaves
 quote-pages-failed.json untouched.
 
 .PARAMETER Summarise
-Summarise every comparisons folder: differences and their text, failures and their reasons, MRP records not
+Summarise every policy folder: differences and their text, failures and their reasons, MRP records not
 retrieved, and totals including the GUID list size and Oops pages. Alias: -Summarize.
 
 .PARAMETER Mode

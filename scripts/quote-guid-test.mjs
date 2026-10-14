@@ -11,12 +11,11 @@ import { readQuoteGuidMapping, requestQuoteGuid, saveQuoteGuidMapping } from '..
 import { declinedPageHtml, quotePageHtml, quoteSummaryHtml, unsavedJourneyHtml } from './unsaved-journey-html.mjs';
 
 /**
- * Reads the saved result of a policy A run that skipped the comparison, checking it is the only file in its
- * comparisons folder (no report was written).
+ * Reads the saved result of a policy A run that skipped the comparison, checking its folder has no comparison report.
  */
 async function readOnlyResult(directory) {
-  const folder = join(directory, 'comparisons', `${policyA}-1`);
-  assert.deepEqual(await readdir(folder), ['result.json']);
+  const folder = join(directory, `${policyA}-1`);
+  assert.ok(!(await readdir(folder)).includes('report.json'));
   const { outcome, validation } = JSON.parse(await readFile(join(folder, 'result.json'), 'utf8'));
   return { outcome, validation };
 }
@@ -152,7 +151,7 @@ async function run(directory, env, args) {
 
 /** Writes a comparison report for a policy's earlier run, with the given number of changed pixels. */
 async function writeComparison(directory, name, changedPixels) {
-  const folder = join(directory, 'comparisons', name);
+  const folder = join(directory, name);
   await mkdir(folder, { recursive: true });
   const size = { width: 1440, height: 100 };
   await writeFile(
@@ -437,7 +436,7 @@ describe('quote-page NHI Oops fallback', () => {
       const quoteGuidRequest = requests.find((path) => path.startsWith('/api/nhi/quote-guid'));
       assert.equal(new URL(quoteGuidRequest, base).searchParams.get('policyDetailsId'), policyA);
       assert.equal(new URL(quoteGuidRequest, base).searchParams.get('callMediaUser'), 'media-user');
-      assert.ok((await readdir(directory)).includes('comparisons'));
+      assert.ok((await readdir(join(directory, `${policyA}-1`))).includes('report.json'));
     });
   });
 
@@ -470,7 +469,7 @@ describe('quote-page NHI Oops fallback', () => {
         // assert
         assert.equal(result.code, 0, result.output);
         assert.ok(result.output.includes('TCAS: entering email address'), result.output);
-        const changesPath = join(directory, 'comparisons', `${policyA}-1`, 'answer-changes.json');
+        const changesPath = join(directory, `${policyA}-1`, 'answer-changes.json');
         const flows = await readFile(changesPath, 'utf8').then(
           (content) => Object.keys(JSON.parse(content).changes),
           () => []
@@ -690,8 +689,8 @@ describe('quote-page declined quotes', () => {
           validation: false
         });
         assert.deepEqual(
-          (await readdir(join(directory, 'screenshots'))).sort(),
-          expectedScreenshots.map((suffix) => `${policyA}-1-${suffix}`)
+          (await readdir(join(directory, `${policyA}-1`))).filter((file) => file !== 'result.json').sort(),
+          expectedScreenshots
         );
       });
     });
@@ -807,7 +806,7 @@ describe('quote-pages', () => {
       // Only the issues and the failed count are red, not the whole summary.
       assert.ok(result.output.includes('\u001b[32m1 passed'), result.output);
       assert.ok(result.output.includes(`\n${policyA}-1\n`), result.output);
-      assert.ok((await readdir(join(directory, 'screenshots'))).includes(`${policyB}-1-nhi.png`));
+      assert.ok((await readdir(join(directory, `${policyB}-1`))).includes('nhi.png'));
       const saved = await readFailed(directory);
       assert.deepEqual(
         saved.failed.map(({ policyDetailsId }) => policyDetailsId),
@@ -888,7 +887,7 @@ ${policyB}
 
       // assert
       assert.equal(result.code, 0, result.output);
-      assert.match(result.plain, /Retrying 1 different policies from .*comparisons\n/);
+      assert.match(result.plain, /Retrying 1 different policies from .*quote-guid-\w+\n/);
       assert.ok(requests.includes(`/tcas/${policyA}/1`));
       assert.ok(!requests.some((path) => path.includes(policyB) || path.includes('guid-b')));
       assert.equal(await readFile(join(directory, 'quote-pages-failed.json'), 'utf8'), saved);
@@ -906,7 +905,7 @@ ${policyB}
 
     // assert
     assert.equal(result.code, 0, result.output);
-    assert.match(result.plain, /No different quote pages to retry \(.*comparisons\)\./);
+    assert.match(result.plain, /No different quote pages to retry \(.*quote-guid-\w+\)\./);
   });
 
   for (const [name, selector] of [

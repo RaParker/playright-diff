@@ -21,8 +21,9 @@ import { collectQuoteResults, listDifferentPolicies, summariseQuoteResults } fro
 
 const help = `Usage: npm start -- <screenshot|compare|quote-page|quote-pages|summarise> [arguments] [options]
 Use npm run <action> -- --help for action options.
-The screenshots/ and comparisons/ folders are kept in DIFF_OUTPUT_DIR (.env or environment), or the current
-directory when it is not set.`;
+Each policy's output (screenshots, API responses, comparison report and result) is kept in
+<policyDetailsId>-<historyId>/ in DIFF_OUTPUT_DIR (.env or environment), or the current directory when it is
+not set.`;
 
 const screenshotHelp = `Usage: npm run screenshot -- <url> [options]
   -o, --output <path>     PNG or JPEG output (default: screenshots/screenshot.png in DIFF_OUTPUT_DIR)
@@ -54,7 +55,7 @@ Selection:
   <maxCount>        The first maxCount GUIDs
   <guid>            Just that GUID
   retry-failed      Only the policies that failed last time (saved in ${failedQuotePagesPath})
-  retry-different   Every policy in comparisons/ whose screenshots differed (the summarise
+  retry-different   Every policy in DIFF_OUTPUT_DIR whose screenshots differed (the summarise
                     "differences" policies); leaves ${failedQuotePagesPath} untouched
 
 Options:
@@ -82,7 +83,7 @@ const summariseUsage = `Usage: npm run summarise [${summariseModeNames.join('|')
 
 const summariseHelp = `${summariseUsage}      (alias: npm run summarize)
 
-Summarises the quote-page results in comparisons/<policyDetailsId>-<historyId>/ (in DIFF_OUTPUT_DIR).
+Summarises the quote-page results in <policyDetailsId>-<historyId>/ (in DIFF_OUTPUT_DIR).
 
 Modes:
   (none)            Full report: each policy's differences, most common text changes, failed
@@ -379,7 +380,7 @@ async function retryDifferentQuotePages(
   options: QuotePagesOptions,
   prepareMrpFiles: PrepareMrpFiles
 ): Promise<void> {
-  const root = outputPath('comparisons');
+  const root = outputPath();
   const different = listDifferentPolicies(await collectQuoteResults(root));
   if (different.length === 0) {
     console.log(`No different quote pages to retry (${root}).`);

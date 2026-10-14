@@ -26,7 +26,7 @@ export interface ChangedQuestionCount {
 
 /** Where the changed-answers summary reads from and writes to; relative paths resolve from the working directory. */
 export interface ChangedAnswersOptions {
-  /** Comparisons folder (default: `comparisons` in the output folder, see {@link outputPath}). */
+  /** Folder holding the policy folders (default: the output folder, see {@link outputPath}). */
   root?: string;
   /** File written (default: `changed-answers.json` in the output folder). */
   output?: string;
@@ -35,11 +35,11 @@ export interface ChangedAnswersOptions {
 /**
  * Combines every policy's `answer-changes.json` (cover start changes left out) into one JSON file, keyed by policy
  * folder name, and prints how many times each question was changed, most changed first.
- * @param options Comparisons folder to read and file to write.
+ * @param options Folder to read and file to write.
  * @throws When an `answer-changes.json` cannot be read or parsed, or the output cannot be written.
  */
 export async function summariseChangedAnswers(options: ChangedAnswersOptions = {}): Promise<void> {
-  const root = resolve(options.root ?? outputPath('comparisons'));
+  const root = resolve(options.root ?? outputPath());
   const output = resolve(options.output ?? outputPath('changed-answers.json'));
   const changedAnswers = await collectChangedAnswers(root);
   await mkdir(dirname(output), { recursive: true });
@@ -50,7 +50,7 @@ export async function summariseChangedAnswers(options: ChangedAnswersOptions = {
 /**
  * Reads each `<root>/<policyDetailsId>-<historyId>/answer-changes.json`, leaving out cover start changes and any
  * section, flow or policy then left without changes. Folders without the file, and other folders, are skipped.
- * @param root Comparisons folder.
+ * @param root Folder holding the policy folders.
  * @returns Each policy's changes by flow and section, keyed by folder name in folder order.
  * @throws When an `answer-changes.json` cannot be read or parsed.
  */
