@@ -74,8 +74,8 @@ After the fix, the pages differ only in these, both left as they are on purpose:
 - **Accidental damage "None" selected (both):** NHI shows no selection; TCAS shows "None" selected. The TCAS page sends
   an empty value ("not chosen"), but the record already has `'None'` stored (written when the NHI quote was saved to
   Transactor), and the shared `mrp-and-quote` mapper reports Artemis's quality-None provision as the level "None". After
-  the re-quote the page saves `'None'` back, so "not chosen" becomes "chose None". A fix would start in the mapper:
-  report no level when the submitted value is empty.
+  the re-quote the page saves `'None'` back, so "not chosen" becomes "chose None". Kept as "None": see
+  [Accidental damage: "None" and "not chosen" look the same](accidental-damage-none-vs-not-chosen.md).
 
 Fields that differ in the data but not on screen: `preferredPaymentMethod`, `tier`, `is7500CoverSufficient`,
 `callCentreUserCode`, the quote reference and an endorsement's `<i class="definition">` markup.
