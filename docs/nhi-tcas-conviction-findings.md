@@ -1,140 +1,123 @@
-# TCAS re-quote drops the admin fee and add-ons
+# TCAS re-quote priced new business as a mid-term adjustment
 
 **Draft for review by pricing, underwriting and compliance before anyone acts on it.**
 
-Environment: dev / feature-dev. Checked 2026-10-14 08:58–09:30 UTC. Policies `718CA449FCFC4A959D99124EDC81EA87`
-and `77D5FA3FF40441F28699E5AD6F3F0C8C`, history ID 1; each has an unspent criminal conviction in TCAS.
+Environment: dev / feature-dev, 2026-10-14. Policies `718CA449FCFC4A959D99124EDC81EA87` and
+`77D5FA3FF40441F28699E5AD6F3F0C8C`, history ID 1; each has an unspent criminal conviction in TCAS.
 
-## Finding
+## Summary
 
-The same quote is priced three ways. The third, a re-quote made by the TCAS quote page (`source=tcas`) when an answer
-is changed, has no admin fee, no full Home Emergency, no full Legal Expenses and no KeyProtect, and the NHI quote
-engine cannot price it.
+When an answer was changed on the TCAS quote page and the user clicked **Return to quote**, the new-business quote was
+re-priced as a **mid-term adjustment (MTA)**. MTA pricing has no £50 admin fee, no broker commission and only the
+basic add-ons, so the re-quote was much cheaper than the same quote in NHI. This is fixed, and both policies' TCAS and
+NHI quote pages now show the same price, fee, add-ons and excesses.
 
-| 718CA449                              | Quote GUID | Yearly  | Admin fee | Full HE / full LE / KeyProtect |
-| ------------------------------------- | ---------- | ------- | --------- | ------------------------------ |
-| TCAS MRP (Policy API)                 | `87f68d27` | £117.06 | £50       | offered                        |
-| NHI quote of the same GUID (13 Oct)   | `87f68d27` | £117.06 | £50       | offered                        |
-| NHI quote of the replacement GUID     | `5397eb2e` | £164.11 | £50       | offered                        |
-| TCAS quote summary of the replacement | `5397eb2e` | £164.11 | £50       | offered                        |
-| TCAS re-quote after an answer change  | `25b9d2d3` | £74.56  | £0        | not available                  |
+| Policy   | NHI quote                     | TCAS re-quote before the fix  | TCAS re-quote after the fix   |
+| -------- | ----------------------------- | ----------------------------- | ----------------------------- |
+| 718CA449 | £164.11, £50 fee, all add-ons | £74.56, £0 fee, basic add-ons | £164.11, £50 fee, all add-ons |
+| 77D5FA3F | £137.62, £50 fee, all add-ons | £53.44, £0 fee, basic add-ons | £137.62, £50 fee, all add-ons |
 
-77D5FA3F gives £74.73, £74.73, £137.63, £137.62 and £53.44 down the same rows.
+## Cause
+
+**Return to quote** sends `POST /api/save-details` with `source: tcas` in the answers' metadata. QuestionSetQuote
+(QSQ) then prices the answers through QuoteJourneyService (QJS) and PolicyApiService, never NHI:
+
+1. QSQ `POST /api/save-details` (`server/questionSetNhiFeature.ts`): `source === 'tcas'` calls
+   `policyApiFeature.saveAnswersAndQuote`, which only prices; it saves nothing.
+2. QJS `POST /quotejourneyservice/api/new-business/{policyDetailsId}/1/user/{user}/quote-from-answer-map`.
+3. QJS `service/getQuoteFromAnswerMap.go` chose the PolicyApiService endpoint with a switch that handled renewal and
+   sent **every other quote type, including new business, to MTA**. PolicyApiService had no new-business
+   `quote-from-policy-details` endpoint to call instead.
+4. PolicyApiService
+   `POST /policyapiservice/api/mid-term-adjustment/{policyDetailsId}/1/user/quotejourneyservice-dev/quote-from-policy-details`
+   priced it as an MTA.
+
+Datadog traces of the two re-quotes show the call chain: `13159681396393944291` (718CA449, 08:59:17 UTC) and
+`10908695784499645763` (77D5FA3F, 09:00:24 UTC).
+
+The same record priced both ways by PolicyApiService (718CA449's quote, policyDetailsId
+`5397EB2E20054AC2BD88B98CCD8AE861`):
+
+| PolicyApiService call                                  | Gross   | Admin fee | AXA commission | Add-ons                                                   |
+| ------------------------------------------------------ | ------- | --------- | -------------- | --------------------------------------------------------- |
+| `GET new-business/…/quote`                             | £164.11 | £50       | £35.31         | Basic and full Home Emergency, Legal Expenses, KeyProtect |
+| `POST mid-term-adjustment/…/quote-from-policy-details` | £74.56  | £0        | £0.00          | Basic Home Emergency and basic Legal Expenses only        |
+
+The net risk premium (£64.53) is the same; the £89.55 difference is the £50 fee, £35.31 commission and £4.24 IPT.
+
+A second, display-only bug showed up once the prices matched: after the re-quote, the Legal Expenses excess was listed
+twice ("Legal Expenses excess £250" and "Legal Expenses £250"). QJS lists its add-on excesses (flagged `isAddOn`), and
+QSQ's `transformQuoteResult` then added NHI-style add-on excesses as well.
+
+## Fix
+
+| Repository              | PR    | Change                                                                                       |
+| ----------------------- | ----- | -------------------------------------------------------------------------------------------- |
+| PolicyAPIService        | 25142 | `quote-from-policy-details` and `quote-and-save-from-policy-details` for new business        |
+| GoPackages              | 25147 | `policy-api-client` regenerated with the new-business methods (0.0.239-beta)                 |
+| GoPackages              | 25155 | `stub-policy-api-client` methods (0.0.93-beta); `mock-policy-api-client` bump (0.0.126-beta) |
+| QuoteJourneyService     | 25156 | Price new business through the new-business endpoints; unknown quote types are an error      |
+| QuestionSetQuote        | 25159 | Drop QJS's `isAddOn` excesses before adding the NHI-style ones                               |
+| QuestionSetEngineServer | 25162 | `/api/healthcheck` reports the deployed version (e.g. `1.0.7971-feature`)                    |
+| QuestionSetQuote        | 25163 | `server/engineServer` submodule moved to include 25162                                       |
+
+PR 25142 also rejects a request whose body policy doesn't match the path (400), returns `Locked` rather than 500 for a
+locked policy, and stops new-business quote-and-save accepting Renewal Invited policies.
+
+## Remaining differences
+
+After the fix, the pages differ only in these, both left as they are on purpose:
+
+- **Buildings insurance row (718CA449 only):** the customer rents from the local authority (`ownershipId` `RLA01`).
+  Artemis returns `isBuildingsAllowed: false`, so TCAS hides the row; NHI still offers buildings cover. TCAS is taken to
+  be correct; NHI's behaviour is for pricing and underwriting to confirm.
+- **Accidental damage "None" selected (both):** NHI shows no selection; TCAS shows "None" selected. The TCAS page sends
+  an empty value ("not chosen"), but the record already has `'None'` stored (written when the NHI quote was saved to
+  Transactor), and the shared `mrp-and-quote` mapper reports Artemis's quality-None provision as the level "None". After
+  the re-quote the page saves `'None'` back, so "not chosen" becomes "chose None". A fix would start in the mapper:
+  report no level when the submitted value is empty.
+
+Fields that differ in the data but not on screen: `preferredPaymentMethod`, `tier`, `is7500CoverSufficient`,
+`callCentreUserCode`, the quote reference and an endorsement's `<i class="definition">` markup.
 
 ## Reproduce
 
-All URLs are for 718CA449. Substitute the 77D5FA3F values from [Values for 77D5FA3F](#values-for-77d5fa3f).
+All URLs are for 718CA449; 77D5FA3F's replacement quote GUID is `a90ebcff-1517-4b51-8e66-be90e51c5a05` (policyDetailsId
+`A90EBCFF15174B518E66BE90E51C5A05`).
 
-### 1. TCAS policy and MRP
+1. Create the replacement NHI quote for the TCAS policy:
 
-```text
-GET https://wkservices-dev.avantiagroup.co.uk/policyapiservice/api/policy/718CA449FCFC4A959D99124EDC81EA87/1
-→ 200 userEligible.criminalConviction: true,
-      userEligible.userEligiblePersonDetail[0].userEligibleIncidentDetail[0].convictionTypeId: "MPP101"
+   ```text
+   POST https://quotes-feature-dev.homeprotect.co.uk/api/nhi/quote-guid?agentId=richard.parker&branchCode=1066&callMediaUser=richard.parker&policyDetailsId=718CA449FCFC4A959D99124EDC81EA87&historyId=1
+        {"coverStartDate":"2026-10-14"}
+   → 200 5397eb2e-2005-4ac2-bd88-b98ccd8ae861
+   ```
 
-GET https://wkservices-dev.avantiagroup.co.uk/policyapiservice/api/policy/718CA449FCFC4A959D99124EDC81EA87/1/mrp
-→ 200 machineReadableProducts[0].premiumInfo: {"grossPremium":117.06,"adminFee":50}
-      machineReadableProducts[0].addOnInfo.addOns: DASHEBAS (selected, £0.01), DASHESTD £52.99, DASHENS £52.99,
-      DASLEBAS (selected, £0.01), DASLESTD £36.99, DASLENS £36.99, 3NAC4P35 KeyProtect (selected, £8.50)
-```
+2. Open the TCAS quote page
+   <https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=5397eb2e-2005-4ac2-bd88-b98ccd8ae861&source=tcas&callmediauser=richard.parker&bid=1066>,
+   click **Continue with quote**, set the conviction offence to **Theft** on Household details (the conviction types
+   `MPP101` / `AGG99` arrive as an empty offence) and click **Return to quote**. The re-quote is
+   `POST /api/save-details`; check its `quoteResult.quoteAmounts` and `compulsoryExcesses`.
+3. Compare PolicyApiService's new-business and MTA pricing of the same record:
 
-Each MRP call returns a new `artemisQuoteGuid`. The one saved on 12 Oct, and used below, is
-`87f68d27-e6aa-423a-9e9d-e5b9490549b6`.
+   ```text
+   GET  https://wkservices-feature-dev.avantiagroup.co.uk/policyapiservice/api/policy/5397EB2E20054AC2BD88B98CCD8AE861/1/preset/quote-journey/with-hash
+   GET  https://wkservices-feature-dev.avantiagroup.co.uk/policyapiservice/api/new-business/5397EB2E20054AC2BD88B98CCD8AE861/1/user/richard.parker/quote
+   POST https://wkservices-feature-dev.avantiagroup.co.uk/policyapiservice/api/new-business/5397EB2E20054AC2BD88B98CCD8AE861/1/user/richard.parker/quote-from-policy-details
+   POST https://wkservices-feature-dev.avantiagroup.co.uk/policyapiservice/api/mid-term-adjustment/5397EB2E20054AC2BD88B98CCD8AE861/1/user/richard.parker/quote-from-policy-details
+        body for both POSTs: {"policy": <the with-hash response>}
+   ```
 
-### 2. NHI quote of the original GUID
+   Each quote writes an `ArtemisQuoteGuidLog` row but doesn't change the policy.
 
-```text
-GET https://quote-dev.homeprotect.co.uk/api/Quote/CalculateQuotePremium?quoteGuid=87f68d27-e6aa-423a-9e9d-e5b9490549b6
-→ 13 Oct: 200 QuoteAmounts {"YearlyAmount":117.06,"AdminFee":50},
-          AddOns {"IsFullHomeEmergencyAvailable":true,"IsFullLegalExpensesAvailable":true,"IsLostKeyAvailable":true}
-→ 14 Oct: 500 "Check previous unhandled Web API exception for full details."
-```
+The playwright-diff command `npm run quote-page -- 718CA449FCFC4A959D99124EDC81EA87 1 --no-ocr` runs the NHI and TCAS
+journeys, compares the pages and saves every `/api/` response under
+`D:\temp\playright-diff-output\718CA449FCFC4A959D99124EDC81EA87-1\`. The saved responses contain the test policy's
+personal details and conviction, so share them internally only.
 
-Because of the 500, the NHI quote page
-<https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=87f68d27-e6aa-423a-9e9d-e5b9490549b6&callmediauser=richard.parker&bid=1066>
-shows Oops (`GET /api/quote-summary/87f68d27-e6aa-423a-9e9d-e5b9490549b6/user/richard.parker` → 400 wrapping the 500).
+## Open questions
 
-### 3. Replacement quote GUID
-
-```text
-POST https://quotes-feature-dev.homeprotect.co.uk/api/nhi/quote-guid?agentId=richard.parker&branchCode=1066&callMediaUser=richard.parker&policyDetailsId=718CA449FCFC4A959D99124EDC81EA87&historyId=1
-     {"coverStartDate":"2026-10-14"}
-→ 200 5397eb2e-2005-4ac2-bd88-b98ccd8ae861
-```
-
-In this quote the conviction offence answer is empty, so both journeys stop on Household details with "Enter the
-criminal conviction that they were convicted of". **Theft** was chosen on both sides.
-
-### 4. NHI journey on the replacement GUID
-
-Open <https://quotes-feature-dev.homeprotect.co.uk/#guid=5397eb2e-2005-4ac2-bd88-b98ccd8ae861,nhi=false>, set the
-offence to Theft and continue to the quote.
-
-```text
-POST https://quotes-feature-dev.homeprotect.co.uk/api/save-details?getQuoteSummary=true&incrementedSectionId=959154f0-4120-11ea-8d4c-ab6d2f0166c9&totalSectionChanges=1
-     answers.metadata: {"quoteGuid":"5397eb2e-…","isJourneyComplete":true,…}   (no source, policyDetailsId or historyId)
-→ 200 quoteResult.quoteGuid "5397eb2e-2005-4ac2-bd88-b98ccd8ae861", quoteAmounts {"yearlyAmount":164.11,"adminFee":50},
-      addOns {"isFullHomeEmergencyAvailable":true,"isFullLegalExpensesAvailable":true,"isLostKeyAvailable":true}
-
-GET https://quote-dev.homeprotect.co.uk/api/Quote/CalculateQuotePremium?quoteGuid=5397eb2e-2005-4ac2-bd88-b98ccd8ae861
-→ 200 QuoteAmounts {"YearlyAmount":164.11,"AdminFee":50}, the same three add-ons available
-```
-
-### 5. TCAS quote page on the replacement GUID
-
-Open
-<https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=5397eb2e-2005-4ac2-bd88-b98ccd8ae861&source=tcas&callmediauser=richard.parker&bid=1066>.
-
-```text
-GET https://quotes-feature-dev.homeprotect.co.uk/api/quote-summary/5397eb2e-2005-4ac2-bd88-b98ccd8ae861/user/richard.parker?source=tcas
-→ 200 quoteResult.quoteAmounts {"yearlyAmount":164.11,"adminFee":50}, the same three add-ons available
-```
-
-Click **Continue with quote**, set the offence to Theft on Household details, click **Return to quote**.
-
-```text
-POST https://quotes-feature-dev.homeprotect.co.uk/api/save-details?getQuoteSummary=true&incrementedSectionId=959154f0-4120-11ea-8d4c-ab6d2f0166c9&totalSectionChanges=1
-     answers.metadata: {"source":"tcas","policyDetailsId":"5397EB2E20054AC2BD88B98CCD8AE861","historyId":1,
-                        "quoteType":"nb","quotePrice":164.11,"shouldDisplayReturnToQuote":true,…}
-→ 200 quoteResult.quoteGuid "25b9d2d3-77af-4f8e-832e-353746ee8887", policyRefNo "RS0958306QP",
-      quoteAmounts {"yearlyAmount":74.56,"adminFee":0},
-      addOns {"isFullHomeEmergencyAvailable":false,"isFullLegalExpensesAvailable":false,"isLostKeyAvailable":false},
-      addOnsNew.home.basic / legal.basic {"isSelected":true,"grossPremium":0.01}, addOnsNew.key.*.isAvailable false,
-      configAndInterfaceNew {"useNewSaveRetrieve":true,"homeprotectQuotePageVersion":2}
-
-GET https://quote-dev.homeprotect.co.uk/api/Quote/CalculateQuotePremium?quoteGuid=25b9d2d3-77af-4f8e-832e-353746ee8887
-→ 500 "Check previous unhandled Web API exception for full details."
-```
-
-The page now shows £74.56 a year and an empty "Select cover upgrades" section.
-
-The playwright-diff command `npm run quote-page -- 718CA449FCFC4A959D99124EDC81EA87 1 --no-ocr` runs steps 2–5 and
-saves every `/api/` response.
-
-## Values for 77D5FA3F
-
-- **Conviction type:** `AGG99`
-- **Original GUID (MRP, 12 Oct):** `11c88e9b-15a4-48cb-be2d-e9a577232626`. £74.73 and £50 fee; 500 from
-  `CalculateQuotePremium` on 14 Oct.
-- **Replacement GUID:** `a90ebcff-1517-4b51-8e66-be90e51c5a05`. NHI £137.63, TCAS quote summary £137.62, £50 fee.
-- **TCAS re-quote GUID:** `f19e724a-6e1a-4ad0-8a83-57fe860640d5`. £53.44, £0 fee, add-ons not available; 500 from
-  `CalculateQuotePremium`.
-
-## Saved responses
-
-Each response is saved with its URL, method, status, request body and response body in
-`D:\temp\playright-diff-output\<policy>-1\` (local to the machine that ran it):
-
-- `nhi-api/001-GET-quote-summary-…json`: the 400 in step 2
-- `nhi-api/019-POST-save-details.json` (`018` for 77D5FA3F): step 4
-- `tcas-api/011-GET-quote-summary-…json`: step 5, quote summary
-- `tcas-api/019-POST-save-details.json`: step 5, re-quote
-
-They contain the test policy's personal details and conviction, so share them internally only.
-
-## Questions
-
-1. Why does `save-details` with `source=tcas` create a new quote (new GUID, no admin fee, no full add-ons or
-   KeyProtect) instead of updating `5397eb2e`, as the NHI journey does?
-2. Why can `CalculateQuotePremium` not price the TCAS re-quote GUIDs, or (since 14 Oct) the original MRP GUIDs?
-3. Should conviction types `MPP101` and `AGG99` reach the NHI quote as an offence answer, rather than empty?
+1. Why does NHI's `CalculateQuotePremium` return 500 since 14 Oct for the original MRP quote GUIDs (`87f68d27…` for
+   718CA449, `11c88e9b…` for 77D5FA3F), which it priced on 13 Oct?
+2. Should conviction types `MPP101` and `AGG99` reach the quote journey as an offence answer, rather than empty?
+3. Should NHI offer buildings cover to a customer who rents from the local authority?
