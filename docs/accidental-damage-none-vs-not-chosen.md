@@ -60,6 +60,12 @@ Rough size: three or four PRs across GoPackages, QJS and QuestionSetQuote, plus 
 - **Records:** the policy says the customer declined accidental damage cover, though they may never have been asked.
   Whether that matters under Treating Customers Fairly is for underwriting and compliance to confirm.
 
+## Related change
+
+QuoteJourneyService PR 25166 treats an empty accidental damage answer (`""`) as not answered: it keeps the policy's
+stored level instead of overwriting it with an empty value (which Artemis rated as None and Transactor read back as
+`'0'`).
+
 ## Not followed up
 
 - The TCAS re-quote at 14:55 on 14 Oct still logged `None`. Either the page posted `None`, or the empty answer was
