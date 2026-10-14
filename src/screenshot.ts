@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import { chromium, errors, type Page } from 'playwright';
+import { recordApiResponses, type ApiResponseRecorder } from './api-responses.js';
 import { color } from './color.js';
 import { outputPath } from './output-paths.js';
 
@@ -16,6 +17,11 @@ export interface ScreenshotOptions {
    * differs only in ways that do not matter, such as a footer, cannot show up as a difference.
    */
   mask?: string[];
+  /**
+   * Folder that every JSON response from the site's own `/api/` endpoints is saved to, whether the capture succeeds or
+   * fails (see {@link recordApiResponses}); nothing is saved when omitted.
+   */
+  apiResponsesFolder?: string;
 }
 
 /** Colour painted over masked elements: a flat grey, so masked areas are easy to spot in the images. */
@@ -122,8 +128,13 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
   const { url, width, height, wait, timeout, output, extension } = validateOptions(urlArgument, options);
   const browser = await chromium.launch();
   let page: Page | undefined;
+  let apiResponses: ApiResponseRecorder | undefined;
   try {
     page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+    if (options.apiResponsesFolder !== undefined) {
+      apiResponses = await recordApiResponses(page, url.origin, options.apiResponsesFolder);
+    }
+
     page.setDefaultTimeout(timeout);
     page.setDefaultNavigationTimeout(timeout);
     loadingTimeouts.set(page, timeout * loadingTimeoutMultiplier);
@@ -158,6 +169,8 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
 
     throw error;
   } finally {
+    // Response bodies can only be read while the browser is open.
+    await apiResponses?.settled();
     await browser.close();
   }
 }

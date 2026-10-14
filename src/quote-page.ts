@@ -8,6 +8,7 @@ import {
   writeAnswerChanges,
   type AnswerChangesByFlow
 } from './answer-changes.js';
+import { apiResponsesFolder } from './api-responses.js';
 import { color, failureColor } from './color.js';
 import { compare } from './compare.js';
 import { runConcurrently, validateConcurrency } from './concurrency.js';
@@ -545,7 +546,8 @@ async function keepAnswerChangesUnlessOops<T>(task: () => Promise<T>): Promise<T
 }
 
 /**
- * Logs the URL a flow opens, captures it, and adds the URL to any failure.
+ * Logs the URL a flow opens, captures it, and adds the URL to any failure. The page's API responses are saved beside
+ * the screenshot (see {@link apiResponsesFolder}), so the data behind a difference can be compared.
  * @returns `'declined'` when the site declined to quote (its `-declined.png` is saved), otherwise `'captured'`.
  * @throws The capture's error with the URL appended; an {@link OopsError}, {@link ValidationError} or
  * {@link UnexpectedPageError} keeps its class.
@@ -553,7 +555,11 @@ async function keepAnswerChangesUnlessOops<T>(task: () => Promise<T>): Promise<T
 async function captureAt(label: string, url: string, options: ScreenshotOptions): Promise<CaptureOutcome> {
   console.log(`${label}: opening ${url}`);
   try {
-    await screenshot(url, { ...options, mask: maskedSelectors });
+    await screenshot(url, {
+      ...options,
+      mask: maskedSelectors,
+      apiResponsesFolder: options.output === undefined ? undefined : apiResponsesFolder(options.output)
+    });
     return 'captured';
   } catch (error) {
     if (error instanceof DeclinedError) {

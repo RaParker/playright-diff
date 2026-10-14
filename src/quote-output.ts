@@ -1,5 +1,6 @@
-import { readFile, rm, unlink } from 'node:fs/promises';
+import { readFile, rm, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { apiResponsesSuffix } from './api-responses.js';
 import { color } from './color.js';
 import { isMissing, readDirectoryNames } from './fs-helpers.js';
 import { outputPath, policyFolderPattern } from './output-paths.js';
@@ -8,28 +9,33 @@ import { outputPath, policyFolderPattern } from './output-paths.js';
 const outputSuffixes = ['.png', '-failed.png', '-failed.html', '-declined.png', '-declined.html'];
 
 /**
- * Deletes the screenshots, failure HTML and comparison reports a previous quote-page run wrote for one policy, so a new run
- * cannot leave stale results (for example an old `-failed.png` beside a new screenshot).
+ * Deletes the screenshots, failure HTML, API response folders and comparison reports a previous quote-page run wrote
+ * for one policy, so a new run cannot leave stale results (for example an old `-failed.png` beside a new screenshot, or
+ * an old response numbered among the new ones).
  * @param basename Output basename, `<policyDetailsId>-<historyId>`.
  * @param flows Flow names used in screenshot names (for example `nhi` and `tcas`).
- * @returns The number of screenshot/HTML files and comparison reports removed.
+ * @returns The number of screenshot/HTML files, API response folders and comparison reports removed.
  */
 export async function removeQuoteOutput(
   basename: string,
   flows: string[]
-): Promise<{ screenshots: number; comparisons: number }> {
+): Promise<{ screenshots: number; apiResponses: number; comparisons: number }> {
   const screenshotPaths = flows.flatMap((flow) =>
     outputSuffixes.map((suffix) => outputPath('screenshots', `${basename}-${flow}${suffix}`))
   );
   const screenshots = (await Promise.all(screenshotPaths.map(removeFile))).filter(Boolean).length;
+  const apiFolders = flows.map((flow) => outputPath('screenshots', `${basename}-${flow}${apiResponsesSuffix}`));
+  const apiResponses = (await Promise.all(apiFolders.map(removeFolder))).filter(Boolean).length;
   const comparisons = await removeComparisons(basename, new Set(screenshotPaths));
-  if (screenshots + comparisons > 0) {
+  if (screenshots + apiResponses + comparisons > 0) {
     console.log(
-      color.Gray(`Removed previous output for ${basename}: ${screenshots} screenshot(s), ${comparisons} comparison(s).`)
+      color.Gray(
+        `Removed previous output for ${basename}: ${screenshots} screenshot(s), ${apiResponses} API response folder(s), ${comparisons} comparison(s).`
+      )
     );
   }
 
-  return { screenshots, comparisons };
+  return { screenshots, apiResponses, comparisons };
 }
 
 /**
@@ -55,6 +61,22 @@ async function removeComparisons(basename: string, screenshotPaths: Set<string>)
   }
 
   return removed;
+}
+
+/** @returns Whether the folder existed (it is removed with everything in it). */
+async function removeFolder(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+  } catch (error) {
+    if (isMissing(error)) {
+      return false;
+    }
+
+    throw error;
+  }
+
+  await rm(path, { recursive: true, force: true });
+  return true;
 }
 
 async function removeFile(path: string): Promise<boolean> {

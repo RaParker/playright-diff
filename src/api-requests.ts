@@ -20,13 +20,8 @@ const apiSettleLimitMilliseconds = 10000;
 export function trackApiRequests(page: Page): ApiRequests {
   const origin = new URL(page.url()).origin;
   const pending = new Set<Request>();
-  const isApi = (request: Request) => {
-    const url = new URL(request.url());
-    return url.origin === origin && url.pathname.startsWith('/api/');
-  };
-
   page.on('request', (request) => {
-    if (isApi(request)) {
+    if (isApiUrl(request.url(), origin)) {
       pending.add(request);
     }
   });
@@ -48,4 +43,15 @@ export function trackApiRequests(page: Page): ApiRequests {
       }
     }
   };
+}
+
+/**
+ * Tells whether a URL is one of the site's own API endpoints: a path under `/api/` on the given origin.
+ * @param url Request URL.
+ * @param origin Origin of the page making the request, for example `https://quotes.example.com`.
+ * @returns `true` for an API URL on that origin.
+ */
+export function isApiUrl(url: string, origin: string): boolean {
+  const parsed = new URL(url);
+  return parsed.origin === origin && parsed.pathname.startsWith('/api/');
 }

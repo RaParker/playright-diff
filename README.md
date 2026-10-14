@@ -161,7 +161,8 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
 - **Output:** `screenshots/<ID>-<historyId>-nhi.png` and `-tcas.png`, plus the report
   directory `comparisons/<ID>-<historyId>`. Before capturing (once the inputs are valid), the
   previous run's output for that policy and history ID is deleted: its `-nhi`/`-tcas`
-  screenshots and HTML (including `-failed` and `-declined`), `comparisons/<ID>-<historyId>`,
+  screenshots and HTML (including `-failed` and `-declined`), its API response folders,
+  `comparisons/<ID>-<historyId>`,
   and every other `comparisons/` report whose `report.json` compares them (such as
   `run-<timestamp>` reports from older versions). `quote-guid-mapping.json` is kept.
 - **Result:** every run with a valid policy and history ID ends by writing
@@ -175,6 +176,16 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   test data (see [Journey error auto-fixes](#journey-error-auto-fixes)), the run also writes
   `comparisons/<ID>-<historyId>/answer-changes.json`, whether it compared, declined or failed.
   See [Answer changes file](#answer-changes-file) for its format.
+- **API responses:** every JSON response each flow's page gets from the site's own API
+  (`/api/` on the page's origin) is saved, whether the capture succeeds or fails, in
+  `screenshots/<ID>-<historyId>-nhi-api/` and `-tcas-api/`. Each response is one file,
+  numbered in the order it arrived, such as `001-GET-quote-summary-<guid>.json`, holding the
+  `url`, `method`, `status`, `requestBody` and `body` (parsed when they are JSON). An NHI Oops
+  attempt and its replacement journey, or the original and replacement TCAS captures, share
+  one folder, with numbering carried on. Compare the two folders to see which data behind the
+  page differs, such as premiums or add-ons the quote engine returned. The responses hold the
+  test policy's details, so keep the output folder local. If a response cannot be saved, a
+  yellow `Could not save API response …` warning is shown and the capture carries on.
 - **Masked areas:** the footer (`.hp-footer`) is painted over in flat grey in both screenshots
   (not in `-failed`/`-declined` ones), so it is never compared. It is the same on both sides,
   but OCR read its separators (`»`, `=`, `+`) differently between captures, reporting false text

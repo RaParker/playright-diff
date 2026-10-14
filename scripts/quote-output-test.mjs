@@ -48,7 +48,24 @@ describe('removeQuoteOutput', () => {
     const result = await removeQuoteOutput(basename, ['nhi', 'tcas']);
 
     // assert
-    assert.deepEqual(result, { screenshots: removed.length, comparisons: 0 });
+    assert.deepEqual(result, { screenshots: removed.length, apiResponses: 0, comparisons: 0 });
+    assert.deepEqual(await list(directory, 'screenshots'), kept.sort());
+  });
+
+  test('removes the API response folders of each flow and keeps other policies and history IDs', async () => {
+    // arrange
+    const removed = [`${basename}-nhi-api`, `${basename}-tcas-api`];
+    const kept = [`${policy}-12-nhi-api`, '11111111111111111111111111111111-1-tcas-api'];
+    for (const name of [...removed, ...kept]) {
+      await mkdir(join(directory, 'screenshots', name), { recursive: true });
+      await writeFile(join(directory, 'screenshots', name, '001-GET-quote-summary.json'), '{}');
+    }
+
+    // act
+    const result = await removeQuoteOutput(basename, ['nhi', 'tcas']);
+
+    // assert
+    assert.deepEqual(result, { screenshots: 0, apiResponses: removed.length, comparisons: 0 });
     assert.deepEqual(await list(directory, 'screenshots'), kept.sort());
   });
 
@@ -104,7 +121,7 @@ describe('removeQuoteOutput', () => {
     const result = await removeQuoteOutput(basename, ['nhi', 'tcas']);
 
     // assert
-    assert.deepEqual(result, { screenshots: 0, comparisons: 0 });
+    assert.deepEqual(result, { screenshots: 0, apiResponses: 0, comparisons: 0 });
     assert.deepEqual(await readdir(directory), []);
   });
 });
