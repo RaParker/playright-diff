@@ -9,6 +9,7 @@
   },
   "scripts": {
     "lint": "eslint",
+    "help": "tsx src/main.ts --help",
     "compare": "tsx src/main.ts compare",
     "quote-page": "tsx src/main.ts quote-page",
     "quote-pages": "tsx src/main.ts quote-pages",

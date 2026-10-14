@@ -20,7 +20,17 @@ import { migrateOutput } from './migrate-output.js';
 import { summariseChangedAnswers } from './changed-answers.js';
 import { collectQuoteResults, listDifferentPolicies, summariseQuoteResults } from './summarise.js';
 
-const help = `Usage: npm start -- <screenshot|compare|quote-page|quote-pages|summarise|migrate-output> [arguments] [options]
+const help = `Usage: npm run <action> [-- arguments and options]
+
+Actions:
+  screenshot        Capture a full-page screenshot of one URL
+  compare           Compare two images and report changed regions and text
+  quote-page        Capture NHI and TCAS versions of one quote and compare them
+  quote-pages       Run quote-page for every policy in a GUID list
+  summarise         Summarise every quote-page result (alias: summarize)
+  migrate-output    Move output from the old layout into one folder per policy
+  help              Show this help
+
 Use npm run <action> -- --help for action options.
 Each policy's output (screenshots, API responses, comparison report and result) is kept in
 <policyDetailsId>-<historyId>/ in DIFF_OUTPUT_DIR (.env or environment), or the current directory when it is

@@ -38,6 +38,7 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 | `npm run summarise differences`     | Show only the quote-page results that differ                |
 | `npm run summarise changed-answers` | Combine every policy's answer changes and count them        |
 | `npm run migrate-output`            | Move output from the old layout into one folder per policy  |
+| `npm run help`                      | List these commands                                         |
 
 Add `-- --help` to any command for its options (for example `npm run compare -- --help`).
 
