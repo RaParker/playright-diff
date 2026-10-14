@@ -95,8 +95,8 @@ All URLs are for 718CA449; 77D5FA3F's replacement quote GUID is `a90ebcff-1517-4
 
 2. Open the TCAS quote page
    <https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=5397eb2e-2005-4ac2-bd88-b98ccd8ae861&source=tcas&callmediauser=richard.parker&bid=1066>,
-   click **Continue with quote**, set the conviction offence to **Theft** on Household details (the conviction types
-   `MPP101` / `AGG99` arrive as an empty offence) and click **Return to quote**. The re-quote is
+   click **Continue with quote**, set the conviction offence to **Theft** on Household details (until PRs 25168 and
+   25170 deploy, every TCAS conviction arrives with an empty offence) and click **Return to quote**. The re-quote is
    `POST /api/save-details`; check its `quoteResult.quoteAmounts` and `compulsoryExcesses`.
 3. Compare PolicyApiService's new-business and MTA pricing of the same record:
 
@@ -119,5 +119,10 @@ personal details and conviction, so share them internally only.
 
 1. Why does NHI's `CalculateQuotePremium` return 500 since 14 Oct for the original MRP quote GUIDs (`87f68d27…` for
    718CA449, `11c88e9b…` for 77D5FA3F), which it priced on 13 Oct?
-2. Should conviction types `MPP101` and `AGG99` reach the quote journey as an offence answer, rather than empty?
+2. ~~Should conviction types `MPP101` and `AGG99` reach the quote journey as an offence answer?~~ Answered: every TCAS
+   conviction arrived with an empty offence, whatever its type. QuoteJourneyService read the offence code and text from
+   the incident's `ListConvictionType`, which PolicyApiService's `quote-journey` preset never loaded. Both codes have a
+   valid question-set option: MPP101's TCAS text is in the offence list, and QuoteJourneyService maps `AGG99` to
+   "Other". Fixed by PolicyAPIService PR 25168 (load the list row) and QuoteJourneyService PR 25170 (take the code from
+   the incident).
 3. Should NHI offer buildings cover to a customer who rents from the local authority?
