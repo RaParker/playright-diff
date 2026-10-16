@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { quoteSummary } from '../dist/quote-summary.js';
+import { quoteSummary, requote } from '../dist/quote-summary.js';
 import { screenshot, ValidationError } from '../dist/screenshot.js';
 import { assertGreyLogsInOrder } from './log-assertions.mjs';
 import {
@@ -16,7 +16,8 @@ import {
   quotePageHtml,
   rebuildingCostHtml,
   quoteSummaryHtml,
-  summaryPageHtml
+  summaryPageHtml,
+  tcasReplacementHtml
 } from './unsaved-journey-html.mjs';
 
 const summaryButton = 'hp-summary-continue-button';
@@ -262,6 +263,57 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
         assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
       }
       assertGreyLogsInOrder(log, expectedLogs);
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+    }
+  });
+}
+
+for (const [name, html, expectedError] of [
+  ['re-quotes through Contact details and captures the quote', tcasReplacementHtml, undefined],
+  [
+    'fails when Contact details does not open',
+    nhiPagesHtml(summaryPageHtml, {
+      [summaryButton]: `<div class="av-timeline-all-sections"><ul><li title="Contact details">Contact details</li></ul></div>${quotePageHtml}`
+    }),
+    /Expected page did not appear within 2 s/
+  ]
+]) {
+  test(`TCAS requote ${name}`, async (context) => {
+    // arrange
+    const log = context.mock.method(console, 'log');
+    const server = createServer((_request, response) => {
+      response.setHeader('Content-Type', 'text/html; charset=utf-8');
+      response.end(html);
+    });
+    await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+    const directory = await mkdtemp(join(tmpdir(), 'quote-summary-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    try {
+      // act
+      const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {
+        output: join(directory, 'quote.png'),
+        wait: 0,
+        timeout: 2000,
+        beforeCapture: async (page) => {
+          await quoteSummary('TCAS')(page);
+          await requote('TCAS')(page);
+        }
+      });
+
+      // assert
+      if (expectedError === undefined) {
+        await capture;
+        assert.deepEqual(await readdir(directory), ['quote.png']);
+        assertGreyLogsInOrder(log, [
+          'TCAS: opening Contact details to re-quote.',
+          'TCAS: clicking Return to quote on Contact details.'
+        ]);
+      } else {
+        await assert.rejects(capture, expectedError);
+        assertGreyLogsInOrder(log, ['TCAS: opening Contact details to re-quote.']);
+      }
     } finally {
       server.closeAllConnections();
       await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));

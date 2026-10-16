@@ -38,6 +38,8 @@ const returnToQuote: QuoteStep = {
 };
 /** Upper bound on clicks, so pages that keep leading to each other cannot loop until the timeout. */
 const maxClicks = 5;
+/** Journey section {@link requote} opens from the quote page's timeline: the last one, so it needs no answers. */
+const requoteSection = 'Contact details';
 
 /**
  * Builds a capture step that moves a quote summary on to its quote page. The quote summary already shows a price and
@@ -52,44 +54,81 @@ const maxClicks = 5;
  * journey section or the assumptions page throws a `ValidationError` (see {@link errorSummaryError}).
  */
 export function quoteSummary(label: string): (page: Page) => Promise<void> {
+  return (page) => followToQuote(page, label, undefined);
+}
+
+/**
+ * Builds a capture step that re-quotes a quote page through the journey: it opens {@link requoteSection} from the
+ * timeline and clicks Return to quote, which posts the answers to `/api/save-details` even when none changed. For a TCAS
+ * quote that prices the answers through QuoteJourneyService and the Policy API, as a customer's Return to quote would,
+ * so differences that only appear after a re-quote are captured. The page then follows {@link quoteSummary} to the quote.
+ * @param label Flow name (e.g. `TCAS`) that prefixes logs and errors.
+ * @returns A `beforeCapture` step for a page already showing the quote.
+ * The step throws as {@link quoteSummary} does, or when the section does not open before the timeout.
+ */
+export function requote(label: string): (page: Page) => Promise<void> {
   return async (page) => {
-    let clicked: QuoteStep | undefined;
-    const fixed = new Set<string>();
-    for (let clicks = 0; ; clicks++) {
-      const outcome = await waitForClickResult(page, label, clicked);
-      if (outcome === 'quote') {
-        return;
-      }
-
-      let step = quoteSteps.find(({ name }) => name === outcome);
-      // Logs name a journey section as its heading reads, like the journey fix logs; errors keep the lower case name.
-      let shownOn = step?.name ?? '';
-      if (step === undefined) {
-        const errors = await readErrorSummary(page, errorSelector);
-        const section = await fixJourneyError(page, label, errors, fixed);
-        if (section === undefined) {
-          throw await errorSummaryError(page, `${label} ${clicked?.name ?? 'quote'} errors: ${errors}`);
-        }
-
-        step = { ...returnToQuote, name: section.toLowerCase() };
-        shownOn = section;
-      }
-
-      if (clicks === maxClicks) {
-        throw new Error(`${label} quote did not appear within ${maxClicks} clicks; last shown: ${step.name}.`);
-      }
-
-      console.log(color.Gray(`${label}: clicking ${step.button} on ${shownOn}.`));
-      // Mark summaries already shown, so only a new one counts as the click's error.
-      await page.evaluate(
-        ({ errorSelector, seenErrorAttribute }) =>
-          document.querySelectorAll(errorSelector).forEach((element) => element.setAttribute(seenErrorAttribute, '')),
-        { errorSelector, seenErrorAttribute }
-      );
-      await page.locator(step.selector).click();
-      clicked = step;
-    }
+    console.log(color.Gray(`${label}: opening ${requoteSection} to re-quote.`));
+    await page.locator(`div.av-timeline-all-sections > ul > li[title="${requoteSection}"]`).click();
+    await extendWhileLoading(page, () =>
+      page.waitForFunction((heading) => document.querySelector('h1')?.textContent?.trim() === heading, requoteSection)
+    );
+    const step = { ...returnToQuote, name: requoteSection.toLowerCase() };
+    await clickStep(page, label, step, requoteSection);
+    await followToQuote(page, label, step);
   };
+}
+
+/**
+ * Clicks through {@link quoteSteps} until the quote appears, fixing journey errors once each (see
+ * {@link fixJourneyError}).
+ * @param clicked Step already clicked, whose page is ignored and whose errors are reported, or `undefined`.
+ * @throws As {@link quoteSummary}.
+ */
+async function followToQuote(page: Page, label: string, clicked: QuoteStep | undefined): Promise<void> {
+  const fixed = new Set<string>();
+  for (let clicks = 0; ; clicks++) {
+    const outcome = await waitForClickResult(page, label, clicked);
+    if (outcome === 'quote') {
+      return;
+    }
+
+    let step = quoteSteps.find(({ name }) => name === outcome);
+    // Logs name a journey section as its heading reads, like the journey fix logs; errors keep the lower case name.
+    let shownOn = step?.name ?? '';
+    if (step === undefined) {
+      const errors = await readErrorSummary(page, errorSelector);
+      const section = await fixJourneyError(page, label, errors, fixed);
+      if (section === undefined) {
+        throw await errorSummaryError(page, `${label} ${clicked?.name ?? 'quote'} errors: ${errors}`);
+      }
+
+      step = { ...returnToQuote, name: section.toLowerCase() };
+      shownOn = section;
+    }
+
+    if (clicks === maxClicks) {
+      throw new Error(`${label} quote did not appear within ${maxClicks} clicks; last shown: ${step.name}.`);
+    }
+
+    await clickStep(page, label, step, shownOn);
+    clicked = step;
+  }
+}
+
+/**
+ * Logs and clicks a step's button, first marking error summaries already shown so only a new one counts. The button is
+ * matched by its text as well as its selector, since a journey section can show several submit buttons (Contact details
+ * has both Get your quote and Return to quote).
+ */
+async function clickStep(page: Page, label: string, step: QuoteStep, shownOn: string): Promise<void> {
+  console.log(color.Gray(`${label}: clicking ${step.button} on ${shownOn}.`));
+  await page.evaluate(
+    ({ errorSelector, seenErrorAttribute }) =>
+      document.querySelectorAll(errorSelector).forEach((element) => element.setAttribute(seenErrorAttribute, '')),
+    { errorSelector, seenErrorAttribute }
+  );
+  await page.locator(step.selector).filter({ hasText: step.button }).click();
 }
 
 /**

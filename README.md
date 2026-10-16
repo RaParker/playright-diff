@@ -8,6 +8,9 @@ Its main use is comparing the NHI and TCAS versions of the same Homeprotect quot
 [Configuration](#configuration) · [How quote-page works](#how-quote-page-works) ·
 [Troubleshooting](#troubleshooting) · [Development](#development)
 
+**Open issues** found with this tool, still awaiting a decision or a fix, are tracked in
+[docs/open-issues.md](docs/open-issues.md).
+
 ## Tech stack
 
 - Node.js 22+, TypeScript 7 (ES modules, run with `tsx`)
@@ -805,6 +808,15 @@ GUID, TCAS is captured from `QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE` instea
 [summary and assumptions](#quote-summary-and-assumptions) to the quote. The GUID is used
 exactly as the endpoint returned it. Logs show
 `TCAS: using replacement quote GUID <GUID> to match NHI.`
+
+The replacement's quote summary shows the quote NHI saved, not TCAS's own pricing. So once the
+quote appears, TCAS always re-quotes it: it opens **Contact details** from the timeline and clicks
+**Return to quote**, which posts the answers to `/api/save-details` even when none changed. That
+prices them through QuoteJourneyService and the Policy API, as **Get your quote** does at the end
+of the original TCAS journey, so differences that only appear after a re-quote (such as cover the
+Policy API doesn't allow, or an accidental damage level reported as "None") are captured. Logs
+show `TCAS: opening Contact details to re-quote.`; errors on the way back to the quote are fixed
+as on the [quote summary](#quote-summary-and-assumptions).
 
 - **New replacement:** TCAS first runs concurrently for the original policy (the replacement
   isn't known yet), then runs again for the replacement once NHI has saved it. The second

@@ -63,6 +63,25 @@ export const quoteSummaryHtml = nhiPagesHtml(summaryPageHtml, {
   'hp-edit-questions-button': '<h1>Cover details</h1>'
 });
 
+/** Quote page timeline (markup trimmed from the live page), whose Contact details entry opens that section. */
+const timelineHtml = `<div class="av-timeline-all-sections"><ul><li id="timeline-cover" title="Cover details"
+  class="av-complete">Cover details</li><li id="timeline-contact" title="Contact details" class="av-complete"
+  >Contact details</li></ul></div>`;
+
+/**
+ * TCAS replacement quote summary: Continue with quote shows the assumptions page, whose Yes button shows the quote with
+ * the journey timeline. Its Contact details entry opens that section, whose Return to quote shows the quote again; like
+ * the live section, it also has a Get your quote submit button, which does nothing here.
+ */
+export const tcasReplacementHtml = nhiPagesHtml(summaryPageHtml, {
+  'hp-summary-continue-button': assumptionsPageHtml,
+  'hp-assumptions-quote-button': timelineHtml + monthlyQuotePageHtml,
+  'timeline-contact': `${timelineHtml}<h1>Contact details</h1><button id="get-your-quote" type="button"
+    class="animated btn btn-primary hp-submit-form">Get your quote</button><button id="return-to-quote" type="button"
+    class="animated btn btn-primary hp-submit-form">Return to quote</button>`,
+  'return-to-quote': timelineHtml + monthlyQuotePageHtml
+});
+
 /**
  * Builds the Property circumstances rebuilding cost question (markup trimmed from the live page): the cost field is
  * only shown once "Choose another amount" is selected. Needs {@link otherAmountScript} on the page.

@@ -8,7 +8,13 @@ import { after, describe, test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { defaultQuoteGuidCount, readQuoteGuidList, selectQuoteGuids } from '../dist/quote-guid-list.js';
 import { readQuoteGuidMapping, requestQuoteGuid, saveQuoteGuidMapping } from '../dist/quote-guid.js';
-import { declinedPageHtml, quotePageHtml, quoteSummaryHtml, unsavedJourneyHtml } from './unsaved-journey-html.mjs';
+import {
+  declinedPageHtml,
+  quotePageHtml,
+  quoteSummaryHtml,
+  tcasReplacementHtml as tcasReplacementQuoteHtml,
+  unsavedJourneyHtml
+} from './unsaved-journey-html.mjs';
 
 /**
  * Reads the saved result of a policy A run that skipped the comparison, checking its folder has no comparison report.
@@ -79,7 +85,7 @@ function quoteJourneyHandler(
   oopsGuids,
   replacementGuid = 'new-guid',
   unsavedJourney = {},
-  tcasReplacementHtml = quoteSummaryHtml
+  tcasReplacementHtml = tcasReplacementQuoteHtml
 ) {
   return (request, response) => {
     if (request.url.startsWith('/api/nhi/quote-guid')) {

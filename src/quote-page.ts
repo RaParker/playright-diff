@@ -24,7 +24,7 @@ import {
 import { selectAnnualPayment } from './payment.js';
 import { removeQuoteOutput } from './quote-output.js';
 import { writeQuoteResult, type QuoteResult } from './quote-result.js';
-import { quoteSummary } from './quote-summary.js';
+import { quoteSummary, requote } from './quote-summary.js';
 import {
   DeclinedError,
   OopsError,
@@ -362,11 +362,13 @@ async function captureAndCompare(
 
     console.log(`TCAS: using replacement quote GUID ${replacementGuid} to match NHI.`);
     const replacementUrl = templateUrl(fallback.tcasReplacementUrlTemplate, { artemisQuoteGuid: replacementGuid });
+    // The replacement's quote summary shows NHI's saved quote, so it is re-quoted the way the original TCAS journey's
+    // Get your quote does; otherwise differences in TCAS's own pricing would not be captured.
     [tcas] = await Promise.allSettled([
       captureAt('TCAS', replacementUrl, {
         output: tcasPath,
         timeout: options.timeout,
-        beforeCapture: withAnnualPayment('TCAS', quoteSummary('TCAS'))
+        beforeCapture: withAnnualPayment('TCAS', inSequence(quoteSummary('TCAS'), requote('TCAS')))
       })
     ]);
   }
@@ -614,6 +616,15 @@ function withAnnualPayment(label: string, journey: (page: Page) => Promise<void>
   return async (page) => {
     await journey(page);
     await selectAnnualPayment(page, label);
+  };
+}
+
+/** Runs capture steps one after another on the same page. */
+function inSequence(...steps: ((page: Page) => Promise<void>)[]): (page: Page) => Promise<void> {
+  return async (page) => {
+    for (const step of steps) {
+      await step(page);
+    }
   };
 }
 
