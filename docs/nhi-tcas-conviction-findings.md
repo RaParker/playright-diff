@@ -117,6 +117,8 @@ personal details and conviction, so share them internally only.
 
 ## Open questions
 
+The issues still open are tracked in [Open issues](open-issues.md).
+
 1. Why does NHI's `CalculateQuotePremium` return 500 since 14 Oct for the original MRP quote GUIDs (`87f68d27…` for
    718CA449, `11c88e9b…` for 77D5FA3F), which it priced on 13 Oct?
 2. ~~Should conviction types `MPP101` and `AGG99` reach the quote journey as an offence answer?~~ Answered: every TCAS
