@@ -11,7 +11,7 @@ differences (see [the findings](nhi-tcas-conviction-findings.md)); last updated 
 | 4   | TCAS Return to quote drops the joint holder's title      | Fix ready   | Review, merge, deploy    |
 | 5   | New business accidental damage pre-selected as "None"    | Fix ready   | Review, merge, deploy    |
 | 6   | MRP and NHI disagree on high-risk items cover            | Escalate    | Rating team              |
-| 7   | Endorsements are formatted differently on NHI and TCAS   | Open        | Decide format, QSQ fix   |
+| 7   | Endorsements are formatted differently on NHI and TCAS   | Fix ready   | Review, merge, deploy    |
 
 ## 1. NHI can no longer price the original quotes
 
@@ -107,8 +107,11 @@ differences (see [the findings](nhi-tcas-conviction-findings.md)); last updated 
   as QuoteJourneyService returns it.
 - **Not a fix:** showing the MRP's `endorsementText` instead would not match either side. It is plain text with
   `\r\n` line breaks and `•` bullets, so as HTML its paragraphs and list would collapse into one block.
-- **Next step:** decide which formatting is wanted (NHI's sanitised version loses the definition styling), then apply
-  the same processing on both paths in QuestionSetQuote.
+- **Decision (2026-10-19):** match NHI exactly for now, although NHI's sanitised version loses the definition styling.
+- **Fix:** QuestionSetQuote branch `fix/tcas-endorsement-markdown` runs the TCAS quote summary paths through the same
+  `convertSpecificTermsItemsUsingMarkdown` call as NHI. A test checks that this policy's MRP `BIKESEC` HTML becomes
+  exactly NHI's text.
+- **Next step:** review, merge into `feature` and deploy.
 
 ## Closed
 
