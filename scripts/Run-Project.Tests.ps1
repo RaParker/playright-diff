@@ -61,6 +61,8 @@ Describe 'Run-Project.ps1 command lines' {
 
         @{ Name = 'migrate-output resolves Root and passes Apply'; Arguments = @('-MigrateOutput', '-Root', 'scripts', '-Apply'); Expected = '{cli} migrate-output --root {root}\scripts --apply' }
 
+        @{ Name = 'clear-output deletes the output folder'; Arguments = @('-ClearOutput'); Expected = '{cli} clear-output' }
+
         @{ Name = 'npm task runs its npm script'; Arguments = @('-Task', 'TestQuotePage'); Expected = 'npm run test:quote-page' }
 
         @{ Name = 'Verify task runs VerifyProject.ps1'; Arguments = @('-Task', 'Verify'); Expected = '{root}\VerifyProject.ps1' }
@@ -111,6 +113,8 @@ Describe 'Run-Project.ps1 validation' {
         @{ Name = 'a missing migrate-output Root'; Arguments = @('-MigrateOutput', '-Root', 'missing-folder'); Message = '*Output folder "missing-folder" does not exist*' }
 
         @{ Name = 'Apply without MigrateOutput'; Arguments = @('-Summarise', '-Apply'); Message = '*Parameter set cannot be resolved*' }
+
+        @{ Name = 'ClearOutput with another command option'; Arguments = @('-ClearOutput', '-Root', 'scripts'); Message = '*Parameter set cannot be resolved*' }
 
         @{ Name = 'Mode without Summarise'; Arguments = @('-RetryFailed', '-Mode', 'differences'); Message = '*Parameter set cannot be resolved*' }
     ) {

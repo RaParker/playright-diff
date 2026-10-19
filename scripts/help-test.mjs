@@ -5,7 +5,16 @@ import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
 
-const actions = ['screenshot', 'compare', 'quote-page', 'quote-pages', 'summarise', 'migrate-output', 'help'];
+const actions = [
+  'screenshot',
+  'compare',
+  'quote-page',
+  'quote-pages',
+  'summarise',
+  'migrate-output',
+  'clear-output',
+  'help'
+];
 
 async function runCli(directory, args) {
   const child = spawn(process.execPath, [resolve('dist/main.js'), ...args], { cwd: directory });

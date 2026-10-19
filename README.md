@@ -41,6 +41,7 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 | `npm run summarise differences`     | Show only the quote-page results that differ                |
 | `npm run summarise changed-answers` | Combine every policy's answer changes and count them        |
 | `npm run migrate-output`            | Move output from the old layout into one folder per policy  |
+| `npm run clear-output`              | Delete the output folder (`DIFF_OUTPUT_DIR`)                |
 | `npm run help`                      | List these commands                                         |
 
 Add `-- --help` to any command for its options (for example `npm run compare -- --help`).
@@ -65,6 +66,7 @@ running it; with no arguments it shows its help (`Get-Help ./Run-Project.ps1 -Ex
 ./Run-Project.ps1 -Summarise                                     # or -Summarize
 ./Run-Project.ps1 -Summarise -Mode changed-answers               # or -Mode differences
 ./Run-Project.ps1 -MigrateOutput -Root D:/temp/old-output        # add -Apply to move the files
+./Run-Project.ps1 -ClearOutput                                   # delete DIFF_OUTPUT_DIR
 ./Run-Project.ps1 -Task Verify   # Install, InstallBrowser, Build, Typecheck, Lint, Test,
                                  # TestCompare, TestQuotePage, Verify
 ```
@@ -417,6 +419,29 @@ npm run migrate-output -- --root D:/temp/old-output --apply
   when left empty.
 - **Root:** `--root` migrates another folder; without it, `DIFF_OUTPUT_DIR` (or the current
   working directory) is used.
+
+### clear-output
+
+Deletes the output folder set by `DIFF_OUTPUT_DIR`, with everything in it, so the next run
+starts clean. It first prints the folder and how many entries it holds, then deletes it:
+
+```sh
+npm run clear-output                                     # or ./Run-Project.ps1 -ClearOutput
+```
+
+```text
+Deleting these folders:
+  D:\temp\playright-diff-output (1265 entries)
+Deleted D:\temp\playright-diff-output.
+```
+
+- **Only `DIFF_OUTPUT_DIR`:** other folders, such as `MRP_AND_QUOTE_OUTPUT_DIR`, are never
+  touched, and the current working directory is never used in its place.
+- **Refuses** (exit code 1, nothing deleted) when `DIFF_OUTPUT_DIR` is not set, or is a drive
+  root, the user profile, this project, or a folder containing either of the last two.
+- **Missing folder:** reported, nothing deleted, exit code 0.
+- **No confirmation prompt:** add `-WhatIf` to the PowerShell wrapper to see the command
+  without running it.
 
 ## Configuration
 

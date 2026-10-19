@@ -17,6 +17,7 @@ import { loadEnvironment } from './environment.js';
 import { outputPath, setOutputRoot } from './output-paths.js';
 import { intervalToMs } from './interval.js';
 import { migrateOutput } from './migrate-output.js';
+import { clearOutput } from './clear-output.js';
 import { summariseChangedAnswers } from './changed-answers.js';
 import { collectQuoteResults, listDifferentPolicies, summariseQuoteResults } from './summarise.js';
 
@@ -29,6 +30,7 @@ Actions:
   quote-pages       Run quote-page for every policy in a GUID list
   summarise         Summarise every quote-page result (alias: summarize)
   migrate-output    Move output from the old layout into one folder per policy
+  clear-output      Delete the output folder (DIFF_OUTPUT_DIR) and everything in it
   help              Show this help
 
 Use npm run <action> -- --help for action options.
@@ -134,6 +136,23 @@ Notes:
   - Entries that are not quote-page output (such as comparisons/run-<timestamp>) are left in place
     and listed. screenshots/ and comparisons/ are removed only when left empty.`;
 
+const clearOutputHelp = `Usage: npm run clear-output
+
+Deletes the output folder (DIFF_OUTPUT_DIR) and everything in it, after printing the folder and how many
+entries it holds.
+
+Options:
+  -h, --help        Show help
+
+Environment (.env or environment):
+  DIFF_OUTPUT_DIR   Folder to delete (required; the current directory is never used instead)
+
+Notes:
+  - Nothing is deleted when DIFF_OUTPUT_DIR is a drive root, the user profile, this project, or a
+    folder containing either; the exit code is then 1.
+  - A missing folder is reported and the exit code is 0.
+  - Other folders, such as MRP_AND_QUOTE_OUTPUT_DIR, are never touched.`;
+
 /** What `summarise` can be given after its name: only the differences, or the changed answers. */
 const summariseModes = new Set(summariseModeNames);
 
@@ -181,6 +200,11 @@ async function main(): Promise<void> {
 
   if (action === 'migrate-output') {
     await runMigrateOutput(args);
+    return;
+  }
+
+  if (action === 'clear-output') {
+    await runClearOutput(args);
     return;
   }
 
@@ -397,6 +421,35 @@ async function runMigrateOutput(args: string[]): Promise<void> {
   }
 
   await migrateOutput({ root: values.root, apply: values.apply === true });
+}
+
+async function runClearOutput(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      help: { type: 'boolean', short: 'h' }
+    }
+  });
+  if (values.help === true) {
+    console.log(clearOutputHelp);
+    return;
+  }
+
+  if (positionals.length > 0) {
+    throw new Error(
+      usageError(
+        `clear-output takes no arguments (got ${positionals.join(' ')}).`,
+        'Usage: npm run clear-output',
+        'clear-output'
+      )
+    );
+  }
+
+  const outcome = await clearOutput(optional(await loadEnvironment(), 'DIFF_OUTPUT_DIR'));
+  if (outcome === 'refused') {
+    process.exitCode = 1;
+  }
 }
 
 /**
