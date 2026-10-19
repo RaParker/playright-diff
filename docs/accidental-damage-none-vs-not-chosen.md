@@ -2,9 +2,17 @@
 
 **Draft for review by underwriting and compliance before anyone acts on it.**
 
-Decision (2026-10-14): keep showing "None". The journey can't reliably tell "the customer chose None" from "the customer
-hasn't chosen yet", and the change needed to do so is out of proportion to the difference it makes. This note records
-why, so the question doesn't need re-investigating.
+Decision (2026-10-19), replacing the 2026-10-14 decision to keep showing "None": on **new business**, the accidental
+damage level stays unset until the customer answers it and it is submitted through the quote page's overrides. Renewals
+and MTAs keep showing "None".
+
+QuoteJourneyService branch `fix/nb-accidental-damage-unset` does this without storing anything new. On new business it
+clears a "None" level from the answers and the quote result, unless the request's overrides supplied that level. The
+stored level is untouched, so the price doesn't change. The reasons below still hold: nothing records that the customer
+chose "None". So an NB customer who chose "None" is asked again if the quote is reloaded. That was accepted on
+2026-10-19 rather than adding a marker to the policy.
+
+The rest of this note is the original 2026-10-14 write-up, kept for the reasons it gives.
 
 ## What you see
 
