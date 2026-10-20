@@ -1,15 +1,15 @@
 # Open issues
 
 **Draft for review by the relevant teams before anyone acts on it.** Raised while investigating the NHI and TCAS quote
-differences (see [the findings](nhi-tcas-conviction-findings.md)); last updated 2026-10-19.
+differences (see [the findings](nhi-tcas-conviction-findings.md)); last updated 2026-10-20.
 
 | #   | Issue                                                    | Status      | Needs                    |
 | --- | -------------------------------------------------------- | ----------- | ------------------------ |
 | 1   | NHI can no longer price the original quotes              | Unexplained | NHI investigation        |
 | 2   | NHI offers buildings cover to local-authority tenants    | Open        | Pricing and underwriting |
 | 3   | Accidental damage flag and level can disagree after TCAS | Unverified  | Test, then QJS fix       |
-| 4   | TCAS Return to quote drops the joint holder's title      | Fix ready   | Review, merge, deploy    |
-| 5   | New business accidental damage pre-selected as "None"    | Fix ready   | Review, merge, deploy    |
+| 4   | TCAS Return to quote drops the joint holder's title      | Merged      | Re-run the comparison    |
+| 5   | New business accidental damage pre-selected as "None"    | Merged      | Sign-off, re-run         |
 | 6   | MRP and NHI disagree on high-risk items cover            | Escalate    | Rating team              |
 | 7   | Endorsements are formatted differently on NHI and TCAS   | Fix ready   | Review, merge, deploy    |
 
@@ -60,10 +60,9 @@ differences (see [the findings](nhi-tcas-conviction-findings.md)); last updated 
   answers. It sets only `TitleId`, not the preloaded `ListTitle`. GoPackages' mrp-and-quote mapper
   (`getJointPolicyHolders`) read the title from `ListTitle`, so the summary came back with `title: 0` and
   `titleText: ""`.
-- **Fix:** GoPackages branch `fix/joint-policyholder-title` reads `TitleId` (mrp-and-quote `0.0.515-alpha`), and
-  QuoteJourneyService branch `fix/nb-accidental-damage-unset` picks it up.
-- **Next step:** review and merge both branches into `feature`, then deploy QuoteJourneyService and re-run the
-  comparison for 3C053A54.
+- **Fix:** merged. GoPackages PR 25321 makes the mapper read `TitleId`, and QuoteJourneyService PR 25318 picks it up
+  (mrp-and-quote `0.0.516-beta`). Both are on `feature`, and QuoteJourneyService `feature` is deployed to feature-dev.
+- **Next step:** re-run the comparison for 3C053A54 against feature-dev, then release with QuoteJourneyService.
 
 ## 5. New business accidental damage pre-selected as "None"
 
@@ -72,10 +71,10 @@ differences (see [the findings](nhi-tcas-conviction-findings.md)); last updated 
   [the write-up](accidental-damage-none-vs-not-chosen.md).
 - **Decision (2026-10-19):** on new business, the level stays unset until the customer answers it through the overrides.
   Renewals and MTAs keep "None". This replaces the 2026-10-14 decision to keep showing "None".
-- **Fix:** QuoteJourneyService branch `fix/nb-accidental-damage-unset`. The write-up has the details and the one known
-  limitation.
-- **Next step:** as for issue 4. Underwriting and compliance should also confirm that asking again after a reload is
-  acceptable.
+- **Fix:** merged as QuoteJourneyService PR 25318, on `feature` and deployed to feature-dev. The write-up has the
+  details and the one known limitation.
+- **Next step:** underwriting and compliance to confirm that asking again after a reload is acceptable; then, as for
+  issue 4, re-run the comparison and release with QuoteJourneyService.
 
 ## 6. MRP and NHI disagree on high-risk items cover
 
