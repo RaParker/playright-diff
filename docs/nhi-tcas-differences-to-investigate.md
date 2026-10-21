@@ -34,11 +34,11 @@ Notes:
   page now shows TCAS's cover as soon as it opens (the fix for open issue 8 is on feature-dev), so there is no need to
   click **Return to quote**.
 - The comparison's screenshots, crops and captured API responses are in the playwright-diff output folder under
-  `<policy ID>-1` (`nhi.png`, `tcas.png`, `diff.png`, `nhi-api/`, `tcas-api/`).
+  `<policyDetailsId>-1` (`nhi.png`, `tcas.png`, `diff.png`, `nhi-api/`, `tcas-api/`).
 
 ## 1. Tenants: TCAS hides Buildings insurance, NHI offers it
 
-- **Example:** policy `0503FE0FF7904A4899C471DA352E7BD4`, history 1, a tenant renting from a landlord (`RPL01`). Quote
+- **Example:** policyDetailsId `0503FE0FF7904A4899C471DA352E7BD4`, historyId 1, a tenant renting from a landlord (`RPL01`). Quote
   GUID `3189b295-cec8-470b-b352-4ab196e50bd3`.
   - [Open the NHI quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=3189b295-cec8-470b-b352-4ab196e50bd3&callmediauser=richard.parker&bid=1066)
   - [Open the TCAS quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=3189b295-cec8-470b-b352-4ab196e50bd3&source=tcas&callmediauser=richard.parker&bid=1066)
@@ -54,7 +54,7 @@ Notes:
 
 ## 2. TCAS doesn't include Personal possessions and high-risk items, NHI does
 
-- **Example:** policy `1A13B1F1243841B4BB2A9DD9340868B3`, history 1, a mortgaged home (`MOR01`). Quote GUID
+- **Example:** policyDetailsId `1A13B1F1243841B4BB2A9DD9340868B3`, historyId 1, a mortgaged home (`MOR01`). Quote GUID
   `b97cc0fb-828c-47f8-a77e-fbbf9f5066f9`.
   - [Open the NHI quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=b97cc0fb-828c-47f8-a77e-fbbf9f5066f9&callmediauser=richard.parker&bid=1066)
   - [Open the TCAS quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=b97cc0fb-828c-47f8-a77e-fbbf9f5066f9&source=tcas&callmediauser=richard.parker&bid=1066)
@@ -64,7 +64,7 @@ Notes:
 - **Data:** NHI's quote summary has `isHighRiskHighValueItemsAllowed` and `isGeneralValuablesCoveredAllowed` both
   `true`; TCAS's has both `false`. The other cover flags agree.
 - **Scale:** 8 pages, none of them tenants: 4 owned outright (`OWN01`), 3 mortgaged (`MOR01`) and 1 recorded
-  as `ky99`. Where the customer listed items, TCAS can also drop them; on `3763F4DCDDE74265A3F3A024E8CEE3C9` it drops a
+  as `ky99`. Where the customer listed items, TCAS can also drop them; on policyDetailsId `3763F4DCDDE74265A3F3A024E8CEE3C9` it drops a
   pedal cycle with away-from-home cover.
 - **Question for the rating team:** which answer is right, NHI's or TCAS's, and why do their ratings of the same answers
   differ? In Artemis
@@ -72,7 +72,7 @@ Notes:
 
 ## 3. Home owner: TCAS hides Contents insurance, NHI offers it
 
-- **Example:** policy `106D1920D02642E2A0F55131BB75ED7D`, history 1, a home owned outright (`OWN01`). Quote GUID
+- **Example:** policyDetailsId `106D1920D02642E2A0F55131BB75ED7D`, historyId 1, a home owned outright (`OWN01`). Quote GUID
   `48d4abbc-6fa2-4c18-b2f2-db7fddcc5fbf`.
   - [Open the NHI quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=48d4abbc-6fa2-4c18-b2f2-db7fddcc5fbf&callmediauser=richard.parker&bid=1066)
   - [Open the TCAS quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=48d4abbc-6fa2-4c18-b2f2-db7fddcc5fbf&source=tcas&callmediauser=richard.parker&bid=1066)
@@ -85,7 +85,7 @@ Notes:
 
 ## 4. TCAS shows a £1 buildings sum insured, NHI shows the real amount
 
-- **Example:** policy `4230522AFAA2430E97FF8EDFD9A6FF40`, history 1, a mortgaged home (`MOR01`). Quote GUID
+- **Example:** policyDetailsId `4230522AFAA2430E97FF8EDFD9A6FF40`, historyId 1, a mortgaged home (`MOR01`). Quote GUID
   `9751c32f-f6f8-4346-a7e4-f5d3bb0b7bbe`.
   - [Open the NHI quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=9751c32f-f6f8-4346-a7e4-f5d3bb0b7bbe&callmediauser=richard.parker&bid=1066)
   - [Open the TCAS quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=9751c32f-f6f8-4346-a7e4-f5d3bb0b7bbe&source=tcas&callmediauser=richard.parker&bid=1066)
@@ -102,18 +102,28 @@ Notes:
 
 - **Six tenant pages still show NHI and TCAS as identical.** All six rent from a landlord (`RPL01`). They were captured
   on 2026-10-20 and early on 2026-10-21, before the TCAS page showed TCAS's cover, although TCAS's response for each
-  already had `buildingsIsAllowed: false`. Running them again should add them to section 1. Each is history 1:
-  - `1F024FF8D7FE4BBEAB4CFA408373AB1B`: quote `1766809c-fb6a-4a64-aca1-d2899a9177a2`
-  - `295B10C2AA1F4A95825A153FC7BFF86D`: quote `700dae9d-40a9-4971-8717-bc78225b5299`
-  - `733AB9BECBD94620BBBAC05DCE2945E7`: quote `2ebaffa1-ab71-489c-aad3-2b9ca72e9a8c`
-  - `BB8AF0639DF747C0A3B1E944B3B2A4F0`: quote `cb659d56-0332-4751-b234-558cc65f5f1a`
-  - `C34C0FE51091491D9A6EAE707B4CAD9A`: quote `ad27133b-1df8-4e5f-b3da-e41a99b861cd`
-  - `DFF53EF0C0F042C496DBBB1141EFB12E`: quote `2208a839-f6f6-41ba-a663-c465a19dddb0`
-- **One tenant from the last run is missing.** `3831A3A00C88465DB46341EC0BEB48D7` (history 1, quote
-  `6e9f70f2-2c0f-4e18-9862-a0221b5d4888`) failed this time because the NHI quote did not appear within 5 clicks.
+  already had `buildingsIsAllowed: false`. Running them again should add them to section 1. Each is historyId 1:
+  - policyDetailsId `1F024FF8D7FE4BBEAB4CFA408373AB1B`, quote GUID `1766809c-fb6a-4a64-aca1-d2899a9177a2`
+  - policyDetailsId `295B10C2AA1F4A95825A153FC7BFF86D`, quote GUID `700dae9d-40a9-4971-8717-bc78225b5299`
+  - policyDetailsId `733AB9BECBD94620BBBAC05DCE2945E7`, quote GUID `2ebaffa1-ab71-489c-aad3-2b9ca72e9a8c`
+  - policyDetailsId `BB8AF0639DF747C0A3B1E944B3B2A4F0`, quote GUID `cb659d56-0332-4751-b234-558cc65f5f1a`
+  - policyDetailsId `C34C0FE51091491D9A6EAE707B4CAD9A`, quote GUID `ad27133b-1df8-4e5f-b3da-e41a99b861cd`
+  - policyDetailsId `DFF53EF0C0F042C496DBBB1141EFB12E`, quote GUID `2208a839-f6f6-41ba-a663-c465a19dddb0`
+- **One tenant from the last run is missing.** policyDetailsId `3831A3A00C88465DB46341EC0BEB48D7` (historyId 1, quote GUID `6e9f70f2-2c0f-4e18-9862-a0221b5d4888`) failed this time because the NHI quote did not appear within 5 clicks.
 - **Rendering noise ([open issue 12](open-issues.md)) is gone:** the three pages that differed only in how NHI and TCAS
-  render now have no changed pixels. Each is history 1:
-  - `BB52A54C361C4A8B9BA9227AED7379A5`: quote `463bfebe-c8d3-4b26-962f-970f0ce524ce`
-  - `F04BDA6BBD0E497299E21DCF1099902F`: quote `a3626fc0-ca13-4555-854f-14c5c55bc7b7`
-  - `855FF5724E9A48DCA0040D55C2652428`: quote `b008ebc4-dfdd-451c-a275-7328fec90797`
+  render now have no changed pixels. Each is historyId 1:
+  - policyDetailsId `BB52A54C361C4A8B9BA9227AED7379A5`, quote GUID `463bfebe-c8d3-4b26-962f-970f0ce524ce`
+  - policyDetailsId `F04BDA6BBD0E497299E21DCF1099902F`, quote GUID `a3626fc0-ca13-4555-854f-14c5c55bc7b7`
+  - policyDetailsId `855FF5724E9A48DCA0040D55C2652428`, quote GUID `b008ebc4-dfdd-451c-a275-7328fec90797`
 - **Not investigated here:** the 19 failed captures and the 25 declined quotes.
+
+### Running these pages again
+
+To compare a page again, run playwright-diff's `quote-page` command from the project folder with the **policyDetailsId** (the 32-character ID, not the quote GUID) and its historyId:
+
+```powershell
+npm run quote-page -- <policyDetailsId> <historyId>
+```
+
+The quote GUID isn't needed: playwright-diff keeps it in `quote-guid-mapping.json`, so the new comparison opens the same
+quote. Run `npm run summarise differences` afterwards to see whether the page now differs.
