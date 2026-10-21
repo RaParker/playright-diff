@@ -960,7 +960,7 @@ describe('quote-pages', () => {
 
       // assert
       assert.notEqual(result.code, 0);
-      assert.match(result.plain, /Retrying 2 failed policies from quote-pages-failed\.json/);
+      assert.match(result.plain, /Retrying 2 failed or unfinished policies from quote-pages-failed\.json and /);
       assert.match(
         result.plain,
         /Quote pages summary\n2 policies: 1 compared \(0 identical, 1 different\), 1 failed\.\n/
@@ -985,7 +985,45 @@ describe('quote-pages', () => {
 
     // assert
     assert.equal(result.code, 0, result.output);
-    assert.match(result.plain, /No failed quote pages to retry \(quote-pages-failed\.json\)\./);
+    assert.match(result.plain, /No failed quote pages to retry \(quote-pages-failed\.json and .*quote-guid-\w+\)\./);
+  });
+
+  test('retry-failed also reruns failed and unfinished folders that the failed-policies file does not list', async () => {
+    await withServer(quoteJourneyHandler([]), async (base, requests) => {
+      // arrange
+      const { directory, env } = await fixture(base, {
+        [`${policyA}-1`]: 'guid-a',
+        [`${policyB}-1`]: 'guid-b',
+        [`${policyC}-1`]: 'guid-c'
+      });
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n${policyC}\n`);
+      // A one-off run's failure, which is not saved to the file, and a folder left by a stopped run.
+      await mkdir(join(directory, `${policyA}-1`));
+      await writeFile(
+        join(directory, `${policyA}-1`, 'result.json'),
+        JSON.stringify({
+          policyDetailsId: policyA,
+          historyId: 1,
+          outcome: 'failed',
+          validation: false,
+          issues: ['earlier'],
+          startedAt: '2000-01-01T00:00:00.000Z',
+          finishedAt: '2000-01-01T00:01:00.000Z'
+        })
+      );
+      await mkdir(join(directory, `${policyB}-1`));
+      await writeComparison(directory, `${policyC}-1`, 0);
+
+      // act
+      const result = await run(directory, env, ['quote-pages', 'retry-failed', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.match(result.plain, /Retrying 2 failed or unfinished policies from /);
+      assert.ok(requests.includes(`/tcas/${policyA}/1`));
+      assert.ok(requests.includes(`/tcas/${policyB}/1`));
+      assert.ok(!requests.some((path) => path.includes(policyC) || path.includes('guid-c')));
+    });
   });
 
   test('retry-different reruns only the policies whose screenshots differed', async () => {
@@ -1013,6 +1051,130 @@ ${policyB}
       assert.ok(requests.includes(`/tcas/${policyA}/1`));
       assert.ok(!requests.some((path) => path.includes(policyB) || path.includes('guid-b')));
       assert.equal(await readFile(join(directory, 'quote-pages-failed.json'), 'utf8'), saved);
+    });
+  });
+
+  test('retry-different also reruns a both-declined result saved before declines were compared', async () => {
+    await withServer(quoteJourneyHandler([]), async (base, requests) => {
+      // arrange
+      const { directory, env } = await fixture(base, { [`${policyA}-1`]: 'guid-a', [`${policyB}-1`]: 'guid-b' });
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n`);
+      await mkdir(join(directory, `${policyA}-1`));
+      await writeFile(
+        join(directory, `${policyA}-1`, 'result.json'),
+        JSON.stringify({
+          policyDetailsId: policyA,
+          historyId: 1,
+          outcome: 'declined',
+          validation: false,
+          issues: [],
+          startedAt: '2000-01-01T00:00:00.000Z',
+          finishedAt: '2000-01-01T00:01:00.000Z'
+        })
+      );
+      await writeComparison(directory, `${policyB}-1`, 0);
+
+      // act
+      const result = await run(directory, env, ['quote-pages', 'retry-different', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.match(result.plain, /Retrying 1 different policies from /);
+      assert.ok(requests.includes(`/tcas/${policyA}/1`));
+      assert.ok(!requests.some((path) => path.includes(policyB) || path.includes('guid-b')));
+    });
+  });
+
+  describe('--dry-run', () => {
+    /** A project whose output folder has a failure only in its folder, a difference and a saved failure. */
+    async function dryRunFixture(base) {
+      const { directory, env } = await fixture(base, { [`${policyA}-1`]: 'guid-a', [`${policyB}-1`]: 'guid-b' });
+      await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n${policyC}\n`);
+      await mkdir(join(directory, `${policyA}-1`));
+      await writeFile(
+        join(directory, `${policyA}-1`, 'result.json'),
+        JSON.stringify({
+          policyDetailsId: policyA,
+          historyId: 1,
+          outcome: 'failed',
+          validation: false,
+          issues: [
+            'Quote capture failed; comparison skipped.',
+            'NHI: Website displayed <h2>Oops</h2>; stopping the journey.'
+          ],
+          startedAt: '2000-01-01T00:00:00.000Z',
+          finishedAt: '2000-01-01T00:01:00.000Z'
+        })
+      );
+      await writeComparison(directory, `${policyB}-1`, 25);
+      const saved = `${JSON.stringify({ historyId: 1, failed: [{ policyDetailsId: policyC, issues: ['earlier'] }] })}\n`;
+      await writeFile(join(directory, 'quote-pages-failed.json'), saved);
+      return { directory, env, saved };
+    }
+
+    for (const [selector, expected] of [
+      [
+        'retry-failed',
+        [
+          /Would retry 2 failed or unfinished policies from quote-pages-failed\.json and /,
+          new RegExp(`\n {2}${policyA}-1 {2}failed: NHI: Website displayed <h2>Oops</h2>; stopping the journey\\.\n`),
+          new RegExp(`\n {2}${policyC}-1 {2}in the failed-policies file: earlier\n`),
+          new RegExp(`1 policies have no MRP file and would fail \\(--no-fetch\\): ${policyC}`),
+          /quote-pages-failed\.json would be replaced with the policies that fail\./
+        ]
+      ],
+      [
+        'retry-different',
+        [
+          /Would retry 1 different policies from /,
+          new RegExp(`\n {2}${policyB}-1 {2}different: 0\\.00% changed\n`),
+          /quote-pages-failed\.json would be left untouched\./
+        ]
+      ],
+      [
+        '2',
+        [
+          /Would run quote-page for 2 policies from .*quoteGuids\.txt\n/,
+          new RegExp(`\n {2}${policyA}-1\n {2}${policyB}-1\n`),
+          /quote-pages-failed\.json would be replaced with the policies that fail\./
+        ]
+      ]
+    ]) {
+      test(`${selector} --dry-run lists what would run and runs nothing`, async () => {
+        await withServer(quoteJourneyHandler([]), async (base, requests) => {
+          // arrange
+          const { directory, env, saved } = await dryRunFixture(base);
+          const before = (await readdir(directory)).sort();
+
+          // act
+          const result = await run(directory, env, ['quote-pages', selector, '--dry-run', '--no-fetch']);
+
+          // assert
+          assert.equal(result.code, 0, result.output);
+          assert.match(result.plain, /^Dry run: nothing is fetched, captured or saved\.\n/m);
+          for (const pattern of expected) {
+            assert.match(result.plain, pattern);
+          }
+          assert.deepEqual(requests, []);
+          assert.deepEqual((await readdir(directory)).sort(), before);
+          assert.equal(await readFile(join(directory, 'quote-pages-failed.json'), 'utf8'), saved);
+        });
+      });
+    }
+
+    test('names the MRP files a run would fetch first', async () => {
+      await withServer(quoteJourneyHandler([]), async (base) => {
+        // arrange
+        const { directory, env } = await dryRunFixture(base);
+
+        // act
+        const result = await run(directory, env, ['quote-pages', 'retry-failed', '--dry-run']);
+
+        // assert
+        assert.equal(result.code, 0, result.output);
+        assert.match(result.plain, new RegExp(`1 MRP files would be fetched first: ${policyC}\n`));
+        assert.doesNotMatch(result.plain, /would fail/);
+      });
     });
   });
 

@@ -3,6 +3,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { color, failureColor } from './color.js';
 import type { ComparisonReportBasics } from './compare.js';
+import type { FailedQuotePages } from './failed-quote-pages.js';
 import { isMissing, parseJson, readDirectoryNames, readOptionalTextFile } from './fs-helpers.js';
 import { fetchedHistoryId, filterMissingMrpFiles } from './mrp-fetch.js';
 import {
@@ -96,6 +97,17 @@ export interface OopsCount {
   total: number;
   /** Policies whose later attempt (for NHI, the replacement quote GUID) compared or declined. */
   recovered: number;
+}
+
+/** A policy and history ID for a run. */
+export interface PolicyToRun {
+  policyDetailsId: string;
+  historyId: number;
+}
+
+/** A policy a retry runs again, with why it was chosen, for example `failed: NHI: Website displayed <h2>Oops</h2>…`. */
+export interface PolicyToRetry extends PolicyToRun {
+  reason: string;
 }
 
 /** How far the GUID list has got: its size, the policies with no result yet, and the MRP records not retrieved. */
@@ -228,17 +240,57 @@ export async function collectGuidListStatus(
 
 /**
  * Lists the compared policies whose NHI and TCAS screenshots differ (any changed pixel) or whose flows ended
- * differently, the policies the summary counts as different, for `quote-pages -- retry-different`.
+ * differently, the policies the summary counts as different.
  * @param summary The results summary.
  * @returns Each different policy's ID and history ID, taken from its folder name, in folder order.
  */
-export function listDifferentPolicies(summary: QuoteResultsSummary): { policyDetailsId: string; historyId: number }[] {
-  return summary.compared
-    .filter(({ kind }) => kind === 'different')
-    .map(({ name }) => {
-      const separator = name.lastIndexOf('-');
-      return { policyDetailsId: name.slice(0, separator), historyId: Number(name.slice(separator + 1)) };
-    });
+export function listDifferentPolicies(summary: QuoteResultsSummary): PolicyToRun[] {
+  return summary.compared.filter(({ kind }) => kind === 'different').map(({ name }) => parsePolicyFolderName(name));
+}
+
+/**
+ * Lists the policies `quote-pages -- retry-different` reruns: those the summary counts as different, and those an
+ * earlier version recorded as both declined without comparing them.
+ * @param summary The results summary.
+ * @returns Each policy's ID and history ID, taken from its folder name, and why it was chosen, in folder order.
+ */
+export function listPoliciesToRecompare(summary: QuoteResultsSummary): PolicyToRetry[] {
+  const reasons = new Map<string, string>([
+    ...summary.compared
+      .filter(({ kind }) => kind === 'different')
+      .map((policy): [string, string] => [policy.name, `different: ${describeChange(policy)}`]),
+    ...summary.declined.map((name): [string, string] => [name, 'both declined, saved before declines were compared'])
+  ]);
+  return [...reasons.keys()]
+    .sort()
+    .map((name) => ({ ...parsePolicyFolderName(name), reason: reasons.get(name) ?? '' }));
+}
+
+/**
+ * Lists the policies `quote-pages -- retry-failed` reruns: those whose `result.json` records a failure, policy folders
+ * with no result (a run stopped part way through them), and the policies in the failed-policies file, which a list
+ * run saves even for policies it never reached. Each policy is listed once.
+ * @param summary The results summary.
+ * @param saved The failed-policies file, when there is one.
+ * @returns The folders' policies in folder order, then the file's other policies in its order, each with why it was
+ * chosen.
+ */
+export function listPoliciesToRetryFailed(summary: QuoteResultsSummary, saved?: FailedQuotePages): PolicyToRetry[] {
+  const folders = new Map<string, string>(
+    [
+      ...summary.failed.map(({ name, issues }): [string, string] => [name, `failed: ${describeFailure(issues)}`]),
+      ...summary.unrecorded.map((name): [string, string] => [name, 'no result: a run stopped part way through it'])
+    ].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  );
+  const reasons = new Map(folders);
+  for (const { policyDetailsId, issues } of saved?.failed ?? []) {
+    const name = `${policyDetailsId}-${saved?.historyId}`;
+    if (!reasons.has(name)) {
+      reasons.set(name, `in the failed-policies file: ${describeFailure(issues)}`);
+    }
+  }
+
+  return [...reasons].map(([name, reason]) => ({ ...parsePolicyFolderName(name), reason }));
 }
 
 /**
@@ -294,6 +346,18 @@ export function normaliseIssue(issue: string): string {
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '<id>')
     .replace(/\b[0-9a-f]{32}\b/gi, '<id>')
     .trim();
+}
+
+/** Splits a `<policyDetailsId>-<historyId>` folder name into the policy and history ID. */
+function parsePolicyFolderName(name: string): PolicyToRun {
+  const separator = name.lastIndexOf('-');
+  return { policyDetailsId: name.slice(0, separator), historyId: Number(name.slice(separator + 1)) };
+}
+
+/** Names a failure by its first issue after the shared capture-failed line, without its URLs, paths and IDs. */
+function describeFailure(issues: string[]): string {
+  const issue = issues.find((line) => line !== captureFailedHeading && line.trim().length > 0);
+  return issue === undefined ? 'no issue recorded' : normaliseIssue(issue);
 }
 
 interface OcrReading {

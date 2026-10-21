@@ -262,8 +262,9 @@ npm run quote-pages                                         # first 250 entries
 npm run quote-pages -- 10                                   # first 10 entries
 npm run quote-pages -- 6819e30c2058490b8d1d9e25d267b002     # one entry (case-insensitive)
 npm run quote-pages -- 10 --no-ocr
-npm run quote-pages -- retry-failed                         # only the last run's failures
-npm run quote-pages -- retry-different                      # every policy whose screenshots differed
+npm run quote-pages -- retry-failed                         # every failed or unfinished policy
+npm run quote-pages -- retry-different                      # every policy whose screenshots or end points differed
+npm run quote-pages -- retry-failed --dry-run               # list what retry-failed would run, and why
 npm run quote-pages -- 1300 --concurrency 5                 # five policies at a time
 npm run quote-pages -- 20000 --no-fetch                     # only policies whose MRP is already saved
 ```
@@ -305,33 +306,84 @@ Quote pages summary
 The exit code is non-zero only if a policy failed. Policies that differ, and policies that
 ended on a referral, conditional quote or decline on either side, are not failures.
 
+#### Retrying
+
+There are two retries, for two different situations. Both rerun policies already in the output
+folder, each with the history ID from its folder name.
+
+- **`retry-failed`:** for runs that did not finish a comparison.
+  - **Reruns:** failed policies, folders with no result, and the policies in
+    `quote-pages-failed.json`.
+  - **Leaves alone:** every compared policy.
+  - **`quote-pages-failed.json`:** replaced with the ones still failing.
+- **`retry-different`:** for comparisons that finished, but where NHI and TCAS differ.
+  - **Reruns:** different policies, and both-declined results from older versions.
+  - **Leaves alone:** identical policies, matching end points, failures and folders with no
+    result.
+  - **`quote-pages-failed.json`:** left untouched.
+
+Between them, `retry-failed` and `retry-different` rerun every policy in the output folder that
+is not identical or a matching referral, conditional quote or decline; a test checks this
+against a folder holding one policy of every kind. Policies in the GUID list that have never
+run have no folder, so a list run picks them up instead. Add [`--dry-run`](#checking-a-selection-first)
+to either to see what it would run, and why, before running it.
+
 #### Retrying failures
 
+`npm run quote-pages -- retry-failed` reruns every policy that did not finish a comparison, each
+once:
+
+- every policy in `quote-pages-failed.json`;
+- every policy folder in the output folder whose `result.json` records a failure, wherever it
+  came from;
+- every policy folder with no result, as a run stopped part way through it leaves.
+
+Compared policies and their output are left alone. When the policies all share one history ID,
+the file is then replaced with the ones still failing (or deleted when all pass), so repeated
+retries shrink the list; otherwise it is left as it is, since it holds only one history ID.
+Replacement GUIDs already in `quote-guid-mapping.json` are reused. With nothing to retry it
+prints `No failed quote pages to retry` and exits successfully.
+
+The output folder is read as well as the file because not every run saves its failures there.
 A list run replaces `quote-pages-failed.json` in the current directory with that run's failed
 policy IDs, history ID and issues; a run where nothing failed deletes the file. It is
 git-ignored. The file is also saved as the run starts and after each policy, listing the
 policies not finished yet with the issue `Not finished: the run stopped before this policy
-completed.`, so a run stopped part way (for example with Ctrl+C) leaves its failures and
-every unfinished policy for `retry-failed`. `npm run quote-pages -- retry-failed` reruns only those policies — compared
-policies and their output are left alone — then replaces the file with the ones still
-failing (or deletes it when all pass), so repeated retries shrink the list. Replacement GUIDs
-already in `quote-guid-mapping.json` are reused. With no file it prints
-`No failed quote pages to retry` and exits successfully.
-
-One-off runs — a single `<guid>` or a `maxCount` of 1 — leave the file untouched, as does a run
-stopped with Ctrl+C.
+completed.`, so a run stopped part way (for example with Ctrl+C) leaves its failures and every
+unfinished policy for `retry-failed`. One-off runs — a single `<guid>` or a `maxCount` of 1 —
+and `retry-different` leave the file untouched, so their failures are found only in their
+folders' `result.json`.
 
 #### Retrying differences
 
-`npm run quote-pages -- retry-different` reruns every policy folder in the output folder whose
-`report.json` has changed pixels, or whose flows ended on different
-[end points](#quote-end-points) — the policies [summarise](#summarise) counts as different —
-each with the history ID from its folder name. Identical, matching referral, conditional or
-declined, failed and unrecorded policies are left alone (use `retry-failed` for failures). Use it after changing how pages are
-captured, such as [masking an area](#quote-page), to refresh the existing comparisons.
-`quote-pages-failed.json` is left untouched, so earlier failures stay available to
-`retry-failed`; a policy that now fails records why in its `result.json`. With nothing
-different it prints `No different quote pages to retry` and exits successfully.
+`npm run quote-pages -- retry-different` reruns every comparison that finished but differs: each
+policy folder whose `report.json` has changed pixels, or whose flows ended on different
+[end points](#quote-end-points) — the policies [summarise](#summarise) counts as different — and
+every policy an earlier version recorded as both declined without comparing it. Identical
+policies, matching referrals, conditional quotes or declines, failed policies and folders with
+no result are left alone (use `retry-failed` for the last two). Use it after changing how pages
+are captured, such as [masking an area](#quote-page), or after a fix is deployed, to refresh the
+existing comparisons. `quote-pages-failed.json` is left untouched, so earlier failures stay
+available to `retry-failed`; a policy that now fails records why in its `result.json`, where
+`retry-failed` finds it. With nothing different it prints `No different quote pages to retry`
+and exits successfully.
+
+#### Checking a selection first
+
+Add `--dry-run` to any selection to see what it would do without fetching, capturing or saving
+anything: each policy it would run, why a retry chose it, the MRP files it would fetch first
+(or the policies that would fail without one), and whether `quote-pages-failed.json` would be
+replaced. For example:
+
+```text
+Dry run: nothing is fetched, captured or saved.
+Would retry 3 failed or unfinished policies from quote-pages-failed.json and D:\temp\playright-diff-output
+  147AAEE77DFB4AE18285C7FE8EF91F39-1  no result: a run stopped part way through it
+  3831A3A00C88465DB46341EC0BEB48D7-1  failed: NHI: locator.check: Timeout 45000ms exceeded.
+  8230224DF66644A1A52173E3757EE8BD-1  in the failed-policies file: No saved MRP for this quote: <path>
+1 MRP files would be fetched first: 8230224DF66644A1A52173E3757EE8BD
+quote-pages-failed.json would be replaced with the policies that fail.
+```
 
 ### summarise
 

@@ -12,6 +12,8 @@ import {
   countOopsPages,
   countTextChanges,
   listDifferentPolicies,
+  listPoliciesToRecompare,
+  listPoliciesToRetryFailed,
   normaliseIssue
 } from '../dist/summarise.js';
 
@@ -608,6 +610,132 @@ describe('end points', () => {
 
     // assert
     await assert.rejects(read, /Quote result must be/);
+  });
+});
+
+describe('retry selections', () => {
+  const referredPolicy = '22222222222222222222222222222222';
+  const savedOnlyPolicy = '33333333333333333333333333333333';
+  const savedFailedPolicy = '44444444444444444444444444444444';
+
+  /**
+   * A folder with one policy of every kind: identical, different (pixels), different (end points), a matching
+   * referral, an old both-declined result, a failure also in the failed-policies file, a failure only in its folder,
+   * a folder with no result, and a policy only in the file.
+   */
+  async function everyKindFixture(context) {
+    const root = await mkdtemp(join(tmpdir(), 'summarise-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
+    const compared = async (policy, changedPixels, endpoints) => {
+      await writeReport(root, `${policy}-1`, { changedPixels });
+      await writeQuoteResult({ ...failedResult(policy, []), outcome: 'compared', endpoints }, root);
+    };
+    await compared(identicalPolicy, 0, { nhi: 'quote', tcas: 'quote' });
+    await compared(textPolicy, 12, { nhi: 'quote', tcas: 'quote' });
+    await compared(visualPolicy, 0, { nhi: 'referred', tcas: 'quote' });
+    await compared(referredPolicy, 0, { nhi: 'referred', tcas: 'referred' });
+    await writeQuoteResult({ ...failedResult(declinedPolicy, []), outcome: 'declined' }, root);
+    await writeQuoteResult(failedResult(failedPolicy, ['Quote capture failed; comparison skipped.']), root);
+    await writeQuoteResult(failedResult(savedFailedPolicy, ['Quote capture failed; comparison skipped.']), root);
+    await mkdir(join(root, `${unrecordedPolicy}-1`));
+    const saved = {
+      historyId: 1,
+      failed: [
+        { policyDetailsId: savedFailedPolicy, issues: ['earlier'] },
+        { policyDetailsId: savedOnlyPolicy, issues: ['earlier'] }
+      ]
+    };
+    return { summary: await collectQuoteResults(root), saved };
+  }
+
+  const ids = (policies) => policies.map(({ policyDetailsId, historyId }) => `${policyDetailsId}-${historyId}`);
+
+  test('retry-different reruns the different policies and the old both-declined results', async (context) => {
+    // arrange
+    const { summary } = await everyKindFixture(context);
+
+    // act
+    const policies = listPoliciesToRecompare(summary);
+
+    // assert
+    assert.deepEqual(ids(policies), [`${textPolicy}-1`, `${declinedPolicy}-1`, `${visualPolicy}-1`]);
+  });
+
+  test('retry-failed reruns failed folders, folders with no result and the saved failures, each once', async (context) => {
+    // arrange
+    const { summary, saved } = await everyKindFixture(context);
+
+    // act
+    const policies = listPoliciesToRetryFailed(summary, saved);
+
+    // assert
+    assert.deepEqual(ids(policies), [
+      `${savedFailedPolicy}-1`,
+      `${failedPolicy}-1`,
+      `${unrecordedPolicy}-1`,
+      `${savedOnlyPolicy}-1`
+    ]);
+  });
+
+  test('says why each policy is rerun', async (context) => {
+    // arrange
+    const { summary, saved } = await everyKindFixture(context);
+
+    // act
+    const reasons = [...listPoliciesToRecompare(summary), ...listPoliciesToRetryFailed(summary, saved)].map(
+      ({ policyDetailsId, reason }) => `${policyDetailsId.slice(0, 4)} ${reason}`
+    );
+
+    // assert
+    assert.deepEqual(reasons, [
+      'BBBB different: 0.01% changed',
+      'DDDD both declined, saved before declines were compared',
+      'EEEE different: 0.00% changed, NHI referred, TCAS quoted',
+      '4444 failed: no issue recorded',
+      'CCCC failed: no issue recorded',
+      'FFFF no result: a run stopped part way through it',
+      '3333 in the failed-policies file: earlier'
+    ]);
+  });
+
+  test('retry-failed reruns the failed folders when there is no failed-policies file', async (context) => {
+    // arrange
+    const { summary } = await everyKindFixture(context);
+
+    // act
+    const policies = listPoliciesToRetryFailed(summary);
+
+    // assert
+    assert.deepEqual(ids(policies), [`${savedFailedPolicy}-1`, `${failedPolicy}-1`, `${unrecordedPolicy}-1`]);
+  });
+
+  test('retry-failed and retry-different together cover every policy that is not identical or a matching end point', async (context) => {
+    // arrange
+    const { summary, saved } = await everyKindFixture(context);
+    const settled = new Set(summary.compared.filter(({ kind }) => kind !== 'different').map(({ name }) => name));
+    const everyFolder = [
+      ...summary.compared.map(({ name }) => name),
+      ...summary.declined,
+      ...summary.failed.map(({ name }) => name),
+      ...summary.unrecorded
+    ];
+
+    // act
+    const retried = new Set([
+      ...ids(listPoliciesToRecompare(summary)),
+      ...ids(listPoliciesToRetryFailed(summary, saved))
+    ]);
+
+    // assert
+    assert.deepEqual(
+      everyFolder.filter((name) => !settled.has(name) && !retried.has(name)),
+      []
+    );
+    assert.deepEqual(
+      [...settled].filter((name) => retried.has(name)),
+      []
+    );
+    assert.deepEqual([...settled].sort(), [`${referredPolicy}-1`, `${identicalPolicy}-1`]);
   });
 });
 
