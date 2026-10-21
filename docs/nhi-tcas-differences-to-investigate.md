@@ -1,5 +1,77 @@
 # NHI and TCAS differences to investigate
 
+<!--
+MAINTAINER NOTES (hidden when rendered). How to update this document from the current playwright-diff output, without
+asking anyone. Follow every step; keep everything below the notes in the same structure.
+
+1. Purpose and audience
+   - Shared with other teams so they can see each kind of NHI/TCAS difference for themselves. One example policy per
+     kind of difference, never every affected policy. The only full lists are in "Not covered above".
+   - Keep the draft banner. No customer names, addresses, emails or dates of birth (the screenshots and HTML contain
+     them; never copy them). Policy IDs and quote GUIDs are fine, always in full (never shortened with an ellipsis).
+   - Differences in the sex / jointNamesSex answers never matter; ignore them.
+
+2. Sources (all read-only; never write into the output folder)
+   - Output folder: DIFF_OUTPUT_DIR in the project's .env (D:\temp\playright-diff-output). One folder per policy,
+     <policyDetailsId>-<historyId>.
+   - Totals: `npm run summarise` (the Totals line), and the differing pages from `npm run summarise differences`.
+     Check the startedAt range in each folder's result.json: say in the intro which run the figures are from, and
+     whether some policies were run again later.
+   - Per policy: result.json (outcome, endpoints: quote | referred | conditional | declined, issues), report.json
+     (changedPercent, dimensions.before/after = NHI/TCAS page sizes), nhi-api/ and tcas-api/ (NHI's
+     *-GET-quote-summary-<quote GUID>-*.json; TCAS's *-POST-save-details.json, else its quote-summary), and
+     nhi-/tcas-quote-page-standardized.html (what each screenshot shows).
+   - Quote GUID: the GUID in the NHI quote-summary file name or its url.
+   - Ownership: answers["6516e060-3d1f-11ea-b235-d7e3a967f0e2"].customer in nhi-api/*-GET-answers-*.json
+     (RPL01 landlord, RHA01 housing association, RLA01 local authority, OWN01 owned outright, MOR01 mortgaged; other
+     codes such as ky99 are quoted as they are).
+
+3. Sorting the differing pages into kinds
+   - For each differing page, compare NHI's and TCAS's buildingsIsAllowed, contentsIsAllowed,
+     isHighRiskHighValueItemsAllowed, isGeneralValuablesCoveredAllowed and buildingsSumInsured, and the end points.
+   - Current kinds (section: rule, open issue):
+     1 Tenants: buildingsIsAllowed true on NHI, false on TCAS (open issue 2).
+     2 Personal possessions: both high-risk flags true on NHI, false on TCAS (open issue 6).
+     3 Contents: contentsIsAllowed true on NHI, false on TCAS (open issue 11).
+     4 Sum insured: TCAS buildingsSumInsured with more than two decimal places, shown as £1 (open issue 10).
+   - A page can be in more than one kind; say so ("also one of the 8 in section 2"), and make the counts add up.
+   - A page that fits no kind: diff the visible text of the two standardised HTML files (tags, scripts and styles
+     removed; leave out lines with names or emails) and the API flags to find the cause. Add a new section for it,
+     linked to the matching open issue in open-issues.md, or say it has no open issue yet. Remove a section whose
+     kind no longer occurs, and say so in the summary.
+   - Pages that differ only in rendering (open issue 12) go under "Not covered above".
+
+4. Choosing and checking each example
+   - Keep the current example while it still shows its kind; otherwise pick the first affected policy in folder
+     order (prefer one that shows only that kind).
+   - Check each example's quote GUID on the day: GET
+     https://quotes-feature-dev.homeprotect.co.uk/api/quote-summary/<quote GUID>/user/richard.parker and the same
+     with ?source=tcas must both return 200, with the flags that show the difference. Record the date in
+     "How to reproduce". If TCAS's GUID route returns NHI's flags again, put back the Return to quote step.
+   - "What you see": the visible-text diff of the standardised HTML (name the sections and buttons that differ, and
+     which side shows what), the page heights and changedPercent from report.json.
+   - "Data": the flags that differ, quoted with their values on each side. "Scale": the count, split by ownership
+     where it matters. "Question": who decides, and what.
+
+5. "Not covered above"
+   - Tenants whose TCAS response has buildingsIsAllowed false but whose pages match, and why (for example both
+     ended on a referral: endpoints referred/referred, or "We need to double check a few details with you").
+   - Failed policies that matter to a kind above (for example a tenant that failed), with their current issue.
+   - Rendering-only differences, and pages that stopped differing since the last update.
+   - Each item lists policyDetailsId and quote GUID, labelled, with its history ID.
+   - End with the totals not investigated here (failed captures, declined quotes).
+
+6. Conventions
+   - Every heading and summary item says which side does what ("TCAS hides …, NHI offers it").
+   - Links: [Open the NHI quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=<quote GUID>&callmediauser=richard.parker&bid=1066)
+     and [Open the TCAS quote page](… the same, with &source=tcas after the GUID). Never bare <https://…> links.
+   - Label IDs: "policyDetailsId `…`, historyId 1" and "quote GUID `…`".
+   - "Running these pages again" stays general: `npm run quote-page -- <policyDetailsId> <historyId>`; no
+     policy-specific loops.
+   - UK English. Hard line breaks end in a backslash. Run `npx --yes prettier@3.7.4 --write` on this file, then
+     commit it on its own to main (this project commits directly to main) with a docs: message.
+-->
+
 **Draft for review by the relevant teams before anyone acts on it.** From the playwright-diff comparison of NHI and
 TCAS quote pages on feature-dev, run on 2026-10-21. Each section below is one kind of difference, with one policy you
 can open to see it for yourself. The issue numbers refer to [open issues](open-issues.md).
