@@ -1,11 +1,11 @@
-# NHI and TCAS differences to investigate
+# NHI and MRP differences to investigate
 
 <!--
 MAINTAINER NOTES (hidden when rendered). How to update this document from the current playwright-diff output, without
 asking anyone. Follow every step; keep everything below the notes in the same structure.
 
 1. Purpose and audience
-   - Shared with other teams so they can see each kind of NHI/TCAS difference for themselves. One example policy per
+   - Shared with other teams so they can see each kind of NHI/MRP difference for themselves. One example policy per
      kind of difference, never every affected policy. The only full lists are in "Not covered above".
    - Keep the draft banner. No customer names, addresses, emails or dates of birth (the screenshots and HTML contain
      them; never copy them). Policy IDs and quote GUIDs are fine, always in full (never shortened with an ellipsis).
@@ -18,8 +18,8 @@ asking anyone. Follow every step; keep everything below the notes in the same st
      Check the startedAt range in each folder's result.json: say in the intro which run the figures are from, and
      whether some policies were run again later.
    - Per policy: result.json (outcome, endpoints: quote | referred | conditional | declined, issues), report.json
-     (changedPercent, dimensions.before/after = NHI/TCAS page sizes), nhi-api/ and tcas-api/ (NHI's
-     *-GET-quote-summary-<quote GUID>-*.json; TCAS's *-POST-save-details.json, else its quote-summary), and
+     (changedPercent, dimensions.before/after = NHI/MRP page sizes), nhi-api/ and tcas-api/ (NHI's
+     *-GET-quote-summary-<quote GUID>-*.json; MRP's *-POST-save-details.json, else its quote-summary), and
      nhi-/tcas-quote-page-standardized.html (what each screenshot shows).
    - Quote GUID: the GUID in the NHI quote-summary file name or its url.
    - Ownership: answers["6516e060-3d1f-11ea-b235-d7e3a967f0e2"].customer in nhi-api/*-GET-answers-*.json
@@ -27,13 +27,13 @@ asking anyone. Follow every step; keep everything below the notes in the same st
      codes such as ky99 are quoted as they are).
 
 3. Sorting the differing pages into kinds
-   - For each differing page, compare NHI's and TCAS's buildingsIsAllowed, contentsIsAllowed,
+   - For each differing page, compare NHI's and MRP's buildingsIsAllowed, contentsIsAllowed,
      isHighRiskHighValueItemsAllowed, isGeneralValuablesCoveredAllowed and buildingsSumInsured, and the end points.
    - Current kinds (section: rule, open issue):
-     1 Tenants: buildingsIsAllowed true on NHI, false on TCAS (open issue 2).
-     2 Personal possessions: both high-risk flags true on NHI, false on TCAS (open issue 6).
-     3 Contents: contentsIsAllowed true on NHI, false on TCAS (open issue 11).
-     4 Sum insured: TCAS buildingsSumInsured with more than two decimal places, shown as £1 (open issue 10).
+     1 Tenants: buildingsIsAllowed true on NHI, false on MRP (open issue 2).
+     2 Personal possessions: both high-risk flags true on NHI, false on MRP (open issue 6).
+     3 Contents: contentsIsAllowed true on NHI, false on MRP (open issue 11).
+     4 Sum insured: MRP buildingsSumInsured with more than two decimal places, shown as £1 (open issue 10).
    - A page can be in more than one kind; say so ("also one of the 8 in section 2"), and make the counts add up.
    - A page that fits no kind: diff the visible text of the two standardised HTML files (tags, scripts and styles
      removed; leave out lines with names or emails) and the API flags to find the cause. Add a new section for it,
@@ -47,14 +47,14 @@ asking anyone. Follow every step; keep everything below the notes in the same st
    - Check each example's quote GUID on the day: GET
      https://quotes-feature-dev.homeprotect.co.uk/api/quote-summary/<quote GUID>/user/richard.parker and the same
      with ?source=tcas must both return 200, with the flags that show the difference. Record the date in
-     "How to reproduce". If TCAS's GUID route returns NHI's flags again, put back the Return to quote step.
+     "How to reproduce". If MRP's GUID route returns NHI's flags again, put back the Return to quote step.
    - "What you see": the visible-text diff of the standardised HTML (name the sections and buttons that differ, and
      which side shows what), the page heights and changedPercent from report.json.
    - "Data": the flags that differ, quoted with their values on each side. "Scale": the count, split by ownership
      where it matters. "Question": who decides, and what.
 
 5. "Not covered above"
-   - Tenants whose TCAS response has buildingsIsAllowed false but whose pages match, and why (for example both
+   - Tenants whose MRP response has buildingsIsAllowed false but whose pages match, and why (for example both
      ended on a referral: endpoints referred/referred, or "We need to double check a few details with you").
    - Failed policies that matter to a kind above (for example a tenant that failed), with their current issue.
    - Rendering-only differences, and pages that stopped differing since the last update.
@@ -62,9 +62,12 @@ asking anyone. Follow every step; keep everything below the notes in the same st
    - End with the totals not investigated here (failed captures, declined quotes).
 
 6. Conventions
-   - Every heading and summary item says which side does what ("TCAS hides …, NHI offers it").
+   - The two sides are NHI and MRP. Never write TCAS in the prose, though identifiers that contain it stay as they are
+     (the `&source=tcas` link parameter, the `tcas-api/` and `tcas.png` files). Say "MRP file" for
+     <policyDetailsId>-1-mrp.json, so it is not confused with the MRP side.
+   - Every heading and summary item says which side does what ("MRP hides …, NHI offers it").
    - Links: [Open the NHI quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=<quote GUID>&callmediauser=richard.parker&bid=1066)
-     and [Open the TCAS quote page](… the same, with &source=tcas after the GUID). Never bare <https://…> links.
+     and [Open the MRP quote page](… the same, with &source=tcas after the GUID). Never bare <https://…> links.
    - Label IDs: "policyDetailsId `…`, historyId 1" and "quote GUID `…`".
    - "Running these pages again" stays general: `npm run quote-page -- <policyDetailsId> <historyId>`; no
      policy-specific loops.
@@ -73,112 +76,112 @@ asking anyone. Follow every step; keep everything below the notes in the same st
 -->
 
 **Draft for review by the relevant teams before anyone acts on it.** From the playwright-diff comparison of NHI and
-TCAS quote pages on feature-dev, run on 2026-10-21. Each section below is one kind of difference, with one policy you
+MRP quote pages on feature-dev, run on 2026-10-21. Each section below is one kind of difference, with one policy you
 can open to see it for yourself. The issue numbers refer to [open issues](open-issues.md).
 
 ## Summary
 
 The run compared 1,218 quote pages: 103 differed, 19 failed to capture and 25 were declined quotes. Every difference
-comes from the TCAS rating refusing cover that NHI allows, or from how TCAS returns a sum insured:
+comes from the MRP rating refusing cover that NHI allows, or from how MRP returns a sum insured:
 
-1. **Tenants: TCAS hides Buildings insurance, NHI offers it:** 95 pages ([open issue 2](open-issues.md)).
-2. **TCAS doesn't include Personal possessions and high-risk items, NHI does:** 8 pages
+1. **Tenants: MRP hides Buildings insurance, NHI offers it:** 95 pages ([open issue 2](open-issues.md)).
+2. **MRP doesn't include Personal possessions and high-risk items, NHI does:** 8 pages
    ([open issue 6](open-issues.md)).
-3. **Home owner: TCAS hides Contents insurance, NHI offers it:** 1 page, also one of the 8 in section 2
+3. **Home owner: MRP hides Contents insurance, NHI offers it:** 1 page, also one of the 8 in section 2
    ([open issue 11](open-issues.md)).
-4. **TCAS shows a £1 buildings sum insured, NHI shows the real amount:** 1 page, also one of the 8 in section 2
+4. **MRP shows a £1 buildings sum insured, NHI shows the real amount:** 1 page, also one of the 8 in section 2
    ([open issue 10](open-issues.md)).
 
-Each page shows faithfully what its own rating returned (NHI's or TCAS's), so sections 1 to 3 need a decision on which
+Each page shows faithfully what its own rating returned (NHI's or MRP's), so sections 1 to 3 need a decision on which
 rating is right.
 
 ## How to reproduce
 
 1. Open the example's **NHI** link and click through any summary or assumptions pages until the quote shows.
-2. Open the example's **TCAS** link for the same quote GUID and click through in the same way.
+2. Open the example's **MRP** link for the same quote GUID and click through in the same way.
 3. Compare the part of the page named in the example.
 
 Notes:
 
 - The links are feature-dev. `callmediauser=richard.parker` is the agent the comparison ran as; replace it with your
   own username to have the quotes recorded against you.
-- All four quote GUIDs were checked on 2026-10-21: NHI's and TCAS's quote summary APIs returned 200 for each. TCAS's
-  page now shows TCAS's cover as soon as it opens (the fix for open issue 8 is on feature-dev), so there is no need to
+- All four quote GUIDs were checked on 2026-10-21: NHI's and MRP's quote summary APIs returned 200 for each. MRP's
+  page now shows MRP's cover as soon as it opens (the fix for open issue 8 is on feature-dev), so there is no need to
   click **Return to quote**.
 - The comparison's screenshots, crops and captured API responses are in the playwright-diff output folder under
   `<policyDetailsId>-1` (`nhi.png`, `tcas.png`, `diff.png`, `nhi-api/`, `tcas-api/`).
 
-## 1. Tenants: TCAS hides Buildings insurance, NHI offers it
+## 1. Tenants: MRP hides Buildings insurance, NHI offers it
 
 - **Example:** policyDetailsId `0503FE0FF7904A4899C471DA352E7BD4`, historyId 1, a tenant renting from a landlord (`RPL01`). Quote
   GUID `3189b295-cec8-470b-b352-4ab196e50bd3`.
   - [Open the NHI quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=3189b295-cec8-470b-b352-4ab196e50bd3&callmediauser=richard.parker&bid=1066)
-  - [Open the TCAS quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=3189b295-cec8-470b-b352-4ab196e50bd3&source=tcas&callmediauser=richard.parker&bid=1066)
+  - [Open the MRP quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=3189b295-cec8-470b-b352-4ab196e50bd3&source=tcas&callmediauser=richard.parker&bid=1066)
 - **What you see:** NHI shows a **Buildings insurance** row with an empty **Select** box above **Contents insurance**.
-  TCAS has no Buildings row, so its page is 109px shorter and everything below moves up (12.09% of pixels changed).
-- **Data:** NHI's quote summary has `buildingsIsAllowed: true`; TCAS's has `buildingsIsAllowed: false`.
+  MRP has no Buildings row, so its page is 109px shorter and everything below moves up (12.09% of pixels changed).
+- **Data:** NHI's quote summary has `buildingsIsAllowed: true`; MRP's has `buildingsIsAllowed: false`.
 - **Scale:** 95 pages, every one a tenant: 69 rent from a landlord (`RPL01`), 14 from a housing association (`RHA01`)
-  and 12 from a local authority (`RLA01`). No owner or mortgaged home lost the row on TCAS. Six more tenants have the same flags but the page can't show it
+  and 12 from a local authority (`RLA01`). No owner or mortgaged home lost the row on MRP. Six more tenants have the same flags but the page can't show it
   (see "Not covered above").
-- **Side effect:** because everything on the TCAS page moves up, any other difference further down these pages is
+- **Side effect:** because everything on the MRP page moves up, any other difference further down these pages is
   hidden, so they need comparing again once this is settled.
 - **Question for pricing and underwriting:** may a tenant buy buildings cover? If not, NHI needs fixing; if so, the
-  TCAS rating (Policy API or Artemis) does.
+  MRP rating (Policy API or Artemis) does.
 
-## 2. TCAS doesn't include Personal possessions and high-risk items, NHI does
+## 2. MRP doesn't include Personal possessions and high-risk items, NHI does
 
 - **Example:** policyDetailsId `1A13B1F1243841B4BB2A9DD9340868B3`, historyId 1, a mortgaged home (`MOR01`). Quote GUID
   `b97cc0fb-828c-47f8-a77e-fbbf9f5066f9`.
   - [Open the NHI quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=b97cc0fb-828c-47f8-a77e-fbbf9f5066f9&callmediauser=richard.parker&bid=1066)
-  - [Open the TCAS quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=b97cc0fb-828c-47f8-a77e-fbbf9f5066f9&source=tcas&callmediauser=richard.parker&bid=1066)
+  - [Open the MRP quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=b97cc0fb-828c-47f8-a77e-fbbf9f5066f9&source=tcas&callmediauser=richard.parker&bid=1066)
 - **What you see:** under **Contents insurance**, NHI shows **Personal possessions cover** as £0 with **Edit**, and the
-  page ends with **Recalculate your quote**. TCAS shows **Personal possessions: Not Included** and ends with
+  page ends with **Recalculate your quote**. MRP shows **Personal possessions: Not Included** and ends with
   **Continue**. The pages are the same height, so only 0.07% of pixels changed.
 - **Data:** NHI's quote summary has `isHighRiskHighValueItemsAllowed` and `isGeneralValuablesCoveredAllowed` both
-  `true`; TCAS's has both `false`. The other cover flags agree.
+  `true`; MRP's has both `false`. The other cover flags agree.
 - **Scale:** 8 pages, none of them tenants: 4 owned outright (`OWN01`), 3 mortgaged (`MOR01`) and 1 recorded
-  as `ky99`. Where the customer listed items, TCAS can also drop them; on policyDetailsId `3763F4DCDDE74265A3F3A024E8CEE3C9` it drops a
+  as `ky99`. Where the customer listed items, MRP can also drop them; on policyDetailsId `3763F4DCDDE74265A3F3A024E8CEE3C9` it drops a
   pedal cycle with away-from-home cover.
-- **Question for the rating team:** which answer is right, NHI's or TCAS's, and why do their ratings of the same answers
+- **Question for the rating team:** which answer is right, NHI's or MRP's, and why do their ratings of the same answers
   differ? In Artemis
   both flags come from `ArtemisRiskAllowedCoverv004` (property use, ownership, furnished, unoccupied).
 
-## 3. Home owner: TCAS hides Contents insurance, NHI offers it
+## 3. Home owner: MRP hides Contents insurance, NHI offers it
 
 - **Example:** policyDetailsId `106D1920D02642E2A0F55131BB75ED7D`, historyId 1, a home owned outright (`OWN01`). Quote GUID
   `48d4abbc-6fa2-4c18-b2f2-db7fddcc5fbf`.
   - [Open the NHI quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=48d4abbc-6fa2-4c18-b2f2-db7fddcc5fbf&callmediauser=richard.parker&bid=1066)
-  - [Open the TCAS quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=48d4abbc-6fa2-4c18-b2f2-db7fddcc5fbf&source=tcas&callmediauser=richard.parker&bid=1066)
-- **What you see:** NHI shows a **Contents insurance** row with **Add Contents cover**. TCAS has no Contents row, so its
+  - [Open the MRP quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=48d4abbc-6fa2-4c18-b2f2-db7fddcc5fbf&source=tcas&callmediauser=richard.parker&bid=1066)
+- **What you see:** NHI shows a **Contents insurance** row with **Add Contents cover**. MRP has no Contents row, so its
   page is 118px shorter (7.52% of pixels changed).
-- **Data:** NHI's quote summary has `contentsIsAllowed: true`; TCAS's has `contentsIsAllowed: false`. TCAS also returns
+- **Data:** NHI's quote summary has `contentsIsAllowed: true`; MRP's has `contentsIsAllowed: false`. MRP also returns
   the two personal possessions flags in section 2 as `false`.
 - **Scale:** this page only.
-- **Question:** which answer makes TCAS refuse contents cover? Take it to the rating team with section 2.
+- **Question:** which answer makes MRP refuse contents cover? Take it to the rating team with section 2.
 
-## 4. TCAS shows a £1 buildings sum insured, NHI shows the real amount
+## 4. MRP shows a £1 buildings sum insured, NHI shows the real amount
 
 - **Example:** policyDetailsId `4230522AFAA2430E97FF8EDFD9A6FF40`, historyId 1, a mortgaged home (`MOR01`). Quote GUID
   `9751c32f-f6f8-4346-a7e4-f5d3bb0b7bbe`.
   - [Open the NHI quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=9751c32f-f6f8-4346-a7e4-f5d3bb0b7bbe&callmediauser=richard.parker&bid=1066)
-  - [Open the TCAS quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=9751c32f-f6f8-4346-a7e4-f5d3bb0b7bbe&source=tcas&callmediauser=richard.parker&bid=1066)
-- **What you see:** the buildings **Sum insured** is £1,619,862 on NHI and £1 on TCAS, in both places it appears
+  - [Open the MRP quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=9751c32f-f6f8-4346-a7e4-f5d3bb0b7bbe&source=tcas&callmediauser=richard.parker&bid=1066)
+- **What you see:** the buildings **Sum insured** is £1,619,862 on NHI and £1 on MRP, in both places it appears
   (including the Full accidental damage column). 0.07% of pixels changed.
-- **Data:** NHI's quote summary has `buildingsSumInsured: 1619862.68`; TCAS's has `1619862.675`, three decimal places.
-  The TCAS quote page's currency formatting appears to fail on the third decimal place; this is not confirmed in the code.
-  TCAS also returns the two personal possessions flags in section 2 as `false`.
+- **Data:** NHI's quote summary has `buildingsSumInsured: 1619862.68`; MRP's has `1619862.675`, three decimal places.
+  The MRP quote page's currency formatting appears to fail on the third decimal place; this is not confirmed in the code.
+  MRP also returns the two personal possessions flags in section 2 as `false`.
 - **Scale:** this page only.
-- **Question:** should QuoteJourneyService round the sum insured to two decimal places, should the TCAS quote
+- **Question:** should QuoteJourneyService round the sum insured to two decimal places, should the MRP quote
   page's formatting cope with more, or both?
 
 ## Not covered above
 
 The ten pages below were run again on 2026-10-21 between 11:58 and 12:05; the results here are from that re-run.
 
-- **Six tenant pages show NHI and TCAS as identical, but the comparison can't see the Buildings row.** All six rent
-  from a landlord (`RPL01`). On both NHI and TCAS they stop on an estimated quote headed **We need to double check a few
+- **Six tenant pages show NHI and MRP as identical, but the comparison can't see the Buildings row.** All six rent
+  from a landlord (`RPL01`). On both NHI and MRP they stop on an estimated quote headed **We need to double check a few
   details with you** (four add "We need to review with you the value of one or more of your items specified inside the
-  home"). That page shows the price but no cover rows, so the screenshots match. TCAS's response still has
+  home"). That page shows the price but no cover rows, so the screenshots match. MRP's response still has
   `buildingsIsAllowed: false` and NHI's `true`, as in section 1, so the difference is there but hidden behind the
   referral. Each is historyId 1:
   - policyDetailsId `1F024FF8D7FE4BBEAB4CFA408373AB1B`, quote GUID `0b9ab373-b4d7-41c8-902f-e82460e1fa74`
@@ -191,7 +194,7 @@ The ten pages below were run again on 2026-10-21 between 11:58 and 12:05; the re
   `6e9f70f2-2c0f-4e18-9862-a0221b5d4888`) failed again, at a different step: on NHI, the **You** box under who lives at
   the property could not be ticked because it was not visible (it timed out after 45 seconds). In the first run, the
   NHI quote did not appear within 5 clicks.
-- **Rendering noise ([open issue 12](open-issues.md)) is gone:** the three pages that differed only in how NHI and TCAS
+- **Rendering noise ([open issue 12](open-issues.md)) is gone:** the three pages that differed only in how NHI and MRP
   render have no changed pixels on the re-run. Each is historyId 1:
   - policyDetailsId `BB52A54C361C4A8B9BA9227AED7379A5`, quote GUID `463bfebe-c8d3-4b26-962f-970f0ce524ce`
   - policyDetailsId `F04BDA6BBD0E497299E21DCF1099902F`, quote GUID `a3626fc0-ca13-4555-854f-14c5c55bc7b7`
@@ -206,7 +209,8 @@ To compare a page again, run playwright-diff's `quote-page` command from the pro
 npm run quote-page -- <policyDetailsId> <historyId>
 ```
 
-The quote GUID isn't needed: playwright-diff finds it from the policy's saved MRP and `quote-guid-mapping.json`. If NHI
+The quote GUID isn't needed: playwright-diff finds it from the policy's saved MRP file (`<policyDetailsId>-1-mrp.json`) and
+`quote-guid-mapping.json`. If NHI
 can't price the quote it opened, playwright-diff asks for a replacement quote GUID and saves it in the mapping, so the
 new comparison may open a different quote GUID from the one listed here (three of the six tenant pages above did). Run
 `npm run summarise differences` afterwards to see whether the page now differs.

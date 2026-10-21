@@ -1,39 +1,39 @@
-# TCAS refuses cover that NHI allows
+# MRP refuses cover that NHI allows
 
 **Draft for review by the relevant teams before anyone acts on it.** From the playwright-diff run of 2026-10-21 on
-feature-dev: 107 of 1,219 quote pages differed between NHI and TCAS, and 102 of those are explained by the two issues
+feature-dev: 107 of 1,219 quote pages differed between NHI and MRP, and 102 of those are explained by the two issues
 below. They are tracked as [open issues 2 and 6](open-issues.md); the other five pages are open issues 10 to 12.
 
-In both issues the TCAS re-quote and NHI rate the same answers differently and disagree on which cover the customer may
+In both issues the MRP re-quote and NHI rate the same answers differently and disagree on which cover the customer may
 buy. Neither is a display bug: each page shows faithfully what its own rating returned.
 
 ## How the comparison builds each quote
 
 Because NHI can no longer price the original quotes (open issue 1), playwright-diff asks Quote Journey for a replacement
-quote GUID that carries the TCAS policy's answers (cover start date 2026-10-21) and quotes it through NHI. TCAS then
+quote GUID that carries the MRP policy's answers (cover start date 2026-10-21) and quotes it through NHI. MRP then
 opens the same GUID and clicks **Return to quote**, which posts the answers to `/api/save-details` and re-prices them
 through QuoteJourneyService and the Policy API. The NHI page is NHI's quote summary (`/api/quote-summary/<guid>`); the
-TCAS page is what `save-details` returns.
+MRP page is what `save-details` returns.
 
-On this run the TCAS quote summary opened by GUID was priced by NHI until **Return to quote** was clicked, so the two
+On this run the MRP quote summary opened by GUID was priced by NHI until **Return to quote** was clicked, so the two
 pages matched until the re-quote ([open issue 8](open-issues.md)). QuestionSetQuote PRs 25403 and 25411 fix that: once
-they are deployed, the TCAS page shows TCAS's cover as soon as it opens, and the **Return to quote** steps below are no
-longer needed. TCAS's own policy quote summary already showed it on first load.
+they are deployed, the MRP page shows MRP's cover as soon as it opens, and the **Return to quote** steps below are no
+longer needed. MRP's own policy quote summary already showed it on first load.
 
-## Tenants lose the Buildings insurance section on TCAS (open issue 2)
+## Tenants lose the Buildings insurance section on MRP (open issue 2)
 
 - **Pages affected:** 96, every one a tenant:
   - **Rent (from a Landlord)** (`RPL01`): 70
   - **Rent (from Housing Association)** (`RHA01`): 14
   - **Rent (from Local Authority)** (`RLA01`): 12
-- **What you see:** NHI shows a **Buildings insurance** row with an empty Select box above Contents insurance. TCAS
+- **What you see:** NHI shows a **Buildings insurance** row with an empty Select box above Contents insurance. MRP
   doesn't show the row, so its page is about 109px shorter and everything below moves up.
-- **Data:** NHI's quote summary has `buildingsIsAllowed: true`; TCAS's `save-details` response, and TCAS's policy quote
+- **Data:** NHI's quote summary has `buildingsIsAllowed: true`; MRP's `save-details` response, and MRP's policy quote
   summary on first load, have `buildingsIsAllowed: false`. No owner or mortgaged policy in the run lost the row.
-- **Background:** [open issue 2](open-issues.md) recorded this for `718CA449FCFC4A959D99124EDC81EA87` alone, with TCAS's behaviour kept as
+- **Background:** [open issue 2](open-issues.md) recorded this for `718CA449FCFC4A959D99124EDC81EA87` alone, with MRP's behaviour kept as
   correct and NHI's unconfirmed. This run shows it applies to every renter.
 - **Needs:** pricing and underwriting to confirm whether a tenant may buy buildings cover. If not, NHI is wrong and needs
-  fixing; if so, the TCAS rating (Policy API or Artemis) is wrong.
+  fixing; if so, the MRP rating (Policy API or Artemis) is wrong.
 - **Side effect:** the shift hides any other difference further down these 96 pages, so they need comparing again once
   this is settled.
 
@@ -46,7 +46,7 @@ Policy `0503FE0FF7904A4899C471DA352E7BD4`, history 1, answered **Rent (from a La
    <https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=3189b295-cec8-470b-b352-4ab196e50bd3&callmediauser=richard.parker&bid=1066>
 2. Click through any summary or assumptions page to the quote. Note the **Buildings insurance** row (not selected)
    above **Contents insurance**.
-3. Open the TCAS quote page for the same quote:\
+3. Open the MRP quote page for the same quote:\
    <https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=3189b295-cec8-470b-b352-4ab196e50bd3&source=tcas&callmediauser=richard.parker&bid=1066>
 4. Click through to the quote. Once open issue 8's fix is deployed, there is no **Buildings insurance** row; the page
    starts at **Contents insurance**.
@@ -58,26 +58,26 @@ The same steps work for the other tenancies, for example:
 - **Local authority tenant:** policy `040E53264C8B4DB4AE87E69CE58C4A2E`
   - NHI:
     <https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=08833eba-7569-4120-a5ae-66cacddba54b&callmediauser=richard.parker&bid=1066>
-  - TCAS:
+  - MRP:
     <https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=08833eba-7569-4120-a5ae-66cacddba54b&source=tcas&callmediauser=richard.parker&bid=1066>
 - **Housing association tenant:** policy `024F72ABDE3C4FF18A56AD3AC920AFAE`
   - NHI:
     <https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=3574bf13-082e-494f-a54e-4aacfd4564f1&callmediauser=richard.parker&bid=1066>
-  - TCAS:
+  - MRP:
     <https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=3574bf13-082e-494f-a54e-4aacfd4564f1&source=tcas&callmediauser=richard.parker&bid=1066>
 
-## Personal possessions and high-risk items not allowed on TCAS (open issue 6)
+## Personal possessions and high-risk items not allowed on MRP (open issue 6)
 
 - **Pages affected:** 6 (owners and mortgaged homes, plus one "Other").
-- **What you see:** NHI shows **Personal possessions cover** as an editable £0 amount. TCAS shows **Personal
+- **What you see:** NHI shows **Personal possessions cover** as an editable £0 amount. MRP shows **Personal
   possessions: Not Included**. Where the customer listed items:
-  - TCAS adds "One or more items you listed can be covered away from the home under our personal possessions cover…"
+  - MRP adds "One or more items you listed can be covered away from the home under our personal possessions cover…"
     and, on `5E9CA3D0E80B4278B4D896612B2CEF52`, "…are covered as standard inside the home…".
   - On `3763F4DCDDE74265A3F3A024E8CEE3C9`, a £2,000 pedal cycle with away-from-home cover is dropped ("You've chosen not
     to specify any items").
-  - Some pages show **Recalculate your quote** on NHI where TCAS shows **Continue**.
+  - Some pages show **Recalculate your quote** on NHI where MRP shows **Continue**.
 - **Data:** NHI's quote summary has both `isHighRiskHighValueItemsAllowed` and `isGeneralValuablesCoveredAllowed` set to
-  `true`; TCAS's `save-details` response has both `false`. The other cover flags (`buildingsIsAllowed`,
+  `true`; MRP's `save-details` response has both `false`. The other cover flags (`buildingsIsAllowed`,
   `contentsIsAllowed`, both accidental damage flags) agree.
 - **Background:** [open issue 6](open-issues.md) recorded this for `3763F4DCDDE74265A3F3A024E8CEE3C9`, where the stored MRP and NHI's
   `CalculateQuotePremium` gave different answers for the same policy. In Artemis both flags come from
@@ -92,7 +92,7 @@ Policy `1A13B1F1243841B4BB2A9DD9340868B3`, history 1, answered **Own (Mortgage)*
 1. Open the NHI quote page:\
    <https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=b97cc0fb-828c-47f8-a77e-fbbf9f5066f9&callmediauser=richard.parker&bid=1066>
 2. Click through to the quote. Under **Contents insurance**, **Personal possessions cover** shows £0 with an input.
-3. Open the TCAS quote page for the same quote:\
+3. Open the MRP quote page for the same quote:\
    <https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=b97cc0fb-828c-47f8-a77e-fbbf9f5066f9&source=tcas&callmediauser=richard.parker&bid=1066>
 4. Click through to the quote. Once open issue 8's fix is deployed, **Personal possessions** shows **Not Included**.
 5. Before that fix is deployed, open **Contact details** from the timeline and click **Return to quote** to see it.
@@ -101,7 +101,7 @@ For the dropped pedal cycle, use policy `3763F4DCDDE74265A3F3A024E8CEE3C9` the s
 
 - NHI:
   <https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=fb6d3296-7660-4327-87a3-5483950308a3&callmediauser=richard.parker&bid=1066>
-- TCAS:
+- MRP:
   <https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=fb6d3296-7660-4327-87a3-5483950308a3&source=tcas&callmediauser=richard.parker&bid=1066>
 
 ## Notes for anyone following the scenarios
@@ -110,13 +110,13 @@ For the dropped pedal cycle, use policy `3763F4DCDDE74265A3F3A024E8CEE3C9` the s
   username to have the quotes recorded against you.
 - Each **Return to quote** re-prices the answers and saves a new quote GUID (listed below as the re-quote GUID). That
   GUID doesn't open in the quote summary, so start from the quote GUID each time.
-- The quote GUIDs above were checked on 2026-10-21: both the NHI and TCAS quote summary APIs returned 200 for them.
+- The quote GUIDs above were checked on 2026-10-21: both the NHI and MRP quote summary APIs returned 200 for them.
 - Each run's screenshots, crops and captured API responses are in the playwright-diff output folder under
   `<policy ID>-1` (`nhi.png`, `tcas.png`, `diff.png`, `nhi-api/`, `tcas-api/`).
 
 ## Every affected quote
 
-Each line gives the policy ID and history, the quote GUID both pages were opened with, and the GUID TCAS's re-quote
+Each line gives the policy ID and history, the quote GUID both pages were opened with, and the GUID MRP's re-quote
 saved.
 
 ### Open issue 2: Rent (from Housing Association) (`RHA01`) (14)
