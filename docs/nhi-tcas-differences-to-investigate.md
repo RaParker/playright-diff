@@ -46,7 +46,8 @@ Notes:
   TCAS has no Buildings row, so its page is 109px shorter and everything below moves up (12.09% of pixels changed).
 - **Data:** NHI's quote summary has `buildingsIsAllowed: true`; TCAS's has `buildingsIsAllowed: false`.
 - **Scale:** 95 pages, every one a tenant: 69 rent from a landlord (`RPL01`), 14 from a housing association (`RHA01`)
-  and 12 from a local authority (`RLA01`). No owner or mortgaged home lost the row on TCAS.
+  and 12 from a local authority (`RLA01`). No owner or mortgaged home lost the row on TCAS. Six more tenants have the same flags but the page can't show it
+  (see "Not covered above").
 - **Side effect:** because everything on the TCAS page moves up, any other difference further down these pages is
   hidden, so they need comparing again once this is settled.
 - **Question for pricing and underwriting:** may a tenant buy buildings cover? If not, NHI needs fixing; if so, the
@@ -100,18 +101,26 @@ Notes:
 
 ## Not covered above
 
-- **Six tenant pages still show NHI and TCAS as identical.** All six rent from a landlord (`RPL01`). They were captured
-  on 2026-10-20 and early on 2026-10-21, before the TCAS page showed TCAS's cover, although TCAS's response for each
-  already had `buildingsIsAllowed: false`. Running them again should add them to section 1. Each is historyId 1:
-  - policyDetailsId `1F024FF8D7FE4BBEAB4CFA408373AB1B`, quote GUID `1766809c-fb6a-4a64-aca1-d2899a9177a2`
-  - policyDetailsId `295B10C2AA1F4A95825A153FC7BFF86D`, quote GUID `700dae9d-40a9-4971-8717-bc78225b5299`
+The ten pages below were run again on 2026-10-21 between 11:58 and 12:05; the results here are from that re-run.
+
+- **Six tenant pages show NHI and TCAS as identical, but the comparison can't see the Buildings row.** All six rent
+  from a landlord (`RPL01`). On both NHI and TCAS they stop on an estimated quote headed **We need to double check a few
+  details with you** (four add "We need to review with you the value of one or more of your items specified inside the
+  home"). That page shows the price but no cover rows, so the screenshots match. TCAS's response still has
+  `buildingsIsAllowed: false` and NHI's `true`, as in section 1, so the difference is there but hidden behind the
+  referral. Each is historyId 1:
+  - policyDetailsId `1F024FF8D7FE4BBEAB4CFA408373AB1B`, quote GUID `0b9ab373-b4d7-41c8-902f-e82460e1fa74`
+  - policyDetailsId `295B10C2AA1F4A95825A153FC7BFF86D`, quote GUID `9903d5ed-15d1-4af0-8352-0fac90e5655e`
   - policyDetailsId `733AB9BECBD94620BBBAC05DCE2945E7`, quote GUID `2ebaffa1-ab71-489c-aad3-2b9ca72e9a8c`
-  - policyDetailsId `BB8AF0639DF747C0A3B1E944B3B2A4F0`, quote GUID `cb659d56-0332-4751-b234-558cc65f5f1a`
+  - policyDetailsId `BB8AF0639DF747C0A3B1E944B3B2A4F0`, quote GUID `7f26adaf-1c26-4835-845d-53bac5c86e5f`
   - policyDetailsId `C34C0FE51091491D9A6EAE707B4CAD9A`, quote GUID `ad27133b-1df8-4e5f-b3da-e41a99b861cd`
   - policyDetailsId `DFF53EF0C0F042C496DBBB1141EFB12E`, quote GUID `2208a839-f6f6-41ba-a663-c465a19dddb0`
-- **One tenant from the last run is missing.** policyDetailsId `3831A3A00C88465DB46341EC0BEB48D7` (historyId 1, quote GUID `6e9f70f2-2c0f-4e18-9862-a0221b5d4888`) failed this time because the NHI quote did not appear within 5 clicks.
+- **One tenant still fails to capture.** policyDetailsId `3831A3A00C88465DB46341EC0BEB48D7` (historyId 1, quote GUID
+  `6e9f70f2-2c0f-4e18-9862-a0221b5d4888`) failed again, at a different step: on NHI, the **You** box under who lives at
+  the property could not be ticked because it was not visible (it timed out after 45 seconds). In the first run, the
+  NHI quote did not appear within 5 clicks.
 - **Rendering noise ([open issue 12](open-issues.md)) is gone:** the three pages that differed only in how NHI and TCAS
-  render now have no changed pixels. Each is historyId 1:
+  render have no changed pixels on the re-run. Each is historyId 1:
   - policyDetailsId `BB52A54C361C4A8B9BA9227AED7379A5`, quote GUID `463bfebe-c8d3-4b26-962f-970f0ce524ce`
   - policyDetailsId `F04BDA6BBD0E497299E21DCF1099902F`, quote GUID `a3626fc0-ca13-4555-854f-14c5c55bc7b7`
   - policyDetailsId `855FF5724E9A48DCA0040D55C2652428`, quote GUID `b008ebc4-dfdd-451c-a275-7328fec90797`
@@ -125,5 +134,7 @@ To compare a page again, run playwright-diff's `quote-page` command from the pro
 npm run quote-page -- <policyDetailsId> <historyId>
 ```
 
-The quote GUID isn't needed: playwright-diff keeps it in `quote-guid-mapping.json`, so the new comparison opens the same
-quote. Run `npm run summarise differences` afterwards to see whether the page now differs.
+The quote GUID isn't needed: playwright-diff finds it from the policy's saved MRP and `quote-guid-mapping.json`. If NHI
+can't price the quote it opened, playwright-diff asks for a replacement quote GUID and saves it in the mapping, so the
+new comparison may open a different quote GUID from the one listed here (three of the six tenant pages above did). Run
+`npm run summarise differences` afterwards to see whether the page now differs.
