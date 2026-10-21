@@ -13,8 +13,9 @@ export interface ScreenshotOptions {
   timeout?: number;
   beforeCapture?: (page: Page) => Promise<void>;
   /**
-   * CSS selectors of elements painted over in the saved screenshot (not in failure screenshots), so content that
-   * differs only in ways that do not matter, such as a footer, cannot show up as a difference.
+   * CSS selectors of elements painted over in the saved screenshot and the declined screenshot (not in failure
+   * screenshots), so content that differs only in ways that do not matter, such as a footer, cannot show up as a
+   * difference.
    */
   mask?: string[];
   /**
@@ -140,6 +141,17 @@ export async function extendWhileLoading<T>(page: Page, wait: () => Promise<T>):
   }
 }
 
+/**
+ * Names the screenshot saved instead of the normal one when a capture stops: `<name>-declined.png` for a decline,
+ * `<name>-failed.png` for any other failure, beside the normal screenshot.
+ * @param output Path of the normal screenshot.
+ * @param stop Why the capture stopped.
+ * @returns The path, always a PNG.
+ */
+export function stoppedScreenshotPath(output: string, stop: 'declined' | 'failed'): string {
+  return `${output.slice(0, -extname(output).length)}-${stop}.png`;
+}
+
 export async function screenshot(urlArgument: string, options: ScreenshotOptions = {}): Promise<void> {
   const { url, width, height, wait, timeout, output, extension } = validateOptions(urlArgument, options);
   const browser = await chromium.launch();
@@ -170,16 +182,21 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
   } catch (error) {
     // A page that cannot be checked (e.g. it closed) is not loading, so its failure is still captured and rethrown.
     if (page !== undefined && !(await isQuoteLoading(page).catch(() => false))) {
+      const stoppedPage = page;
       const declined = error instanceof DeclinedError;
-      const failedOutput = `${output.slice(0, -extension.length)}-${declined ? 'declined' : 'failed'}`;
+      const failedOutput = stoppedScreenshotPath(output, declined ? 'declined' : 'failed').slice(0, -'.png'.length);
       try {
         await mkdir(dirname(failedOutput), { recursive: true });
-        await page.screenshot({
+        // A decline is compared like a quote page, so it is masked the same way; a failure is kept as the page showed.
+        await stoppedPage.screenshot({
           path: `${failedOutput}.png`,
           type: 'png',
           fullPage: true,
           timeout,
-          animations: 'disabled'
+          animations: 'disabled',
+          ...(declined
+            ? { mask: (options.mask ?? []).map((selector) => stoppedPage.locator(selector)), maskColor }
+            : {})
         });
         // The rendered DOM (React builds the page in the browser), saved for turning into test fixtures.
         await writeFile(`${failedOutput}.html`, await readPageHtml(page));

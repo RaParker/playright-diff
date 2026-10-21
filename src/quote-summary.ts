@@ -1,15 +1,12 @@
 import type { Page } from 'playwright';
 import { color } from './color.js';
 import { errorSummaryError, fixJourneyError } from './journey-fixes.js';
+import { quoteHeadingPattern } from './quote-endpoint.js';
 import { extendWhileLoading } from './screenshot.js';
 import { readErrorSummary } from './tcas-quote.js';
 
-/**
- * Heading shown on the quote page (a quote, a conditional quote, or an estimated quote for a referral, which still
- * shows a price), for any customer name and apostrophe style.
- */
-export const quoteHeadingPattern =
-  "^Welcome\\s+.*?,\\s*here['’‘ʼ]s\\s+your\\s+(?:(?:conditional|estimated)\\s+)?quote\\s*$";
+export { quoteHeadingPattern } from './quote-endpoint.js';
+
 const errorSelector = 'div.av-card-error-summary';
 const seenErrorAttribute = 'data-quote-summary-seen';
 

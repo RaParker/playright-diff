@@ -84,7 +84,8 @@ assumptions page, in any flow. For example `NHI journey validation failed on …
 `NHI cover details errors: …`, `NHI assumptions errors: …` or `TCAS step 2 (click) failed:
 TCAS quote errors: …`. Errors on the quote summary page stay red. A capture failure is yellow
 only when every failed side stopped on validation. Progress steps are grey; `quote-pages` shows each policy's `[n/total]` line in cyan, and
-a comparison summary is green when the images are identical and yellow when they differ.
+a comparison summary is green when the images are identical and yellow when they differ or both
+flows ended on the same referral, conditional quote or decline (see [Quote end points](#quote-end-points)).
 
 ### screenshot
 
@@ -190,9 +191,11 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   [migrate-output](#migrate-output).
 
 - **Result:** every run with a valid policy and history ID ends by writing
-  `<ID>-<historyId>/result.json` — `outcome` (`compared`, `declined` or `failed`),
-  `validation`, the failure `issues` (one line each), `startedAt` and `finishedAt` — for
-  [summarise](#summarise). When the two quote pages listed the endorsements in different
+  `<ID>-<historyId>/result.json` — `outcome` (`compared` or `failed`; versions before declines
+  were compared also wrote `declined`), `validation`, the failure `issues` (one line each),
+  `startedAt` and `finishedAt` — for [summarise](#summarise). A compared run also has
+  `endpoints` (`nhi` and `tcas`, each `quote`, `referred`, `conditional` or `declined`; see
+  [Quote end points](#quote-end-points)). When the two quote pages listed the endorsements in different
   orders, it also has `endorsementOrder` (`nhi` and `tcas`, each the titles in the order shown;
   see Standardised page below). A run that stops before capturing (for example with no saved MRP)
   writes only this file and leaves the previous screenshots alone. If the file cannot be
@@ -200,7 +203,7 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   or fails on its own result.
 - **Answer changes:** when a flow changed or added answers so the journey would accept the
   test data (see [Journey error auto-fixes](#journey-error-auto-fixes)), the run also writes
-  `<ID>-<historyId>/answer-changes.json`, whether it compared, declined or failed.
+  `<ID>-<historyId>/answer-changes.json`, whether it compared or failed.
   See [Answer changes file](#answer-changes-file) for its format.
 - **API responses:** every JSON response each flow's page gets from the site's own API
   (`/api/` on the page's origin) is saved, whether the capture succeeds or fails, in
@@ -212,8 +215,8 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   page differs, such as premiums or add-ons the quote engine returned. The responses hold the
   test policy's details, so keep the output folder local. If a response cannot be saved, a
   yellow `Could not save API response …` warning is shown and the capture carries on.
-- **Masked areas:** the footer (`.hp-footer`) is painted over in flat grey in both screenshots
-  (not in `-failed`/`-declined` ones), so it is never compared. It is the same on both sides,
+- **Masked areas:** the footer (`.hp-footer`) is painted over in flat grey in both screenshots,
+  `-declined` ones included (not in `-failed` ones), so it is never compared. It is the same on both sides,
   but OCR read its separators (`»`, `=`, `+`) differently between captures, reporting false text
   changes. Real footer differences, such as a build version, are therefore not caught. Add
   selectors to `maskedSelectors` in `src/quote-page.ts` to mask other areas. Existing
@@ -283,22 +286,24 @@ even when a download fails.
 
 A failed policy is reported and the run continues. At the end,
 after a blank line, a summary lists the counts and then each failed policy with its issues
-indented below it. Compared policies are split into identical and different, as
-[`summarise`](#summarise) does, plus how many have text changes (left out with
-`--no-ocr`). Only the counts and issues are coloured: identical green, different yellow when
-any differ, and failures yellow for validation failures, otherwise red (the failed count is
-yellow only when every failure is a validation failure):
+indented below it. Compared policies are split into identical, different, and those where both
+flows ended on the same referral, conditional quote or decline (listed only when there are any;
+see [Quote end points](#quote-end-points)), as [`summarise`](#summarise) does, plus how many
+have text changes (left out with `--no-ocr`). Only the counts and issues are coloured:
+identical green, different yellow when any differ, matching end points yellow, and failures
+yellow for validation failures, otherwise red (the failed count is yellow only when every
+failure is a validation failure):
 
 ```text
 Quote pages summary
-10 policies: 7 compared (3 identical, 4 different, 2 with text changes), 2 both declined, 1 failed.
+10 policies: 9 compared (3 identical, 4 different, 1 both referred, 1 both declined, 2 with text changes), 1 failed.
 8230224DF66644A1A52173E3757EE8BD-1
   Quote capture failed; comparison skipped.
   NHI: Website displayed <h2>Oops</h2>; stopping the journey. (https://…)
 ```
 
-The exit code is non-zero only if a policy failed. Policies that differ, and policies where
-[both sides declined](#declined-quotes), are not failures.
+The exit code is non-zero only if a policy failed. Policies that differ, and policies that
+ended on a referral, conditional quote or decline on either side, are not failures.
 
 #### Retrying failures
 
@@ -307,7 +312,7 @@ policy IDs, history ID and issues; a run where nothing failed deletes the file. 
 git-ignored. The file is also saved as the run starts and after each policy, listing the
 policies not finished yet with the issue `Not finished: the run stopped before this policy
 completed.`, so a run stopped part way (for example with Ctrl+C) leaves its failures and
-every unfinished policy for `retry-failed`. `npm run quote-pages -- retry-failed` reruns only those policies — compared and declined
+every unfinished policy for `retry-failed`. `npm run quote-pages -- retry-failed` reruns only those policies — compared
 policies and their output are left alone — then replaces the file with the ones still
 failing (or deletes it when all pass), so repeated retries shrink the list. Replacement GUIDs
 already in `quote-guid-mapping.json` are reused. With no file it prints
@@ -319,9 +324,10 @@ stopped with Ctrl+C.
 #### Retrying differences
 
 `npm run quote-pages -- retry-different` reruns every policy folder in the output folder whose
-`report.json` has changed pixels — the policies [summarise](#summarise) counts as different —
-each with the history ID from its folder name. Identical, both-declined, failed and unrecorded
-policies are left alone (use `retry-failed` for failures). Use it after changing how pages are
+`report.json` has changed pixels, or whose flows ended on different
+[end points](#quote-end-points) — the policies [summarise](#summarise) counts as different —
+each with the history ID from its folder name. Identical, matching referral, conditional or
+declined, failed and unrecorded policies are left alone (use `retry-failed` for failures). Use it after changing how pages are
 captured, such as [masking an area](#quote-page), to refresh the existing comparisons.
 `quote-pages-failed.json` is left untouched, so earlier failures stay available to
 `retry-failed`; a policy that now fails records why in its `result.json`. With nothing
@@ -342,20 +348,32 @@ before results were saved) counts as compared, since a report exists only when b
 captured; failures from those older runs were not recorded, so rerun them to see their reasons.
 In order, it prints:
 
-| Section                   | Contents                                                                                                                                                                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Visual-only differences   | Compared policies whose images differ with no text change, largest change first, with the changed percent and any difference in page size                                                                                                                           |
-| Text differences          | Each policy with text changes, then each region's changed OCR lines (`- £137.63`, `+ £137.62`); whole lines are compared rather than words, so the change has context. A region where a side with text has OCR confidence below 60 is marked `(low OCR confidence)` |
-| Most common text changes  | The 10 most frequent changes seen in more than one region, for example `25× £137.63 → £137.62`                                                                                                                                                                      |
-| Failed policies           | Each failed policy with its issues, coloured as in [quote-pages](#quote-pages)                                                                                                                                                                                      |
-| Failures by reason        | Each issue with the number of policies reporting it; URLs, file paths and IDs are ignored so the same error groups together (dates such as `DD/MM/YYYY` are kept)                                                                                                   |
-| MRP records not retrieved | GUID list entries with no `<ID>-1-mrp.json` in `MRP_AND_QUOTE_OUTPUT_DIR`                                                                                                                                                                                           |
-| Totals                    | The GUID list size, how many have a result and how many do not (not run, or an empty folder); the compared, identical, different, declined and failed counts; and the Oops pages                                                                                    |
+- **Visual-only differences:** compared policies whose images differ with no text change,
+  largest change first, with the changed percent, where each flow ended when either did not
+  quote, and any difference in page size.
+- **Text differences:** each policy with text changes, then each region's changed OCR lines
+  (`- £137.63`, `+ £137.62`); whole lines are compared rather than words, so the change has
+  context. A region where a side with text has OCR confidence below 60 is marked
+  `(low OCR confidence)`.
+- **Most common text changes:** the 10 most frequent changes seen in more than one region, for
+  example `25× £137.63 → £137.62`.
+- **Matching referrals, conditional quotes and declines:** compared policies whose flows both
+  ended on the same referral, conditional quote or decline with matching images, such as
+  `NHI and TCAS both referred` (see [Quote end points](#quote-end-points)).
+- **Failed policies:** each failed policy with its issues, coloured as in
+  [quote-pages](#quote-pages).
+- **Failures by reason:** each issue with the number of policies reporting it; URLs, file paths
+  and IDs are ignored so the same error groups together (dates such as `DD/MM/YYYY` are kept).
+- **MRP records not retrieved:** GUID list entries with no `<ID>-1-mrp.json` in
+  `MRP_AND_QUOTE_OUTPUT_DIR`.
+- **Totals:** the GUID list size, how many have a result and how many do not (not run, or an
+  empty folder); the compared, identical, different, matching end point and failed counts (and
+  any both-declined results from before declines were compared); and the Oops pages.
 
 ```text
 Totals
 GUID list: 1264 policies (…/quoteGuids.txt); 1236 with a result, 28 without; 10 MRP records not retrieved.
-1237 policies: 1237 compared (833 identical, 404 different, 67 with text changes), 0 both declined, 0 failed.
+1237 policies: 1237 compared (810 identical, 404 different, 11 both referred, 12 both declined, 67 with text changes), 0 failed.
 Oops pages: NHI 957 (953 later compared or declined), TCAS 10 (1 later compared or declined).
 Endorsement order: 12 compared after putting NHI's and TCAS's different orders in standard order (11 then identical).
 ```
@@ -552,7 +570,8 @@ Before capturing TCAS, the steps in `src/tcas-quote.steps.json` run in order:
 4. Wait for either an error summary or the welcome quote heading ("here's your quote",
    "here's your conditional quote" or "here's your estimated quote", any customer name,
    straight or curly apostrophes). An estimated quote is a referral ("We need to double check a
-   few details with you") that still shows a price, so it is captured and compared as usual.
+   few details with you") that still shows a price, so it is captured and compared, and
+   recorded as `referred` (see [Quote end points](#quote-end-points)).
 
 Edit the JSON file to change selectors or steps. Each successful step is logged in grey
 with its number, action and elapsed milliseconds; a failure names the step that stopped.
@@ -774,15 +793,38 @@ The site may decline to quote ("We're sorry... but we're unable to offer you a q
 your details"). Both flows watch for it from navigation through capture, like Oops: a
 `h1`–`h3` heading containing "we're sorry" (any apostrophe) together with the words "unable to
 offer you a quote" anywhere on the page. When it appears, the flow stops and saves
-`-declined.png` and `-declined.html` instead of a quote screenshot. A decline is not an Oops,
-so it never triggers the [NHI fallback](#nhi-oops-fallback).
+`-declined.png` (with the footer masked, as in quote screenshots) and `-declined.html` instead
+of a quote screenshot. A decline is not an Oops, so it never triggers the
+[NHI fallback](#nhi-oops-fallback). It is a journey end point like a quote, so it is compared
+(see below).
 
-| NHI      | TCAS     | Result                                                                    |
-| -------- | -------- | ------------------------------------------------------------------------- |
-| quoted   | quoted   | Compared as usual                                                         |
-| declined | declined | Success, not compared: `NHI and TCAS both declined the quote`             |
-| declined | quoted   | Failure, not compared: `Quote outcomes differ: NHI declined, TCAS quoted` |
-| quoted   | declined | Failure, not compared: `Quote outcomes differ: NHI quoted, TCAS declined` |
+### Quote end points
+
+Every journey end point is compared, so a referral or decline that differs between NHI and
+TCAS is caught like any other difference. Each flow ends on one of:
+
+- **`quote`:** the quote page, headed "here's your quote".
+- **`referred`:** an estimated quote for a referral, headed "here's your estimated quote" ("We
+  need to double check a few details with you"). It shows the price but no cover rows.
+- **`conditional`:** a conditional quote, headed "here's your conditional quote".
+- **`declined`:** the decline above, compared through its `-declined.png`.
+
+The quote page's kind is read from its welcome heading, which the site builds from the quote's
+`isReferred` and `isConditional` flags. Both end points are saved as `endpoints` in
+`result.json`, and logged when either flow did not quote (`NHI referred, TCAS quoted.`).
+
+- **Different end points**, such as NHI quoted and TCAS declined, always count as different,
+  even if the screenshots happened to match.
+- **The same end point other than a quote**, with matching screenshots, is not counted as
+  identical: the comparison prints `Screenshots match; NHI and TCAS both referred.` in yellow
+  instead of the green `0 changed pixels (0.00%)`, and the totals count it as `both referred`,
+  `both conditional` or `both declined`. Two referrals match even when the cover behind them
+  differs, since the page leaves it out, so check their API responses.
+- **Two quotes** are identical (green) or different as before.
+
+Runs from before end points were recorded count as two quotes. Their both-declined results
+were not compared; `summarise` counts them as "both declined before declines were compared",
+so run them again to compare them.
 
 ### Failure screenshots and HTML
 

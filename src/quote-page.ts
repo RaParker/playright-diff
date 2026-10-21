@@ -22,6 +22,14 @@ import {
   type QuoteGuidRequestOptions
 } from './quote-guid.js';
 import { selectAnnualPayment } from './payment.js';
+import {
+  classifyComparison,
+  describeEndpoints,
+  formatComparisonCounts,
+  readQuoteEndpoint,
+  type QuoteEndpoint,
+  type QuoteEndpoints
+} from './quote-endpoint.js';
 import { removeQuoteOutput } from './quote-output.js';
 import { writeQuoteResult, type EndorsementOrder, type QuoteResult } from './quote-result.js';
 import { quoteSummary, requote } from './quote-summary.js';
@@ -29,6 +37,7 @@ import {
   DeclinedError,
   OopsError,
   screenshot,
+  stoppedScreenshotPath,
   UnexpectedPageError,
   ValidationError,
   type ScreenshotOptions
@@ -59,18 +68,19 @@ export interface QuotePageOptions {
 const maskedSelectors = ['.hp-footer'];
 
 /**
- * How one quote-page run ended: both sides quoted and were compared (with how much they differ), or both declined
- * (nothing to compare).
+ * How one quote-page run ended: both sides reached an end point (a quote, referral, conditional quote or decline) and
+ * their screenshots were compared, with how much they differ and where each ended.
  */
-export type QuotePageResult = { outcome: 'compared'; comparison: ComparisonCounts } | { outcome: 'declined' };
-
-/** How one capture ended: the quote page was captured, or the site declined to quote. */
-type CaptureOutcome = 'captured' | 'declined';
+export interface QuotePageResult {
+  outcome: 'compared';
+  comparison: ComparisonCounts;
+  endpoints: QuoteEndpoints;
+}
 
 interface NhiCapture {
   /** Replacement quote GUID captured, or `undefined` when the original was captured. */
   replacementGuid?: string;
-  outcome: CaptureOutcome;
+  endpoint: QuoteEndpoint;
 }
 
 export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
@@ -90,17 +100,16 @@ export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
 }
 
 /**
- * Captures the NHI and TCAS versions of one quote and compares them. Any answers a flow changed so the journey would
- * accept the test data are saved to `<policyDetailsId>-<historyId>/answer-changes.json` in the output folder, whether
- * the run compared, declined or failed. The screenshots, API responses and comparison report are saved in that folder
- * too.
+ * Captures the NHI and TCAS versions of one quote and compares them, whichever end point each journey reached: a
+ * quote, a referral, a conditional quote or a decline. Any answers a flow changed so the journey would accept the test
+ * data are saved to `<policyDetailsId>-<historyId>/answer-changes.json` in the output folder, whether the run compared
+ * or failed. The screenshots, API responses and comparison report are saved in that folder too.
  * @param policyArgument TCAS policy details ID (32 hexadecimal characters).
  * @param historyId TCAS history ID.
  * @param options Input folder, URL templates and the optional NHI Oops fallback.
- * @returns `'compared'` with the comparison's counts, or `'declined'` when both sides declined to quote (the comparison
- * is skipped).
- * @throws When the inputs are invalid, a capture fails, or only one side declined to quote. A
- * {@link ValidationError} when every failed capture stopped on a validation error.
+ * @returns `'compared'` with the comparison's counts and where each flow ended.
+ * @throws When the inputs are invalid or a capture fails. A {@link ValidationError} when every failed capture stopped
+ * on a validation error.
  */
 export async function quotePage(
   policyArgument: string,
@@ -141,6 +150,7 @@ export async function quotePage(
     validation: false,
     issues: [],
     ...(endorsementOrder === undefined ? {} : { endorsementOrder }),
+    endpoints: quotePageResult.endpoints,
     finishedAt: new Date().toISOString()
   });
   return quotePageResult;
@@ -174,10 +184,10 @@ type PolicyRunOutcome = QuotePageResult | { outcome: 'failed'; message: string; 
  * @param failedPath File that the run's failed policies replace, for `quote-pages -- retry-failed`; not written when omitted.
  * It is saved as the run starts and after each policy, listing the policies not finished yet as failed too, so a run
  * that is stopped part way leaves them all to retry. After all runs, saves the failed policies in list order (deleting
- * the file when none failed), then prints a summary: the counts (compared policies split into identical and different),
- * then each failed policy with its issues.
- * @throws When the concurrency is out of range, or after all runs when any policy failed. Policies where
- * both sides declined are not failures.
+ * the file when none failed), then prints a summary: the counts (compared policies split into identical, different and
+ * matching on a referral, conditional quote or decline), then each failed policy with its issues.
+ * @throws When the concurrency is out of range, or after all runs when any policy failed. A policy that ended on a
+ * referral, conditional quote or decline is compared, not failed.
  */
 export async function quotePages(
   requestedIds: string[],
@@ -212,14 +222,13 @@ export async function quotePages(
       return outcome?.outcome === 'failed' && outcome.validation;
     })
   );
-  const compared = outcomes.flatMap((outcome) => (outcome?.outcome === 'compared' ? [outcome.comparison] : []));
-  const declined = outcomes.filter((outcome) => outcome?.outcome === 'declined').length;
+  const compared = outcomes.flatMap((outcome) => (outcome?.outcome === 'compared' ? [outcome] : []));
   if (failedPath !== undefined) {
     await writeFailedQuotePages(failedPath, { historyId, failed: failures });
   }
 
   printSummary(
-    { total: policyDetailsIds.length, compared, declined, useOcr: options.useOcr ?? true },
+    { total: policyDetailsIds.length, compared, useOcr: options.useOcr ?? true },
     historyId,
     failures,
     validationFailures
@@ -329,9 +338,10 @@ interface CaptureAndCompareResult {
 }
 
 /**
- * Captures both flows for a policy whose ID is valid, then compares them unless a side failed or declined.
- * @returns `'compared'` with the comparison's counts, or `'declined'` when both sides declined, and when they were
- * compared and listed the endorsements in different orders, each flow's order.
+ * Captures both flows for a policy whose ID is valid, then compares them unless a side failed. A decline is compared
+ * through its `-declined.png` screenshot, against the other side's quote page or decline.
+ * @returns `'compared'` with the comparison's counts and where each flow ended, and when the quote pages listed the
+ * endorsements in different orders, each flow's order.
  * @throws As {@link quotePage}.
  */
 async function captureAndCompare(
@@ -414,29 +424,35 @@ async function captureAndCompare(
       : new Error(message);
   }
 
-  const nhiOutcome = nhi.status === 'fulfilled' ? nhi.value.outcome : undefined;
-  const tcasOutcome = tcas.status === 'fulfilled' ? tcas.value : undefined;
-  if (nhiOutcome === 'declined' && tcasOutcome === 'declined') {
-    console.log('NHI and TCAS both declined the quote; comparison skipped.');
-    return { quotePageResult: { outcome: 'declined' } };
+  // Neither capture was rejected, so both reached an end point.
+  const endpoints: QuoteEndpoints = {
+    nhi: nhi.status === 'fulfilled' ? nhi.value.endpoint : 'quote',
+    tcas: (tcas.status === 'fulfilled' ? tcas.value : undefined) ?? 'quote'
+  };
+  const described = describeEndpoints(endpoints);
+  if (described !== undefined) {
+    console.log(`${described}.`);
   }
 
-  if (nhiOutcome === 'declined' || tcasOutcome === 'declined') {
-    const describe = (outcome: CaptureOutcome | undefined) => (outcome === 'declined' ? 'declined' : 'quoted');
-    throw new Error(
-      `Quote outcomes differ: NHI ${describe(nhiOutcome)}, TCAS ${describe(tcasOutcome)}; comparison skipped.`
-    );
-  }
-
-  const comparison = await compare(nhiPath, tcasPath, {
-    output: outputPath(basename),
-    reuseOutput: true,
-    useOcr: options.useOcr
-  });
+  const comparison = await compare(
+    endpointScreenshot(nhiPath, endpoints.nhi),
+    endpointScreenshot(tcasPath, endpoints.tcas),
+    {
+      output: outputPath(basename),
+      reuseOutput: true,
+      useOcr: options.useOcr,
+      identicalMessage: described === undefined ? undefined : `Screenshots match; ${described}.`
+    }
+  );
   return {
-    quotePageResult: { outcome: 'compared', comparison },
+    quotePageResult: { outcome: 'compared', comparison, endpoints },
     endorsementOrder: await readEndorsementOrder(nhiPath, tcasPath)
   };
+}
+
+/** The screenshot that shows where a flow ended: its `-declined.png` for a decline, otherwise its quote page. */
+function endpointScreenshot(path: string, endpoint: QuoteEndpoint): string {
+  return endpoint === 'declined' ? stoppedScreenshotPath(path, 'declined') : path;
 }
 
 /**
@@ -500,7 +516,7 @@ async function readQuoteGuid(mrpPath: string): Promise<string> {
 
 /**
  * Captures the NHI quote page, falling back to a replacement quote GUID when the original shows Oops.
- * @returns The capture's outcome, with the replacement quote GUID when one was used.
+ * @returns Where the capture ended, with the replacement quote GUID when one was used.
  */
 async function captureNhi(
   artemisQuoteGuid: string,
@@ -519,7 +535,7 @@ async function captureNhi(
     });
   const fallback = options.quoteGuidFallback;
   if (fallback === undefined) {
-    return { outcome: await capture(artemisQuoteGuid) };
+    return { endpoint: await capture(artemisQuoteGuid) };
   }
 
   // An attempt that shows Oops is replaced by the unsaved journey below, so only that journey's answer changes count.
@@ -535,19 +551,19 @@ async function captureNhi(
   if (mappedGuid !== undefined) {
     console.log(`NHI: using mapped quote GUID ${mappedGuid} for ${artemisQuoteGuid}.`);
     try {
-      return { replacementGuid: mappedGuid, outcome: await captureUnlessOops(mappedGuid) };
+      return { replacementGuid: mappedGuid, endpoint: await captureUnlessOops(mappedGuid) };
     } catch (error) {
       if (!(error instanceof OopsError)) {
         throw error;
       }
 
       console.log(`NHI: mapped quote GUID ${mappedGuid} is not saved to NHI yet; running its journey.`);
-      return { replacementGuid: mappedGuid, outcome: await captureUnsaved(mappedGuid) };
+      return { replacementGuid: mappedGuid, endpoint: await captureUnsaved(mappedGuid) };
     }
   }
 
   try {
-    return { outcome: await captureUnlessOops(artemisQuoteGuid) };
+    return { endpoint: await captureUnlessOops(artemisQuoteGuid) };
   } catch (error) {
     if (!(error instanceof OopsError)) {
       throw error;
@@ -558,7 +574,7 @@ async function captureNhi(
     console.log(
       `NHI: mapped ${artemisQuoteGuid} to new quote GUID ${replacementGuid} in ${mappingPath}; running its journey.`
     );
-    return { replacementGuid, outcome: await captureUnsaved(replacementGuid) };
+    return { replacementGuid, endpoint: await captureUnsaved(replacementGuid) };
   }
 }
 
@@ -585,26 +601,27 @@ async function keepAnswerChangesUnlessOops<T>(task: () => Promise<T>): Promise<T
 /**
  * Logs the URL a flow opens, captures it, and adds the URL to any failure. The page's API responses are saved beside
  * the screenshot (see {@link apiResponsesFolder}), so the data behind a difference can be compared.
- * @returns `'declined'` when the site declined to quote (its `-declined.png` is saved), otherwise `'captured'`.
+ * @returns `'declined'` when the site declined to quote (its `-declined.png` is saved), otherwise the kind of quote the
+ * captured page shows (see {@link readQuoteEndpoint}).
  * @throws The capture's error with the URL appended; an {@link OopsError}, {@link ValidationError} or
  * {@link UnexpectedPageError} keeps its class.
  */
-async function captureAt(label: string, url: string, options: ScreenshotOptions): Promise<CaptureOutcome> {
+async function captureAt(label: string, url: string, options: ScreenshotOptions): Promise<QuoteEndpoint> {
   console.log(`${label}: opening ${url}`);
+  const htmlPaths = options.output === undefined ? undefined : quotePageHtmlPaths(options.output);
   try {
     await screenshot(url, {
       ...options,
       mask: maskedSelectors,
       apiResponsesFolder: options.output === undefined ? undefined : apiResponsesFolder(options.output),
       html:
-        options.output === undefined
+        htmlPaths === undefined
           ? undefined
           : {
-              ...quotePageHtmlPaths(options.output),
+              ...htmlPaths,
               standardise: (page) => standardiseQuotePage(page, label)
             }
     });
-    return 'captured';
   } catch (error) {
     if (error instanceof DeclinedError) {
       console.log(`${label}: quote declined (${url}).`);
@@ -625,42 +642,41 @@ async function captureAt(label: string, url: string, options: ScreenshotOptions)
 
     throw new Error(`${error instanceof Error ? error.message : String(error)} (${url})`, { cause: error });
   }
+
+  const html = htmlPaths === undefined ? undefined : await readOptionalTextFile(htmlPaths.output);
+  return html === undefined ? 'quote' : readQuoteEndpoint(html);
 }
 
 /** The counts a quote-pages summary prints, apart from the failures. */
 interface QuotePagesCounts {
   total: number;
-  /** Each compared policy's comparison counts. */
-  compared: ComparisonCounts[];
-  declined: number;
+  /** Each compared policy's comparison counts and end points. */
+  compared: QuotePageResult[];
   /** Whether the comparisons read text, so text changes are counted. */
   useOcr: boolean;
 }
 
 /**
  * Prints the quote-pages summary: a title, the counts, then each failed policy with its issues indented below it.
- * Compared policies are split into identical (green) and different (yellow when any differ), as `summarise` does, plus
- * how many have text changes when OCR is on. Validation failures are yellow and other failures red; the failed count
- * is yellow only when every failure is one.
+ * Compared policies are split as `summarise` does (see {@link formatComparisonCounts}): identical, different, and those
+ * matching on a referral, conditional quote or decline, plus how many have text changes when OCR is on. Validation
+ * failures are yellow and other failures red; the failed count is yellow only when every failure is one.
  */
 function printSummary(
-  { total, compared, declined, useOcr }: QuotePagesCounts,
+  { total, compared, useOcr }: QuotePagesCounts,
   historyId: number,
   failures: FailedQuotePage[],
   validationFailures: Set<string>
 ): void {
-  const identical = compared.filter(({ changedPixels }) => changedPixels === 0).length;
-  const different = `${compared.length - identical} different`;
-  const withText = compared.filter(({ textChangedRegions }) => textChangedRegions > 0).length;
+  const kinds = compared.map(({ comparison, endpoints }) => classifyComparison(comparison.changedPixels, endpoints));
+  const withText = compared.filter(({ comparison }) => comparison.textChangedRegions > 0).length;
   const failed = `${failures.length} failed`;
   const allValidation = failures.every(({ policyDetailsId }) => validationFailures.has(policyDetailsId));
   console.log(`\n${color.Cyan('Quote pages summary')}`);
   console.log(
-    `${total} ${total === 1 ? 'policy' : 'policies'}: ${compared.length} compared (${color.Green(`${identical} identical`)}, ${
-      identical === compared.length ? different : color.Yellow(different)
-    }${useOcr ? `, ${withText} with text changes` : ''}), ${declined} both declined, ${
-      failures.length > 0 ? failureColor(allValidation)(failed) : failed
-    }.`
+    `${total} ${total === 1 ? 'policy' : 'policies'}: ${compared.length} compared (${formatComparisonCounts(kinds)}${
+      useOcr ? `, ${withText} with text changes` : ''
+    }), ${failures.length > 0 ? failureColor(allValidation)(failed) : failed}.`
   );
   for (const { policyDetailsId, issues } of failures) {
     console.log(`${policyDetailsId}-${historyId}`);

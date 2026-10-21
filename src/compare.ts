@@ -18,6 +18,11 @@ export interface CompareOptions {
   threshold?: number;
   language?: string;
   useOcr?: boolean;
+  /**
+   * Printed in yellow, with the report path, instead of the green changed-pixel count when the screenshots match, for
+   * matching pages that should not read as identical (such as two referrals, which show no cover details).
+   */
+  identicalMessage?: string;
 }
 
 /** How much two compared screenshots differ. */
@@ -64,9 +69,15 @@ export async function compare(
     regions
   };
   await writeReport(output, report);
-  const summary = `${changedPixels} changed pixels (${report.changedPercent.toFixed(2)}%). Report: ${join(output, 'report.md')}`;
-  // Green for identical images, yellow when there are differences to review.
-  console.log(changedPixels === 0 ? color.Green(summary) : color.Yellow(summary));
+  const reportPath = join(output, 'report.md');
+  const summary = `${changedPixels} changed pixels (${report.changedPercent.toFixed(2)}%). Report: ${reportPath}`;
+  // Green for identical images, yellow when there are differences or a matching page to review.
+  if (changedPixels === 0 && options.identicalMessage !== undefined) {
+    console.log(color.Yellow(`${options.identicalMessage} Report: ${reportPath}`));
+  } else {
+    console.log(changedPixels === 0 ? color.Green(summary) : color.Yellow(summary));
+  }
+
   return { changedPixels, textChangedRegions: regions.filter((region) => region.textChanges.length > 0).length };
 }
 

@@ -509,6 +509,108 @@ describe('listDifferentPolicies', () => {
   });
 });
 
+describe('end points', () => {
+  /** Writes a compared policy's report and a result recording where each flow ended. */
+  async function writeEndpoints(root, policy, changedPixels, endpoints) {
+    await writeReport(root, `${policy}-1`, { changedPixels });
+    await writeQuoteResult({ ...failedResult(policy, []), outcome: 'compared', endpoints }, root);
+  }
+
+  /** A folder with a matching referral, matching quotes, and flows that ended differently with matching pixels. */
+  async function endpointFixture(context) {
+    const root = await mkdtemp(join(tmpdir(), 'summarise-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
+    await writeEndpoints(root, identicalPolicy, 0, { nhi: 'quote', tcas: 'quote' });
+    await writeEndpoints(root, textPolicy, 0, { nhi: 'referred', tcas: 'referred' });
+    await writeEndpoints(root, visualPolicy, 0, { nhi: 'quote', tcas: 'declined' });
+    return root;
+  }
+
+  for (const [name, changedPixels, endpoints, kind] of [
+    ['two quotes with matching screenshots as identical', 0, { nhi: 'quote', tcas: 'quote' }, 'identical'],
+    ['a result saved before end points were recorded as two quotes', 0, undefined, 'identical'],
+    ['two referrals with matching screenshots as referred', 0, { nhi: 'referred', tcas: 'referred' }, 'referred'],
+    [
+      'two conditional quotes with matching screenshots as conditional',
+      0,
+      { nhi: 'conditional', tcas: 'conditional' },
+      'conditional'
+    ],
+    ['two declines with matching screenshots as declined', 0, { nhi: 'declined', tcas: 'declined' }, 'declined'],
+    ['two referrals whose screenshots differ as different', 5, { nhi: 'referred', tcas: 'referred' }, 'different'],
+    [
+      'flows that ended differently as different, even with matching screenshots',
+      0,
+      { nhi: 'quote', tcas: 'declined' },
+      'different'
+    ]
+  ]) {
+    test(`counts ${name}`, async (context) => {
+      // arrange
+      const root = await mkdtemp(join(tmpdir(), 'summarise-'));
+      context.after(() => rm(root, { recursive: true, force: true }));
+      await writeReport(root, `${identicalPolicy}-1`, { changedPixels });
+      if (endpoints !== undefined) {
+        await writeQuoteResult({ ...failedResult(identicalPolicy, []), outcome: 'compared', endpoints }, root);
+      }
+
+      // act
+      const summary = await collectQuoteResults(root);
+
+      // assert
+      assert.equal(summary.compared[0].kind, kind);
+    });
+  }
+
+  test('lists flows that ended differently for retry-different, but not a matching referral', async (context) => {
+    // arrange
+    const root = await endpointFixture(context);
+    const summary = await collectQuoteResults(root);
+
+    // act
+    const different = listDifferentPolicies(summary);
+
+    // assert
+    assert.deepEqual(different, [{ policyDetailsId: visualPolicy, historyId: 1 }]);
+  });
+
+  test('summarise lists matching referrals apart and counts them in yellow', async (context) => {
+    // arrange
+    const root = await endpointFixture(context);
+
+    // act
+    const { code, output } = await runCli(root, ['summarise']);
+
+    // assert
+    assert.equal(code, 0, output);
+    assert.match(
+      output,
+      /Matching referrals, conditional quotes and declines \(1\)\n {2}B{32}-1 {2}NHI and TCAS both referred\n/
+    );
+    assert.match(output, /Visual-only differences \(1\)\n {2}E{32}-1 {2}0\.00% changed, NHI quoted, TCAS declined\n/);
+    assert.match(
+      output,
+      /3 policies: 3 compared \(1 identical, 1 different, 1 both referred, 0 with text changes\), 0 failed\./
+    );
+  });
+
+  test('rejects a result with an unknown end point', async (context) => {
+    // arrange
+    const root = await mkdtemp(join(tmpdir(), 'summarise-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
+    await writeQuoteResult(
+      { ...failedResult(identicalPolicy, []), outcome: 'compared', endpoints: { nhi: 'quote', tcas: 'maybe' } },
+      root
+    );
+
+    // act
+    const read = readQuoteResult(join(root, `${identicalPolicy}-1`));
+
+    // assert
+    await assert.rejects(read, /Quote result must be/);
+  });
+});
+
 describe('collectGuidListStatus', () => {
   test('counts the list, the policies not run and the MRP records not retrieved', async () => {
     // arrange
@@ -558,7 +660,7 @@ describe('summarise command', () => {
       );
       assert.match(
         output,
-        /6 policies: 3 compared \(1 identical, 2 different, 1 with text changes\), 1 both declined, 1 failed, 1 without a result\./
+        /6 policies: 3 compared \(1 identical, 2 different, 1 with text changes\), 1 both declined before declines were compared \(run them again\), 1 failed, 1 without a result\./
       );
       assert.match(
         output,

@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { after, describe, test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { defaultQuoteGuidCount, readQuoteGuidList, selectQuoteGuids } from '../dist/quote-guid-list.js';
@@ -653,28 +653,50 @@ function decliningHandler(fragments, handler = quoteJourneyHandler([])) {
   };
 }
 
+// Serves the quote pages of requests whose path contains one of the given fragments with the heading of another kind
+// of quote, such as "here's your estimated quote" for a referral.
+function quoteKindHandler(fragments, kind, handler = quoteJourneyHandler([])) {
+  return (request, response) => {
+    if (fragments.some((fragment) => request.url.includes(fragment))) {
+      const end = response.end.bind(response);
+      response.end = (body) =>
+        end(String(body).replaceAll('here&rsquo;s your quote', `here&rsquo;s your ${kind} quote`));
+    }
+
+    handler(request, response);
+  };
+}
+
+/** Reads the saved result and comparison report of a policy A run. */
+async function readComparedResult(directory) {
+  const folder = join(directory, `${policyA}-1`);
+  const { outcome, endpoints } = JSON.parse(await readFile(join(folder, 'result.json'), 'utf8'));
+  const { before, after, changedPixels } = JSON.parse(await readFile(join(folder, 'report.json'), 'utf8'));
+  return { outcome, endpoints, before: basename(before), after: basename(after), changedPixels };
+}
+
 describe('quote-page declined quotes', () => {
-  for (const [name, fragments, expectedSuccess, expectedOutput, expectedScreenshots] of [
+  for (const [name, fragments, endpoints, images, expectedOutput] of [
     [
-      'succeeds without comparing when NHI and TCAS both decline',
+      'compares the declined pages when NHI and TCAS both decline',
       ['/nhi/', '/tcas/'],
-      true,
-      /NHI and TCAS both declined the quote; comparison skipped\./,
-      ['nhi-declined.html', 'nhi-declined.png', 'tcas-declined.html', 'tcas-declined.png']
+      { nhi: 'declined', tcas: 'declined' },
+      ['nhi-declined.png', 'tcas-declined.png'],
+      'NHI and TCAS both declined.'
     ],
     [
-      'fails when only NHI declines',
+      "compares NHI's declined page with TCAS's quote page when only NHI declines",
       ['/nhi/'],
-      false,
-      /Quote outcomes differ: NHI declined, TCAS quoted; comparison skipped\./,
-      ['nhi-declined.html', 'nhi-declined.png', 'tcas-quote-page-standardized.html', 'tcas-quote-page.html', 'tcas.png']
+      { nhi: 'declined', tcas: 'quote' },
+      ['nhi-declined.png', 'tcas.png'],
+      'NHI declined, TCAS quoted.'
     ],
     [
-      'fails when only TCAS declines',
+      "compares NHI's quote page with TCAS's declined page when only TCAS declines",
       ['/tcas/'],
-      false,
-      /Quote outcomes differ: NHI quoted, TCAS declined; comparison skipped\./,
-      ['nhi-quote-page-standardized.html', 'nhi-quote-page.html', 'nhi.png', 'tcas-declined.html', 'tcas-declined.png']
+      { nhi: 'quote', tcas: 'declined' },
+      ['nhi.png', 'tcas-declined.png'],
+      'NHI quoted, TCAS declined.'
     ]
   ]) {
     test(name, async () => {
@@ -686,21 +708,36 @@ describe('quote-page declined quotes', () => {
         const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
 
         // assert
-        assert.equal(result.code === 0, expectedSuccess, result.output);
-        assert.match(result.output, expectedOutput);
-        // Failures are shown in red; a both-declined success is not.
-        assert.equal(result.output.includes('\u001b[31m'), !expectedSuccess, result.output);
-        assert.deepEqual(await readOnlyResult(directory), {
-          outcome: expectedSuccess ? 'declined' : 'failed',
-          validation: false
-        });
+        assert.equal(result.code, 0, result.output);
+        assert.ok(result.plain.includes(expectedOutput), result.output);
+        assert.ok(!result.output.includes(red), result.output);
+        const saved = await readComparedResult(directory);
         assert.deepEqual(
-          (await readdir(join(directory, `${policyA}-1`))).filter((file) => file !== 'result.json').sort(),
-          expectedScreenshots
+          { outcome: saved.outcome, endpoints: saved.endpoints, images: [saved.before, saved.after] },
+          { outcome: 'compared', endpoints, images }
         );
       });
     });
   }
+
+  test('reports matching declined pages in yellow, not as 0 changed pixels', async () => {
+    await withServer(decliningHandler(['/nhi/', '/tcas/']), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base);
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.equal((await readComparedResult(directory)).changedPixels, 0);
+      assert.ok(
+        result.output.includes(`${yellow}Screenshots match; NHI and TCAS both declined. Report: `),
+        result.output
+      );
+      assert.doesNotMatch(result.plain, /0 changed pixels/);
+    });
+  });
 
   test('captures the replacement TCAS quote when the replacement NHI journey declines', async () => {
     await withServer(
@@ -718,6 +755,73 @@ describe('quote-page declined quotes', () => {
         assert.match(result.output, /NHI and TCAS both declined/);
       }
     );
+  });
+});
+
+describe('quote-page referrals and conditional quotes', () => {
+  for (const [name, fragments, kind, endpoints, expectedOutput] of [
+    [
+      'records a referral on both sides',
+      ['/nhi/', '/tcas/'],
+      'estimated',
+      { nhi: 'referred', tcas: 'referred' },
+      'NHI and TCAS both referred.'
+    ],
+    [
+      'records a conditional quote on both sides',
+      ['/nhi/', '/tcas/'],
+      'conditional',
+      { nhi: 'conditional', tcas: 'conditional' },
+      'NHI and TCAS both conditional.'
+    ],
+    [
+      'records a referral on NHI only',
+      ['/nhi/'],
+      'estimated',
+      { nhi: 'referred', tcas: 'quote' },
+      'NHI referred, TCAS quoted.'
+    ],
+    [
+      'records a conditional quote on TCAS only',
+      ['/tcas/'],
+      'conditional',
+      { nhi: 'quote', tcas: 'conditional' },
+      'NHI quoted, TCAS conditional.'
+    ]
+  ]) {
+    test(name, async () => {
+      await withServer(quoteKindHandler(fragments, kind), async (base) => {
+        // arrange
+        const { directory, env } = await fixture(base);
+
+        // act
+        const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+        // assert
+        assert.equal(result.code, 0, result.output);
+        assert.ok(result.plain.includes(expectedOutput), result.output);
+        const saved = await readComparedResult(directory);
+        assert.deepEqual(
+          { outcome: saved.outcome, endpoints: saved.endpoints, images: [saved.before, saved.after] },
+          { outcome: 'compared', endpoints, images: ['nhi.png', 'tcas.png'] }
+        );
+      });
+    });
+  }
+
+  test('records two quotes without describing the end points', async () => {
+    await withServer(quoteJourneyHandler([]), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base);
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.deepEqual((await readComparedResult(directory)).endpoints, { nhi: 'quote', tcas: 'quote' });
+      assert.doesNotMatch(result.plain, /NHI and TCAS both|NHI quoted, TCAS/);
+    });
   });
 });
 
@@ -759,7 +863,7 @@ describe('QUOTE_PAGE_TIMEOUT', () => {
 });
 
 describe('quote-pages', () => {
-  test('counts compared policies as identical or different, and both-declined ones apart', async () => {
+  test('counts compared policies as identical or different, and matching declines apart', async () => {
     await withServer(decliningHandler(['guid-a', policyA]), async (base) => {
       // arrange
       const { directory, env } = await fixture(base, { [`${policyA}-1`]: 'guid-a', [`${policyB}-1`]: 'guid-b' });
@@ -770,7 +874,9 @@ describe('quote-pages', () => {
 
       // assert
       assert.equal(result.code, 0, result.output);
-      assert.match(result.plain, /2 policies: 1 compared \(0 identical, 1 different\), 1 both declined, 0 failed/);
+      assert.match(result.plain, /2 policies: 2 compared \(0 identical, 1 different, 1 both declined\), 0 failed/);
+      // A matching decline is yellow, like a difference, not green like an identical pair of quotes.
+      assert.ok(result.output.includes(`${yellow}1 both declined`), result.output);
       // A clean list run leaves no saved failures file behind.
       await assert.rejects(readFailed(directory), { code: 'ENOENT' });
     });
@@ -789,7 +895,7 @@ describe('quote-pages', () => {
       assert.equal(result.code, 0, result.output);
       assert.match(
         result.plain,
-        /\n\nQuote pages summary\n1 policy: 1 compared \(0 identical, 1 different\), 0 both declined, 0 failed\.\n/
+        /\n\nQuote pages summary\n1 policy: 1 compared \(0 identical, 1 different\), 0 failed\.\n/
       );
       assert.ok(result.output.includes(`\u001b[36m[1/1] ${policyA}-1`), result.output);
       assert.ok(requests.includes(`/tcas/${policyA}/1`));
@@ -811,7 +917,7 @@ describe('quote-pages', () => {
       assert.notEqual(result.code, 0);
       assert.match(
         result.plain,
-        /Quote pages summary\n2 policies: 1 compared \(0 identical, 1 different\), 0 both declined, 1 failed\.\n/
+        /Quote pages summary\n2 policies: 1 compared \(0 identical, 1 different\), 1 failed\.\n/
       );
       assert.match(result.plain, new RegExp(`\n${policyA}-1\n  No saved MRP for this quote`));
       assert.match(result.plain, /1 of 2 quote pages failed; see the summary above\./);
@@ -857,7 +963,7 @@ describe('quote-pages', () => {
       assert.match(result.plain, /Retrying 2 failed policies from quote-pages-failed\.json/);
       assert.match(
         result.plain,
-        /Quote pages summary\n2 policies: 1 compared \(0 identical, 1 different\), 0 both declined, 1 failed\.\n/
+        /Quote pages summary\n2 policies: 1 compared \(0 identical, 1 different\), 1 failed\.\n/
       );
       assert.ok(requests.includes(`/tcas/${policyB}/1`));
       assert.ok(!requests.some((path) => path.includes(policyC) || path.includes('guid-c')));
@@ -1015,7 +1121,7 @@ ${policyB}
       assert.match(result.plain, /\n\[2\/2 11111111\] NHI: opening /);
       assert.match(
         result.plain,
-        /\n\nQuote pages summary\n2 policies: 2 compared \(0 identical, 2 different\), 0 both declined, 0 failed\.\n/
+        /\n\nQuote pages summary\n2 policies: 2 compared \(0 identical, 2 different\), 0 failed\.\n/
       );
     });
   });
@@ -1051,7 +1157,7 @@ ${policyB}
       assert.match(result.plain, /Skipping 1 repeated policy ID; each policy runs once\./);
       assert.match(
         result.plain,
-        /Quote pages summary\n2 policies: 2 compared \(0 identical, 2 different\), 0 both declined, 0 failed\.\n/
+        /Quote pages summary\n2 policies: 2 compared \(0 identical, 2 different\), 0 failed\.\n/
       );
       assert.equal(requests.filter((path) => path === `/tcas/${policyA}/1`).length, 1);
     });
@@ -1115,7 +1221,7 @@ ${policyB}
       assert.notEqual(result.code, 0);
       assert.match(
         result.plain,
-        /Quote pages summary\n3 policies: 1 compared \(0 identical, 1 different\), 0 both declined, 2 failed\.\n/
+        /Quote pages summary\n3 policies: 1 compared \(0 identical, 1 different\), 2 failed\.\n/
       );
       const saved = await readFailed(directory);
       assert.deepEqual(
@@ -1140,7 +1246,7 @@ ${policyB}
       assert.doesNotMatch(result.plain, /not the mrp-and-quote project/);
       assert.match(
         result.plain,
-        /Quote pages summary\n2 policies: 1 compared \(0 identical, 1 different\), 0 both declined, 1 failed\.\n/
+        /Quote pages summary\n2 policies: 1 compared \(0 identical, 1 different\), 1 failed\.\n/
       );
       assert.match(result.plain, new RegExp(`\n${policyA}-1\n  No saved MRP for this quote`));
     });

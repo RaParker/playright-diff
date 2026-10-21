@@ -2,11 +2,15 @@ import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseJson, readOptionalTextFile, replaceFile } from './fs-helpers.js';
 import { outputPath } from './output-paths.js';
+import { isQuoteEndpoints, type QuoteEndpoints } from './quote-endpoint.js';
 
 /** File name of the result each quote-page run writes into its `<policyDetailsId>-<historyId>` output folder. */
 export const quoteResultFileName = 'result.json';
 
-/** How a quote-page run ended: compared, both sides declined, or failed. */
+/**
+ * How a quote-page run ended: compared or failed. `declined` is written only by earlier versions, which skipped the
+ * comparison when both sides declined; declines are now compared like any other end point.
+ */
 export type QuoteOutcome = 'compared' | 'declined' | 'failed';
 
 /** The endorsement titles each flow's quote page listed, in the order shown before it was standardised. */
@@ -29,6 +33,8 @@ export interface QuoteResult {
    * standard order, so a difference in order alone does not show up in the comparison.
    */
   endorsementOrder?: EndorsementOrder;
+  /** Where each flow's journey ended; set when compared, except by versions before end points were recorded. */
+  endpoints?: QuoteEndpoints;
   /** ISO 8601 time the run started; failure pages older than this are from an earlier run. */
   startedAt: string;
   /** ISO 8601 time the run finished. */
@@ -90,7 +96,8 @@ function isQuoteResult(value: unknown): value is QuoteResult {
     typeof value.startedAt === 'string' &&
     'finishedAt' in value &&
     typeof value.finishedAt === 'string' &&
-    (!('endorsementOrder' in value) || isEndorsementOrder(value.endorsementOrder))
+    (!('endorsementOrder' in value) || isEndorsementOrder(value.endorsementOrder)) &&
+    (!('endpoints' in value) || isQuoteEndpoints(value.endpoints))
   );
 }
 

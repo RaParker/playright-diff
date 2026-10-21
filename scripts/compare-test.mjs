@@ -168,3 +168,51 @@ test('reuseOutput writes the report into an existing folder beside the images', 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+for (const [name, after, expected] of [
+  [
+    'prints identicalMessage in yellow instead of the green count when the images match',
+    '#fff',
+    '\u001b[33mBoth referred. Report: '
+  ],
+  [
+    'prints the yellow changed-pixel count, not identicalMessage, when the images differ',
+    '#000',
+    '\u001b[33m800 changed pixels'
+  ]
+]) {
+  test(name, async (context) => {
+    // arrange
+    const dir = await mkdtemp(join(tmpdir(), 'image-compare-message-'));
+    context.after(() => rm(dir, { recursive: true, force: true }));
+    const paths = [join(dir, 'nhi.png'), join(dir, 'tcas.png')];
+    for (const [path, background] of [
+      [paths[0], '#fff'],
+      [paths[1], after]
+    ]) {
+      await sharp({ create: { width: 40, height: 20, channels: 3, background } })
+        .png()
+        .toFile(path);
+    }
+    const log = context.mock.method(console, 'log', () => undefined);
+
+    // act
+    await compare(paths[0], paths[1], {
+      output: dir,
+      reuseOutput: true,
+      useOcr: false,
+      identicalMessage: 'Both referred.'
+    });
+
+    // assert
+    const lines = log.mock.calls.map((call) => String(call.arguments[0]));
+    assert.ok(
+      lines.some((line) => line.startsWith(expected)),
+      lines.join('\n')
+    );
+    assert.equal(
+      lines.some((line) => line.includes('Both referred.')),
+      after === '#fff'
+    );
+  });
+}

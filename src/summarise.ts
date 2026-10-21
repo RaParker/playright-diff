@@ -5,6 +5,13 @@ import { color, failureColor } from './color.js';
 import type { ComparisonReportBasics } from './compare.js';
 import { isMissing, parseJson, readDirectoryNames, readOptionalTextFile } from './fs-helpers.js';
 import { fetchedHistoryId, filterMissingMrpFiles } from './mrp-fetch.js';
+import {
+  classifyComparison,
+  describeEndpoints,
+  formatComparisonCounts,
+  type ComparisonKind,
+  type QuoteEndpoints
+} from './quote-endpoint.js';
 import { readQuoteGuidList } from './quote-guid-list.js';
 import { readQuoteResult, type QuoteResult } from './quote-result.js';
 import { outputPath, policyFolderPattern } from './output-paths.js';
@@ -49,12 +56,20 @@ export interface ComparedPolicy {
   textDifferences: TextDifference[];
   /** True when NHI and TCAS listed the endorsements in different orders, put in standard order before comparing. */
   endorsementOrderDiffers: boolean;
+  /** Where each flow ended, when the run recorded it (earlier versions did not, and compared only quotes). */
+  endpoints?: QuoteEndpoints;
+  /**
+   * How the comparison counts: identical, different (changed pixels, or the flows ended differently), or matching on a
+   * referral, conditional quote or decline.
+   */
+  kind: ComparisonKind;
 }
 
 /** Everything the summarise command found in the output folder. */
 export interface QuoteResultsSummary {
   root: string;
   compared: ComparedPolicy[];
+  /** Policies an earlier version recorded as both declined, without comparing them. */
   declined: string[];
   failed: (QuoteResult & { name: string })[];
   /** Policy folders with neither a `result.json` nor a `report.json`. */
@@ -149,7 +164,7 @@ export async function collectQuoteResults(root: string): Promise<QuoteResultsSum
     } else if (report === undefined) {
       summary.unrecorded.push(name);
     } else {
-      summary.compared.push(summariseReport(name, report, result?.endorsementOrder !== undefined));
+      summary.compared.push(summariseReport(name, report, result?.endorsementOrder !== undefined, result?.endpoints));
     }
   }
 
@@ -212,14 +227,14 @@ export async function collectGuidListStatus(
 }
 
 /**
- * Lists the compared policies whose NHI and TCAS screenshots differ (any changed pixel), the policies the summary
- * counts as different, for `quote-pages -- retry-different`.
+ * Lists the compared policies whose NHI and TCAS screenshots differ (any changed pixel) or whose flows ended
+ * differently, the policies the summary counts as different, for `quote-pages -- retry-different`.
  * @param summary The results summary.
  * @returns Each different policy's ID and history ID, taken from its folder name, in folder order.
  */
 export function listDifferentPolicies(summary: QuoteResultsSummary): { policyDetailsId: string; historyId: number }[] {
   return summary.compared
-    .filter(({ changedPixels }) => changedPixels > 0)
+    .filter(({ kind }) => kind === 'different')
     .map(({ name }) => {
       const separator = name.lastIndexOf('-');
       return { policyDetailsId: name.slice(0, separator), historyId: Number(name.slice(separator + 1)) };
@@ -304,6 +319,7 @@ function printQuoteResultsSummary(
 ): void {
   console.log(color.Cyan(`Quote results summary (${summary.root})`));
   printDifferenceSections(summary.compared);
+  printMatchingEndpoints(summary.compared.filter(isMatchingEndpoint));
   printFailedPolicies(summary.failed);
   printFailureReasons(countFailureReasons(summary.failed));
   if (summary.unrecorded.length > 0) {
@@ -315,7 +331,7 @@ function printQuoteResultsSummary(
 }
 
 function printDifferentPolicies({ root, compared }: QuoteResultsSummary): void {
-  const count = compared.filter((policy) => policy.changedPixels > 0).length;
+  const count = compared.filter(({ kind }) => kind === 'different').length;
   const different = `${count} different`;
   console.log(color.Cyan(`Different quote results (${root})`));
   printDifferenceSections(compared, root);
@@ -367,6 +383,18 @@ function printTextDifferences(policies: ComparedPolicy[], folderRoot: string | u
   }
 }
 
+/** Lists the policies whose flows both ended on the same referral, conditional quote or decline, with matching screenshots. */
+function printMatchingEndpoints(policies: ComparedPolicy[]): void {
+  if (policies.length === 0) {
+    return;
+  }
+
+  console.log(`\n${color.Cyan(`Matching referrals, conditional quotes and declines (${policies.length})`)}`);
+  for (const policy of policies) {
+    console.log(`  ${policy.name}  ${color.Yellow(describeEndpoints(policy.endpoints) ?? '')}`);
+  }
+}
+
 function printCommonTextChanges(changes: { change: string; count: number }[]): void {
   if (changes.length === 0) {
     return;
@@ -415,20 +443,19 @@ function printTotals(
   oops: OopsCount[],
   guidList: GuidListStatus | undefined
 ): void {
-  const identical = compared.filter((policy) => policy.changedPixels === 0).length;
   const withText = compared.filter((policy) => policy.textDifferences.length > 0).length;
   const total = compared.length + declined.length + failed.length + unrecorded.length;
-  const different = `${compared.length - identical} different`;
   const failedCount = `${failed.length} failed`;
   const allValidation = failed.every((result) => result.validation);
+  const notCompared = `${declined.length} both declined before declines were compared (run them again)`;
   console.log(`\n${color.Cyan('Totals')}`);
   printGuidListTotals(guidList);
   console.log(
-    `${total} policies: ${compared.length} compared (${color.Green(`${identical} identical`)}, ${
-      identical === compared.length ? different : color.Yellow(different)
-    }, ${withText} with text changes), ${declined.length} both declined, ${
-      failed.length > 0 ? failureColor(allValidation)(failedCount) : failedCount
-    }${unrecorded.length > 0 ? `, ${unrecorded.length} without a result` : ''}.`
+    `${total} policies: ${compared.length} compared (${formatComparisonCounts(compared.map(({ kind }) => kind))}, ${withText} with text changes), ${
+      declined.length > 0 ? `${color.Yellow(notCompared)}, ` : ''
+    }${failed.length > 0 ? failureColor(allValidation)(failedCount) : failedCount}${
+      unrecorded.length > 0 ? `, ${unrecorded.length} without a result` : ''
+    }.`
   );
   const oopsCounts = oops.map(
     ({ flow, total, recovered }) => `${flow} ${total} (${recovered} later compared or declined)`
@@ -459,7 +486,11 @@ function printGuidListTotals(guidList: GuidListStatus | undefined): void {
 }
 
 function isVisualOnly(policy: ComparedPolicy): boolean {
-  return policy.changedPixels > 0 && policy.textDifferences.length === 0;
+  return policy.kind === 'different' && policy.textDifferences.length === 0;
+}
+
+function isMatchingEndpoint(policy: ComparedPolicy): boolean {
+  return policy.kind !== 'identical' && policy.kind !== 'different';
 }
 
 function policyLabel(name: string, folderRoot: string | undefined): string {
@@ -467,18 +498,29 @@ function policyLabel(name: string, folderRoot: string | undefined): string {
 }
 
 function describeChange(policy: ComparedPolicy): string {
-  const change = `${policy.changedPercent.toFixed(2)}% changed`;
-  return policy.sizeDifference === undefined ? change : `${change}, page sizes differ: ${policy.sizeDifference}`;
+  const endpoints = describeEndpoints(policy.endpoints);
+  return [
+    `${policy.changedPercent.toFixed(2)}% changed`,
+    ...(endpoints === undefined ? [] : [endpoints]),
+    ...(policy.sizeDifference === undefined ? [] : [`page sizes differ: ${policy.sizeDifference}`])
+  ].join(', ');
 }
 
 function describeLines(lines: string[]): string {
   return lines.length === 0 ? '(nothing)' : lines.join(' / ');
 }
 
-function summariseReport(name: string, report: ComparisonReport, endorsementOrderDiffers: boolean): ComparedPolicy {
+function summariseReport(
+  name: string,
+  report: ComparisonReport,
+  endorsementOrderDiffers: boolean,
+  endpoints: QuoteEndpoints | undefined
+): ComparedPolicy {
   const { before, after } = report.dimensions;
   const sameSize = before.width === after.width && before.height === after.height;
   return {
+    ...(endpoints === undefined ? {} : { endpoints }),
+    kind: classifyComparison(report.changedPixels, endpoints),
     name,
     changedPixels: report.changedPixels,
     changedPercent: report.changedPercent,
