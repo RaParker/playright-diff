@@ -20,11 +20,22 @@ export interface CompareOptions {
   useOcr?: boolean;
 }
 
+/** How much two compared screenshots differ. */
+export interface ComparisonCounts {
+  changedPixels: number;
+  /** Changed regions whose recognised text differs; always 0 when OCR is disabled. */
+  textChangedRegions: number;
+}
+
+/**
+ * Compares two screenshots, writing a highlighted `diff.png`, each changed region's images and the report.
+ * @returns The changed pixel count and how many changed regions' text differs.
+ */
 export async function compare(
   beforeArgument: string,
   afterArgument: string,
   options: CompareOptions = {}
-): Promise<void> {
+): Promise<ComparisonCounts> {
   const threshold = options.threshold ?? 20;
   const language = options.language ?? 'eng';
   const useOcr = options.useOcr ?? true;
@@ -56,6 +67,7 @@ export async function compare(
   const summary = `${changedPixels} changed pixels (${report.changedPercent.toFixed(2)}%). Report: ${join(output, 'report.md')}`;
   // Green for identical images, yellow when there are differences to review.
   console.log(changedPixels === 0 ? color.Green(summary) : color.Yellow(summary));
+  return { changedPixels, textChangedRegions: regions.filter((region) => region.textChanges.length > 0).length };
 }
 
 async function load(path: string) {

@@ -283,19 +283,22 @@ even when a download fails.
 
 A failed policy is reported and the run continues. At the end,
 after a blank line, a summary lists the counts and then each failed policy with its issues
-indented below it (only the issues and the failed count are coloured: yellow for validation
-failures, otherwise red; the count is yellow only when every failure is a validation failure):
+indented below it. Compared policies are split into identical and different, as
+[`summarise`](#summarise) does, plus how many have text changes (left out with
+`--no-ocr`). Only the counts and issues are coloured: identical green, different yellow when
+any differ, and failures yellow for validation failures, otherwise red (the failed count is
+yellow only when every failure is a validation failure):
 
 ```text
 Quote pages summary
-9 passed (2 both declined), 1 failed.
+10 policies: 7 compared (3 identical, 4 different, 2 with text changes), 2 both declined, 1 failed.
 8230224DF66644A1A52173E3757EE8BD-1
   Quote capture failed; comparison skipped.
   NHI: Website displayed <h2>Oops</h2>; stopping the journey. (https://…)
 ```
 
-The exit code is non-zero if any policy failed. A policy where
-[both sides declined](#declined-quotes) counts as passed.
+The exit code is non-zero only if a policy failed. Policies that differ, and policies where
+[both sides declined](#declined-quotes), are not failures.
 
 #### Retrying failures
 
@@ -304,7 +307,7 @@ policy IDs, history ID and issues; a run where nothing failed deletes the file. 
 git-ignored. The file is also saved as the run starts and after each policy, listing the
 policies not finished yet with the issue `Not finished: the run stopped before this policy
 completed.`, so a run stopped part way (for example with Ctrl+C) leaves its failures and
-every unfinished policy for `retry-failed`. `npm run quote-pages -- retry-failed` reruns only those policies — passed
+every unfinished policy for `retry-failed`. `npm run quote-pages -- retry-failed` reruns only those policies — compared and declined
 policies and their output are left alone — then replaces the file with the ones still
 failing (or deletes it when all pass), so repeated retries shrink the list. Replacement GUIDs
 already in `quote-guid-mapping.json` are reused. With no file it prints

@@ -759,7 +759,7 @@ describe('QUOTE_PAGE_TIMEOUT', () => {
 });
 
 describe('quote-pages', () => {
-  test('counts policies where both sides declined as passed', async () => {
+  test('counts compared policies as identical or different, and both-declined ones apart', async () => {
     await withServer(decliningHandler(['guid-a', policyA]), async (base) => {
       // arrange
       const { directory, env } = await fixture(base, { [`${policyA}-1`]: 'guid-a', [`${policyB}-1`]: 'guid-b' });
@@ -770,7 +770,7 @@ describe('quote-pages', () => {
 
       // assert
       assert.equal(result.code, 0, result.output);
-      assert.match(result.plain, /2 passed \(1 both declined\), 0 failed/);
+      assert.match(result.plain, /2 policies: 1 compared \(0 identical, 1 different\), 1 both declined, 0 failed/);
       // A clean list run leaves no saved failures file behind.
       await assert.rejects(readFailed(directory), { code: 'ENOENT' });
     });
@@ -787,7 +787,10 @@ describe('quote-pages', () => {
 
       // assert
       assert.equal(result.code, 0, result.output);
-      assert.match(result.plain, /\n\nQuote pages summary\n1 passed \(0 both declined\), 0 failed\.\n/);
+      assert.match(
+        result.plain,
+        /\n\nQuote pages summary\n1 policy: 1 compared \(0 identical, 1 different\), 0 both declined, 0 failed\.\n/
+      );
       assert.ok(result.output.includes(`\u001b[36m[1/1] ${policyA}-1`), result.output);
       assert.ok(requests.includes(`/tcas/${policyA}/1`));
       assert.ok(!requests.some((path) => path.startsWith('/tcas-replacement/')));
@@ -806,11 +809,15 @@ describe('quote-pages', () => {
 
       // assert
       assert.notEqual(result.code, 0);
-      assert.match(result.plain, /Quote pages summary\n1 passed \(0 both declined\), 1 failed\.\n/);
+      assert.match(
+        result.plain,
+        /Quote pages summary\n2 policies: 1 compared \(0 identical, 1 different\), 0 both declined, 1 failed\.\n/
+      );
       assert.match(result.plain, new RegExp(`\n${policyA}-1\n  No saved MRP for this quote`));
       assert.match(result.plain, /1 of 2 quote pages failed; see the summary above\./);
-      // Only the issues and the failed count are red, not the whole summary.
-      assert.ok(result.output.includes('\u001b[32m1 passed'), result.output);
+      // Only the counts and the issues are coloured, not the whole summary: identical green, different yellow.
+      assert.ok(result.output.includes('\u001b[32m0 identical'), result.output);
+      assert.ok(result.output.includes('\u001b[33m1 different'), result.output);
       assert.ok(result.output.includes(`\n${policyA}-1\n`), result.output);
       assert.ok((await readdir(join(directory, `${policyB}-1`))).includes('nhi.png'));
       const saved = await readFailed(directory);
@@ -848,7 +855,10 @@ describe('quote-pages', () => {
       // assert
       assert.notEqual(result.code, 0);
       assert.match(result.plain, /Retrying 2 failed policies from quote-pages-failed\.json/);
-      assert.match(result.plain, /Quote pages summary\n1 passed \(0 both declined\), 1 failed\.\n/);
+      assert.match(
+        result.plain,
+        /Quote pages summary\n2 policies: 1 compared \(0 identical, 1 different\), 0 both declined, 1 failed\.\n/
+      );
       assert.ok(requests.includes(`/tcas/${policyB}/1`));
       assert.ok(!requests.some((path) => path.includes(policyC) || path.includes('guid-c')));
       const saved = await readFailed(directory);
@@ -1003,7 +1013,10 @@ ${policyB}
       assert.equal(result.code, 0, result.output);
       assert.match(result.plain, /\n\[1\/2 ABCDEF12\] NHI: opening /);
       assert.match(result.plain, /\n\[2\/2 11111111\] NHI: opening /);
-      assert.match(result.plain, /\n\nQuote pages summary\n2 passed \(0 both declined\), 0 failed\.\n/);
+      assert.match(
+        result.plain,
+        /\n\nQuote pages summary\n2 policies: 2 compared \(0 identical, 2 different\), 0 both declined, 0 failed\.\n/
+      );
     });
   });
 
@@ -1036,7 +1049,10 @@ ${policyB}
       // assert
       assert.equal(result.code, 0, result.output);
       assert.match(result.plain, /Skipping 1 repeated policy ID; each policy runs once\./);
-      assert.match(result.plain, /Quote pages summary\n2 passed \(0 both declined\), 0 failed\.\n/);
+      assert.match(
+        result.plain,
+        /Quote pages summary\n2 policies: 2 compared \(0 identical, 2 different\), 0 both declined, 0 failed\.\n/
+      );
       assert.equal(requests.filter((path) => path === `/tcas/${policyA}/1`).length, 1);
     });
   });
@@ -1097,7 +1113,10 @@ ${policyB}
 
       // assert
       assert.notEqual(result.code, 0);
-      assert.match(result.plain, /Quote pages summary\n1 passed \(0 both declined\), 2 failed\.\n/);
+      assert.match(
+        result.plain,
+        /Quote pages summary\n3 policies: 1 compared \(0 identical, 1 different\), 0 both declined, 2 failed\.\n/
+      );
       const saved = await readFailed(directory);
       assert.deepEqual(
         saved.failed.map(({ policyDetailsId }) => policyDetailsId),
@@ -1119,7 +1138,10 @@ ${policyB}
       assert.notEqual(result.code, 0);
       assert.match(result.plain, /1 of 2 policies have no MRP file and will fail; not fetching \(--no-fetch\)\./);
       assert.doesNotMatch(result.plain, /not the mrp-and-quote project/);
-      assert.match(result.plain, /Quote pages summary\n1 passed \(0 both declined\), 1 failed\.\n/);
+      assert.match(
+        result.plain,
+        /Quote pages summary\n2 policies: 1 compared \(0 identical, 1 different\), 0 both declined, 1 failed\.\n/
+      );
       assert.match(result.plain, new RegExp(`\n${policyA}-1\n  No saved MRP for this quote`));
     });
   });

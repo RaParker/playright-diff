@@ -10,7 +10,7 @@ import {
 } from './answer-changes.js';
 import { apiResponsesFolder } from './api-responses.js';
 import { color, failureColor } from './color.js';
-import { compare } from './compare.js';
+import { compare, type ComparisonCounts } from './compare.js';
 import { runConcurrently, validateConcurrency } from './concurrency.js';
 import { isMissing, parseJson, readOptionalTextFile } from './fs-helpers.js';
 import { runWithLogPrefix, withPrefixedConsole } from './log-context.js';
@@ -58,8 +58,11 @@ export interface QuotePageOptions {
  */
 const maskedSelectors = ['.hp-footer'];
 
-/** How one quote-page run ended: both sides quoted and were compared, or both declined (nothing to compare). */
-export type QuotePageResult = 'compared' | 'declined';
+/**
+ * How one quote-page run ended: both sides quoted and were compared (with how much they differ), or both declined
+ * (nothing to compare).
+ */
+export type QuotePageResult = { outcome: 'compared'; comparison: ComparisonCounts } | { outcome: 'declined' };
 
 /** How one capture ended: the quote page was captured, or the site declined to quote. */
 type CaptureOutcome = 'captured' | 'declined';
@@ -94,7 +97,8 @@ export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
  * @param policyArgument TCAS policy details ID (32 hexadecimal characters).
  * @param historyId TCAS history ID.
  * @param options Input folder, URL templates and the optional NHI Oops fallback.
- * @returns `'compared'`, or `'declined'` when both sides declined to quote (the comparison is skipped).
+ * @returns `'compared'` with the comparison's counts, or `'declined'` when both sides declined to quote (the comparison
+ * is skipped).
  * @throws When the inputs are invalid, a capture fails, or only one side declined to quote. A
  * {@link ValidationError} when every failed capture stopped on a validation error.
  */
@@ -130,16 +134,16 @@ export async function quotePage(
   }
 
   await saveAnswerChanges(policyDetailsId, historyId, changes);
-  const { outcome, endorsementOrder } = result;
+  const { quotePageResult, endorsementOrder } = result;
   await saveQuoteResult({
     ...run,
-    outcome,
+    outcome: quotePageResult.outcome,
     validation: false,
     issues: [],
     ...(endorsementOrder === undefined ? {} : { endorsementOrder }),
     finishedAt: new Date().toISOString()
   });
-  return outcome;
+  return quotePageResult;
 }
 
 /** Default number of policies {@link quotePages} runs at once. */
@@ -158,7 +162,7 @@ export interface QuotePagesOptions extends QuotePageOptions {
 }
 
 /** How one policy of a quote-pages run ended. */
-type PolicyRunOutcome = { status: QuotePageResult } | { status: 'failed'; message: string; validation: boolean };
+type PolicyRunOutcome = QuotePageResult | { outcome: 'failed'; message: string; validation: boolean };
 
 /**
  * Runs {@link quotePage} for each policy, several at once, continuing past failures. Repeated IDs (in any case) run
@@ -170,7 +174,8 @@ type PolicyRunOutcome = { status: QuotePageResult } | { status: 'failed'; messag
  * @param failedPath File that the run's failed policies replace, for `quote-pages -- retry-failed`; not written when omitted.
  * It is saved as the run starts and after each policy, listing the policies not finished yet as failed too, so a run
  * that is stopped part way leaves them all to retry. After all runs, saves the failed policies in list order (deleting
- * the file when none failed), then prints a summary: the counts, then each failed policy with its issues.
+ * the file when none failed), then prints a summary: the counts (compared policies split into identical and different),
+ * then each failed policy with its issues.
  * @throws When the concurrency is out of range, or after all runs when any policy failed. Policies where
  * both sides declined are not failures.
  */
@@ -204,15 +209,21 @@ export async function quotePages(
   const validationFailures = new Set(
     policyDetailsIds.filter((_policyDetailsId, index) => {
       const outcome = outcomes[index];
-      return outcome?.status === 'failed' && outcome.validation;
+      return outcome?.outcome === 'failed' && outcome.validation;
     })
   );
-  const declined = outcomes.filter((outcome) => outcome?.status === 'declined').length;
+  const compared = outcomes.flatMap((outcome) => (outcome?.outcome === 'compared' ? [outcome.comparison] : []));
+  const declined = outcomes.filter((outcome) => outcome?.outcome === 'declined').length;
   if (failedPath !== undefined) {
     await writeFailedQuotePages(failedPath, { historyId, failed: failures });
   }
 
-  printSummary(policyDetailsIds.length, historyId, declined, failures, validationFailures);
+  printSummary(
+    { total: policyDetailsIds.length, compared, declined, useOcr: options.useOcr ?? true },
+    historyId,
+    failures,
+    validationFailures
+  );
   if (failures.length > 0 && failedPath !== undefined) {
     console.log(
       color.Gray(`Failed policies saved to ${failedPath}; retry them with npm run quote-pages -- retry-failed`)
@@ -235,7 +246,7 @@ function listFailures(policyDetailsIds: string[], outcomes: (PolicyRunOutcome | 
       return [{ policyDetailsId, issues: [unfinishedIssue] }];
     }
 
-    return outcome.status === 'failed' ? [{ policyDetailsId, issues: outcome.message.split('\n') }] : [];
+    return outcome.outcome === 'failed' ? [{ policyDetailsId, issues: outcome.message.split('\n') }] : [];
   });
 }
 
@@ -302,25 +313,25 @@ async function runPolicy(
   options: QuotePageOptions
 ): Promise<PolicyRunOutcome> {
   try {
-    return { status: await quotePage(policyDetailsId, historyId, options) };
+    return await quotePage(policyDetailsId, historyId, options);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const validation = error instanceof ValidationError;
     console.error(failureColor(validation)(message));
-    return { status: 'failed', message, validation };
+    return { outcome: 'failed', message, validation };
   }
 }
 
 /** How {@link captureAndCompare} ended, with the endorsement orders when the two quote pages listed them differently. */
 interface CaptureAndCompareResult {
-  outcome: QuotePageResult;
+  quotePageResult: QuotePageResult;
   endorsementOrder?: EndorsementOrder;
 }
 
 /**
  * Captures both flows for a policy whose ID is valid, then compares them unless a side failed or declined.
- * @returns `'compared'`, or `'declined'` when both sides declined, and when they were compared and listed the
- * endorsements in different orders, each flow's order.
+ * @returns `'compared'` with the comparison's counts, or `'declined'` when both sides declined, and when they were
+ * compared and listed the endorsements in different orders, each flow's order.
  * @throws As {@link quotePage}.
  */
 async function captureAndCompare(
@@ -407,7 +418,7 @@ async function captureAndCompare(
   const tcasOutcome = tcas.status === 'fulfilled' ? tcas.value : undefined;
   if (nhiOutcome === 'declined' && tcasOutcome === 'declined') {
     console.log('NHI and TCAS both declined the quote; comparison skipped.');
-    return { outcome: 'declined' };
+    return { quotePageResult: { outcome: 'declined' } };
   }
 
   if (nhiOutcome === 'declined' || tcasOutcome === 'declined') {
@@ -417,8 +428,15 @@ async function captureAndCompare(
     );
   }
 
-  await compare(nhiPath, tcasPath, { output: outputPath(basename), reuseOutput: true, useOcr: options.useOcr });
-  return { outcome: 'compared', endorsementOrder: await readEndorsementOrder(nhiPath, tcasPath) };
+  const comparison = await compare(nhiPath, tcasPath, {
+    output: outputPath(basename),
+    reuseOutput: true,
+    useOcr: options.useOcr
+  });
+  return {
+    quotePageResult: { outcome: 'compared', comparison },
+    endorsementOrder: await readEndorsementOrder(nhiPath, tcasPath)
+  };
 }
 
 /**
@@ -609,22 +627,40 @@ async function captureAt(label: string, url: string, options: ScreenshotOptions)
   }
 }
 
+/** The counts a quote-pages summary prints, apart from the failures. */
+interface QuotePagesCounts {
+  total: number;
+  /** Each compared policy's comparison counts. */
+  compared: ComparisonCounts[];
+  declined: number;
+  /** Whether the comparisons read text, so text changes are counted. */
+  useOcr: boolean;
+}
+
 /**
  * Prints the quote-pages summary: a title, the counts, then each failed policy with its issues indented below it.
- * Validation failures are yellow and other failures red; the failed count is yellow only when every failure is one.
+ * Compared policies are split into identical (green) and different (yellow when any differ), as `summarise` does, plus
+ * how many have text changes when OCR is on. Validation failures are yellow and other failures red; the failed count
+ * is yellow only when every failure is one.
  */
 function printSummary(
-  total: number,
+  { total, compared, declined, useOcr }: QuotePagesCounts,
   historyId: number,
-  declined: number,
   failures: FailedQuotePage[],
   validationFailures: Set<string>
 ): void {
+  const identical = compared.filter(({ changedPixels }) => changedPixels === 0).length;
+  const different = `${compared.length - identical} different`;
+  const withText = compared.filter(({ textChangedRegions }) => textChangedRegions > 0).length;
   const failed = `${failures.length} failed`;
   const allValidation = failures.every(({ policyDetailsId }) => validationFailures.has(policyDetailsId));
   console.log(`\n${color.Cyan('Quote pages summary')}`);
   console.log(
-    `${color.Green(`${total - failures.length} passed`)} (${declined} both declined), ${failures.length > 0 ? failureColor(allValidation)(failed) : failed}.`
+    `${total} ${total === 1 ? 'policy' : 'policies'}: ${compared.length} compared (${color.Green(`${identical} identical`)}, ${
+      identical === compared.length ? different : color.Yellow(different)
+    }${useOcr ? `, ${withText} with text changes` : ''}), ${declined} both declined, ${
+      failures.length > 0 ? failureColor(allValidation)(failed) : failed
+    }.`
   );
   for (const { policyDetailsId, issues } of failures) {
     console.log(`${policyDetailsId}-${historyId}`);
