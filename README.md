@@ -852,14 +852,19 @@ GUID, TCAS is captured from `QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE` instea
 exactly as the endpoint returned it. Logs show
 `TCAS: using replacement quote GUID <GUID> to match NHI.`
 
-The replacement's quote summary shows the quote NHI saved, not TCAS's own pricing. So once the
-quote appears, TCAS always re-quotes it: it opens **Contact details** from the timeline and clicks
-**Return to quote**, which posts the answers to `/api/save-details` even when none changed. That
-prices them through QuoteJourneyService and the Policy API, as **Get your quote** does at the end
-of the original TCAS journey, so differences that only appear after a re-quote (such as cover the
-Policy API doesn't allow, or an accidental damage level reported as "None") are captured. Logs
-show `TCAS: opening Contact details to re-quote.`; errors on the way back to the quote are fixed
-as on the [quote summary](#quote-summary-and-assumptions).
+Once the quote appears, TCAS always re-quotes it: it opens **Contact details** from the timeline
+and clicks **Return to quote**, which posts the answers to `/api/save-details` even when none
+changed. That prices them through QuoteJourneyService and the Policy API, as **Get your quote**
+does at the end of the original TCAS journey, so differences that only appear after a re-quote
+(such as cover the Policy API doesn't allow, or an accidental damage level reported as "None") are
+captured. Logs show `TCAS: opening Contact details to re-quote.`; errors on the way back to the
+quote are fixed as on the [quote summary](#quote-summary-and-assumptions).
+
+Until QuestionSetQuote PR 25403 (merged into `feature` on 2026-10-21) and its follow-up PR 25411,
+the quote summary for `source=tcas` and a GUID was priced by NHI, so the TCAS page showed NHI's
+cover until the re-quote. With them deployed it is priced through QuoteJourneyService's quote-GUID
+endpoint from the start, and QuestionSetQuote rejects with a 400 any `/api` request that sends
+`nhi` or `generateNhiGuid` with `source=tcas`. See [open issue 8](docs/open-issues.md).
 
 - **New replacement:** TCAS first runs concurrently for the original policy (the replacement
   isn't known yet), then runs again for the replacement once NHI has saved it. The second
