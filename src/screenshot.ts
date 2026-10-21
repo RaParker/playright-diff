@@ -22,6 +22,22 @@ export interface ScreenshotOptions {
    * fails (see {@link recordApiResponses}); nothing is saved when omitted.
    */
   apiResponsesFolder?: string;
+  /** Saves the page's HTML beside the screenshot, before and after standardising it (see {@link PageHtmlOptions}). */
+  html?: PageHtmlOptions;
+}
+
+/**
+ * The page HTML a capture saves, and the change it makes to the page just before the screenshot, so content that
+ * differs only in ways that do not matter, such as the order of a list, cannot show up as a difference. Both files are
+ * the rendered DOM (React builds the page in the browser), saved only when the screenshot is.
+ */
+export interface PageHtmlOptions {
+  /** File the HTML is saved to as the site rendered it. */
+  output: string;
+  /** File the HTML is saved to after {@link PageHtmlOptions.standardise} changed it, as the screenshot shows it. */
+  standardisedOutput: string;
+  /** Changes the page just before the screenshot. */
+  standardise: (page: Page) => Promise<void>;
 }
 
 /** Colour painted over masked elements: a flat grey, so masked areas are easy to spot in the images. */
@@ -140,7 +156,14 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
     loadingTimeouts.set(page, timeout * loadingTimeoutMultiplier);
     const { failure, isStopped } = await watchForStops(page);
     await Promise.race([
-      capturePage(page, url.href, { output, extension, wait, isStopped }, options.beforeCapture, options.mask),
+      capturePage(
+        page,
+        url.href,
+        { output, extension, wait, isStopped },
+        options.beforeCapture,
+        options.mask,
+        options.html
+      ),
       failure
     ]);
     console.log(`Screenshot saved to ${output}`);
@@ -159,7 +182,7 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
           animations: 'disabled'
         });
         // The rendered DOM (React builds the page in the browser), saved for turning into test fixtures.
-        await writeFile(`${failedOutput}.html`, await page.evaluate(() => document.documentElement.outerHTML));
+        await writeFile(`${failedOutput}.html`, await readPageHtml(page));
         const saved = `${declined ? 'Declined' : 'Failure'} screenshot and HTML saved to ${failedOutput}.png/.html`;
         console.error(declined ? saved : error instanceof ValidationError ? color.Yellow(saved) : color.Red(saved));
       } catch (captureError) {
@@ -190,7 +213,8 @@ async function capturePage(
   url: string,
   { output, extension, wait, isStopped }: CaptureTarget,
   beforeCapture?: (page: Page) => Promise<void>,
-  mask: string[] = []
+  mask: string[] = [],
+  html?: PageHtmlOptions
 ): Promise<void> {
   const response = await page.goto(url, { waitUntil: 'load' });
   if (response !== null && !response.ok()) {
@@ -207,6 +231,9 @@ async function capturePage(
   await mkdir(dirname(output), { recursive: true });
   await waitForQuoteLoading(page);
   await checkForStops(page);
+  const originalHtml = html === undefined ? undefined : await readPageHtml(page);
+  await html?.standardise(page);
+  const standardisedHtml = html === undefined ? undefined : await readPageHtml(page);
   const image = await page.screenshot({
     type: extension === '.png' ? 'png' : 'jpeg',
     fullPage: true,
@@ -221,6 +248,14 @@ async function capturePage(
   }
 
   await writeFile(output, image);
+  if (html !== undefined) {
+    await writeFile(html.output, originalHtml ?? '');
+    await writeFile(html.standardisedOutput, standardisedHtml ?? '');
+  }
+}
+
+async function readPageHtml(page: Page): Promise<string> {
+  return page.evaluate(() => document.documentElement.outerHTML);
 }
 
 async function checkForStops(page: Page): Promise<void> {

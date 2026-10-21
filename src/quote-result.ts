@@ -9,6 +9,12 @@ export const quoteResultFileName = 'result.json';
 /** How a quote-page run ended: compared, both sides declined, or failed. */
 export type QuoteOutcome = 'compared' | 'declined' | 'failed';
 
+/** The endorsement titles each flow's quote page listed, in the order shown before it was standardised. */
+export interface EndorsementOrder {
+  nhi: string[];
+  tcas: string[];
+}
+
 /** The saved result of one quote-page run, read back by the summarise command. */
 export interface QuoteResult {
   policyDetailsId: string;
@@ -18,6 +24,11 @@ export interface QuoteResult {
   validation: boolean;
   /** The failure message, one line per entry; empty unless the run failed. */
   issues: string[];
+  /**
+   * Set only when the quote pages were compared and listed the endorsements differently. The screenshots show them in
+   * standard order, so a difference in order alone does not show up in the comparison.
+   */
+  endorsementOrder?: EndorsementOrder;
   /** ISO 8601 time the run started; failure pages older than this are from an earlier run. */
   startedAt: string;
   /** ISO 8601 time the run finished. */
@@ -78,6 +89,22 @@ function isQuoteResult(value: unknown): value is QuoteResult {
     'startedAt' in value &&
     typeof value.startedAt === 'string' &&
     'finishedAt' in value &&
-    typeof value.finishedAt === 'string'
+    typeof value.finishedAt === 'string' &&
+    (!('endorsementOrder' in value) || isEndorsementOrder(value.endorsementOrder))
   );
+}
+
+function isEndorsementOrder(value: unknown): value is EndorsementOrder {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'nhi' in value &&
+    isStringArray(value.nhi) &&
+    'tcas' in value &&
+    isStringArray(value.tcas)
+  );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }

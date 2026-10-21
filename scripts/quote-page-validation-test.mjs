@@ -258,10 +258,18 @@ for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].ma
       );
       assert.match((await readFailedResult(directory)).issues.join('\n'), /Website displayed <h2>Oops<\/h2>/);
       assert.doesNotMatch(result.output, /Report:/);
-      // The other flow's screenshot and this flow's failure page, but no comparison.
+      // The other flow's screenshot and quote page HTML and this flow's failure page, but no comparison.
+      const other = flow === 'nhi' ? 'tcas' : 'nhi';
       assert.deepEqual(
         (await readdir(join(directory, 'ABCDEF1234567890ABCDEF1234567890-42'))).sort(),
-        [`${flow === 'nhi' ? 'tcas' : 'nhi'}.png`, `${flow}-failed.html`, `${flow}-failed.png`, 'result.json'].sort()
+        [
+          `${other}.png`,
+          `${other}-quote-page.html`,
+          `${other}-quote-page-standardized.html`,
+          `${flow}-failed.html`,
+          `${flow}-failed.png`,
+          'result.json'
+        ].sort()
       );
     } finally {
       server.closeAllConnections();

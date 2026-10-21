@@ -173,6 +173,8 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   ```text
   <ID>-<historyId>/
   ├── nhi.png, tcas.png              screenshots (NHI = before, TCAS = after)
+  ├── nhi-quote-page.html            the captured page's HTML as rendered (likewise tcas)
+  ├── nhi-quote-page-standardized.html  the same, standardised as screenshotted (likewise tcas)
   ├── nhi-failed.png, .html          when a flow failed (likewise tcas-failed)
   ├── nhi-declined.png, .html        when a flow declined (likewise tcas-declined)
   ├── nhi-api/, tcas-api/            API responses (see below)
@@ -190,7 +192,9 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
 - **Result:** every run with a valid policy and history ID ends by writing
   `<ID>-<historyId>/result.json` — `outcome` (`compared`, `declined` or `failed`),
   `validation`, the failure `issues` (one line each), `startedAt` and `finishedAt` — for
-  [summarise](#summarise). A run that stops before capturing (for example with no saved MRP)
+  [summarise](#summarise). When the two quote pages listed the endorsements in different
+  orders, it also has `endorsementOrder` (`nhi` and `tcas`, each the titles in the order shown;
+  see Standardised page below). A run that stops before capturing (for example with no saved MRP)
   writes only this file and leaves the previous screenshots alone. If the file cannot be
   written, a yellow `Could not save the result of …` warning is shown and the run still passes
   or fails on its own result.
@@ -214,6 +218,16 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   changes. Real footer differences, such as a build version, are therefore not caught. Add
   selectors to `maskedSelectors` in `src/quote-page.ts` to mask other areas. Existing
   comparisons change only when their policies are rerun.
+- **Standardised page:** just before each screenshot, the quote page's endorsements (the
+  `.hp-endorsements-info` card) are put in title order, because NHI and TCAS list the same
+  endorsements in different, but stable, orders. A difference in order alone therefore does not
+  show up in the comparison, while any difference in wording still does. When the step moves
+  anything it logs the order shown, such as
+  `TCAS: endorsements put in standard order; shown as: Unoccupancy clause, Bike security endorsement.`
+  Both versions of the page are kept: `nhi-quote-page.html` as the site rendered it and
+  `nhi-quote-page-standardized.html` as screenshotted (likewise `tcas`), whether or not anything
+  moved. If the orders differed, `result.json` records both (`endorsementOrder`) and
+  [summarise](#summarise) counts the policy. The step lives in `src/standardise-page.ts`.
 
 See [How quote-page works](#how-quote-page-works) for the journey, error handling and the
 NHI Oops fallback.
@@ -340,6 +354,7 @@ Totals
 GUID list: 1264 policies (…/quoteGuids.txt); 1236 with a result, 28 without; 10 MRP records not retrieved.
 1237 policies: 1237 compared (833 identical, 404 different, 67 with text changes), 0 both declined, 0 failed.
 Oops pages: NHI 957 (953 later compared or declined), TCAS 10 (1 later compared or declined).
+Endorsement order: 12 compared after putting NHI's and TCAS's different orders in standard order (11 then identical).
 ```
 
 - **GUID list:** read from `QUOTE_GUID_LIST_PATH` and `MRP_AND_QUOTE_OUTPUT_DIR` in `.env`.
@@ -350,6 +365,9 @@ Oops pages: NHI 957 (953 later compared or declined), TCAS 10 (1 later compared 
   declined" recovered, usually through the [NHI Oops fallback](#nhi-oops-fallback). A page
   saved before the policy's last recorded run started (`startedAt`) is left over from an earlier
   run and is not counted.
+- **Endorsement order:** shown only when some compared policies had their endorsements listed
+  in different orders on NHI and TCAS (see Standardised page under
+  [quote-page](#quote-page)), with how many were then identical.
 
 To see only what differs, add `differences`:
 

@@ -47,6 +47,8 @@ export interface ComparedPolicy {
   /** For example `1440×7565 vs 1440×7600`, when the two screenshots differ in size. */
   sizeDifference?: string;
   textDifferences: TextDifference[];
+  /** True when NHI and TCAS listed the endorsements in different orders, put in standard order before comparing. */
+  endorsementOrderDiffers: boolean;
 }
 
 /** Everything the summarise command found in the output folder. */
@@ -147,7 +149,7 @@ export async function collectQuoteResults(root: string): Promise<QuoteResultsSum
     } else if (report === undefined) {
       summary.unrecorded.push(name);
     } else {
-      summary.compared.push(summariseReport(name, report));
+      summary.compared.push(summariseReport(name, report, result?.endorsementOrder !== undefined));
     }
   }
 
@@ -432,6 +434,13 @@ function printTotals(
     ({ flow, total, recovered }) => `${flow} ${total} (${recovered} later compared or declined)`
   );
   console.log(`Oops pages: ${oopsCounts.join(', ')}.`);
+  const reordered = compared.filter((policy) => policy.endorsementOrderDiffers);
+  if (reordered.length > 0) {
+    const identicalReordered = reordered.filter((policy) => policy.changedPixels === 0).length;
+    console.log(
+      `Endorsement order: ${reordered.length} compared after putting NHI's and TCAS's different orders in standard order (${identicalReordered} then identical).`
+    );
+  }
 }
 
 function printGuidListTotals(guidList: GuidListStatus | undefined): void {
@@ -466,7 +475,7 @@ function describeLines(lines: string[]): string {
   return lines.length === 0 ? '(nothing)' : lines.join(' / ');
 }
 
-function summariseReport(name: string, report: ComparisonReport): ComparedPolicy {
+function summariseReport(name: string, report: ComparisonReport, endorsementOrderDiffers: boolean): ComparedPolicy {
   const { before, after } = report.dimensions;
   const sameSize = before.width === after.width && before.height === after.height;
   return {
@@ -477,7 +486,8 @@ function summariseReport(name: string, report: ComparisonReport): ComparedPolicy
     textDifferences: report.regions
       .filter((region) => region.textChanges.length > 0)
       .map(diffRegionLines)
-      .filter((difference) => difference.removed.length + difference.added.length > 0)
+      .filter((difference) => difference.removed.length + difference.added.length > 0),
+    endorsementOrderDiffers
   };
 }
 

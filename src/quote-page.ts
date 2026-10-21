@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { extname, resolve } from 'node:path';
 import type { Page } from 'playwright';
 import {
   answerChangesFileName,
@@ -12,7 +12,7 @@ import { apiResponsesFolder } from './api-responses.js';
 import { color, failureColor } from './color.js';
 import { compare } from './compare.js';
 import { runConcurrently, validateConcurrency } from './concurrency.js';
-import { isMissing, parseJson } from './fs-helpers.js';
+import { isMissing, parseJson, readOptionalTextFile } from './fs-helpers.js';
 import { runWithLogPrefix, withPrefixedConsole } from './log-context.js';
 import { writeFailedQuotePages, type FailedQuotePage } from './failed-quote-pages.js';
 import {
@@ -23,7 +23,7 @@ import {
 } from './quote-guid.js';
 import { selectAnnualPayment } from './payment.js';
 import { removeQuoteOutput } from './quote-output.js';
-import { writeQuoteResult, type QuoteResult } from './quote-result.js';
+import { writeQuoteResult, type EndorsementOrder, type QuoteResult } from './quote-result.js';
 import { quoteSummary, requote } from './quote-summary.js';
 import {
   DeclinedError,
@@ -33,6 +33,7 @@ import {
   ValidationError,
   type ScreenshotOptions
 } from './screenshot.js';
+import { readEndorsementTitles, standardiseQuotePage } from './standardise-page.js';
 import { tcasQuote } from './tcas-quote.js';
 import { unsavedQuote } from './unsaved-quote.js';
 import { outputPath } from './output-paths.js';
@@ -113,9 +114,9 @@ export async function quotePage(
 
   const run = { policyDetailsId, historyId, startedAt: new Date().toISOString() };
   const changes: AnswerChangesByFlow = {};
-  let outcome: QuotePageResult;
+  let result: CaptureAndCompareResult;
   try {
-    outcome = await collectAnswerChanges(changes, () => captureAndCompare(policyDetailsId, historyId, options));
+    result = await collectAnswerChanges(changes, () => captureAndCompare(policyDetailsId, historyId, options));
   } catch (error) {
     await saveAnswerChanges(policyDetailsId, historyId, changes);
     await saveQuoteResult({
@@ -129,7 +130,15 @@ export async function quotePage(
   }
 
   await saveAnswerChanges(policyDetailsId, historyId, changes);
-  await saveQuoteResult({ ...run, outcome, validation: false, issues: [], finishedAt: new Date().toISOString() });
+  const { outcome, endorsementOrder } = result;
+  await saveQuoteResult({
+    ...run,
+    outcome,
+    validation: false,
+    issues: [],
+    ...(endorsementOrder === undefined ? {} : { endorsementOrder }),
+    finishedAt: new Date().toISOString()
+  });
   return outcome;
 }
 
@@ -302,16 +311,23 @@ async function runPolicy(
   }
 }
 
+/** How {@link captureAndCompare} ended, with the endorsement orders when the two quote pages listed them differently. */
+interface CaptureAndCompareResult {
+  outcome: QuotePageResult;
+  endorsementOrder?: EndorsementOrder;
+}
+
 /**
  * Captures both flows for a policy whose ID is valid, then compares them unless a side failed or declined.
- * @returns `'compared'`, or `'declined'` when both sides declined.
+ * @returns `'compared'`, or `'declined'` when both sides declined, and when they were compared and listed the
+ * endorsements in different orders, each flow's order.
  * @throws As {@link quotePage}.
  */
 async function captureAndCompare(
   policyDetailsId: string,
   historyId: number,
   options: QuotePageOptions
-): Promise<QuotePageResult> {
+): Promise<CaptureAndCompareResult> {
   const basename = `${policyDetailsId}-${historyId}`;
   const artemisQuoteGuid = await readQuoteGuid(resolve(options.mrpAndQuoteOutputDir, `${basename}-mrp.json`));
   const fallback = options.quoteGuidFallback;
@@ -391,7 +407,7 @@ async function captureAndCompare(
   const tcasOutcome = tcas.status === 'fulfilled' ? tcas.value : undefined;
   if (nhiOutcome === 'declined' && tcasOutcome === 'declined') {
     console.log('NHI and TCAS both declined the quote; comparison skipped.');
-    return 'declined';
+    return { outcome: 'declined' };
   }
 
   if (nhiOutcome === 'declined' || tcasOutcome === 'declined') {
@@ -402,7 +418,7 @@ async function captureAndCompare(
   }
 
   await compare(nhiPath, tcasPath, { output: outputPath(basename), reuseOutput: true, useOcr: options.useOcr });
-  return 'compared';
+  return { outcome: 'compared', endorsementOrder: await readEndorsementOrder(nhiPath, tcasPath) };
 }
 
 /**
@@ -561,7 +577,14 @@ async function captureAt(label: string, url: string, options: ScreenshotOptions)
     await screenshot(url, {
       ...options,
       mask: maskedSelectors,
-      apiResponsesFolder: options.output === undefined ? undefined : apiResponsesFolder(options.output)
+      apiResponsesFolder: options.output === undefined ? undefined : apiResponsesFolder(options.output),
+      html:
+        options.output === undefined
+          ? undefined
+          : {
+              ...quotePageHtmlPaths(options.output),
+              standardise: (page) => standardiseQuotePage(page, label)
+            }
     });
     return 'captured';
   } catch (error) {
@@ -617,6 +640,34 @@ function withAnnualPayment(label: string, journey: (page: Page) => Promise<void>
     await journey(page);
     await selectAnnualPayment(page, label);
   };
+}
+
+/**
+ * Where a capture saves its quote page HTML: `<flow>-quote-page.html` as the site rendered it, and
+ * `<flow>-quote-page-standardized.html` as the screenshot shows it, beside the `<flow>.png` screenshot.
+ */
+function quotePageHtmlPaths(screenshotPath: string): { output: string; standardisedOutput: string } {
+  const base = screenshotPath.slice(0, -extname(screenshotPath).length);
+  return { output: `${base}-quote-page.html`, standardisedOutput: `${base}-quote-page-standardized.html` };
+}
+
+/**
+ * Reads the order each flow's quote page listed the endorsements in, before {@link standardiseQuotePage} put them in
+ * standard order, from the HTML saved beside the screenshots.
+ * @returns Both orders, or `undefined` when they are the same (or a page's HTML was not saved).
+ */
+async function readEndorsementOrder(nhiPath: string, tcasPath: string): Promise<EndorsementOrder | undefined> {
+  const [nhi, tcas] = await Promise.all(
+    [nhiPath, tcasPath].map(async (path) => {
+      const html = await readOptionalTextFile(quotePageHtmlPaths(path).output);
+      return html === undefined ? undefined : readEndorsementTitles(html);
+    })
+  );
+  if (nhi === undefined || tcas === undefined || nhi.join('\n') === tcas.join('\n')) {
+    return undefined;
+  }
+
+  return { nhi, tcas };
 }
 
 /** Runs capture steps one after another on the same page. */

@@ -667,14 +667,14 @@ describe('quote-page declined quotes', () => {
       ['/nhi/'],
       false,
       /Quote outcomes differ: NHI declined, TCAS quoted; comparison skipped\./,
-      ['nhi-declined.html', 'nhi-declined.png', 'tcas.png']
+      ['nhi-declined.html', 'nhi-declined.png', 'tcas-quote-page-standardized.html', 'tcas-quote-page.html', 'tcas.png']
     ],
     [
       'fails when only TCAS declines',
       ['/tcas/'],
       false,
       /Quote outcomes differ: NHI quoted, TCAS declined; comparison skipped\./,
-      ['nhi.png', 'tcas-declined.html', 'tcas-declined.png']
+      ['nhi-quote-page-standardized.html', 'nhi-quote-page.html', 'nhi.png', 'tcas-declined.html', 'tcas-declined.png']
     ]
   ]) {
     test(name, async () => {

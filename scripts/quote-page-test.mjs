@@ -109,10 +109,14 @@ try {
   // The screenshots and the comparison share the policy's folder; the stale failure screenshot is gone.
   assert.deepEqual((await readdir(policyFolder)).sort(), [
     'diff.png',
+    'nhi-quote-page-standardized.html',
+    'nhi-quote-page.html',
     'nhi.png',
     'report.json',
     'report.md',
     'result.json',
+    'tcas-quote-page-standardized.html',
+    'tcas-quote-page.html',
     'tcas.png'
   ]);
   for (const flow of ['nhi', 'tcas']) {

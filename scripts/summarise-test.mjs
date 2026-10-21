@@ -155,6 +155,23 @@ describe('quote result file', () => {
     assert.deepEqual(await readQuoteResult(join(root, `${failedPolicy}-1`)), result);
   });
 
+  test('reads back the endorsement order', async (context) => {
+    // arrange
+    const root = await mkdtemp(join(tmpdir(), 'quote-result-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
+    const result = {
+      ...failedResult(textPolicy, []),
+      outcome: 'compared',
+      endorsementOrder: { nhi: ['Bike', 'Unoccupancy'], tcas: ['Unoccupancy', 'Bike'] }
+    };
+
+    // act
+    await writeQuoteResult(result, root);
+
+    // assert
+    assert.deepEqual(await readQuoteResult(join(root, `${textPolicy}-1`)), result);
+  });
+
   test('reads a folder without a result as undefined', async (context) => {
     // arrange
     const root = await mkdtemp(join(tmpdir(), 'quote-result-'));
@@ -189,7 +206,9 @@ describe('quote result file', () => {
     ['a missing startedAt', { ...failedResult(failedPolicy, []), startedAt: undefined }],
     ['an unknown outcome', { ...failedResult(failedPolicy, []), outcome: 'skipped' }],
     ['non-string issues', { ...failedResult(failedPolicy, []), issues: [1] }],
-    ['a missing finishedAt', { ...failedResult(failedPolicy, []), finishedAt: undefined }]
+    ['a missing finishedAt', { ...failedResult(failedPolicy, []), finishedAt: undefined }],
+    ['an endorsement order without TCAS', { ...failedResult(failedPolicy, []), endorsementOrder: { nhi: ['Bike'] } }],
+    ['non-string endorsement titles', { ...failedResult(failedPolicy, []), endorsementOrder: { nhi: [1], tcas: [] } }]
   ]) {
     test(`rejects ${name}`, async (context) => {
       // arrange
@@ -373,6 +392,26 @@ describe('collectQuoteResults', () => {
     const policy = summary.compared.find(({ name }) => name === `${visualPolicy}-1`);
     assert.equal(policy.sizeDifference, '1440×100 vs 1440×120');
     assert.deepEqual(policy.textDifferences, []);
+  });
+
+  test('marks a policy whose endorsements were listed in different orders', async () => {
+    // arrange
+    const { root } = await projectFixture();
+    await writeQuoteResult(
+      {
+        ...failedResult(identicalPolicy, []),
+        outcome: 'compared',
+        endorsementOrder: { nhi: ['Bike', 'Unoccupancy'], tcas: ['Unoccupancy', 'Bike'] }
+      },
+      root
+    );
+
+    // act
+    const summary = await collectQuoteResults(root);
+
+    // assert
+    const marked = summary.compared.filter((policy) => policy.endorsementOrderDiffers).map(({ name }) => name);
+    assert.deepEqual(marked, [`${identicalPolicy}-1`]);
   });
 
   test('returns nothing for a missing folder', async (context) => {

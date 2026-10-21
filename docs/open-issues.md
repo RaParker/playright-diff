@@ -1,7 +1,7 @@
 # Open issues
 
 **Draft for review by the relevant teams before anyone acts on it.** Raised while investigating the NHI and TCAS quote
-differences (see [the findings](nhi-tcas-conviction-findings.md)); last updated 2026-10-20.
+differences (see [the findings](nhi-tcas-conviction-findings.md)); last updated 2026-10-21.
 
 | #   | Issue                                                    | Status      | Needs                    |
 | --- | -------------------------------------------------------- | ----------- | ------------------------ |
@@ -116,3 +116,7 @@ differences (see [the findings](nhi-tcas-conviction-findings.md)); last updated 
 
 - **Accidental damage "None" vs not chosen:** reopened as issue 5 after the 2026-10-19 decision.
 - **Conviction offence arriving blank:** fixed by PolicyAPIService PR 25168 and QuoteJourneyService PR 25170.
+- **Endorsements listed in a different order:** NHI's quote summary and TCAS's `save-details` return the same
+  endorsements in different, but stable, orders (on `14F8FDA76C1B486D8AEF9FCB721E9A2E`, 2026-10-20: `BIKESEC` then
+  `UNOCCLAU` on NHI, the reverse on TCAS). Known and accepted, so playwright-diff now puts them in title order before
+  each screenshot and records both orders in `result.json` (see the README's "Standardised page").
