@@ -448,8 +448,9 @@ To see only what differs, add `differences`:
 npm run summarise differences
 ```
 
-This says what differs between NHI and MRP in terms of the quote, not the pixels. It compares
-each policy's saved quote data and names each difference. For each side it reads the
+This says what differs between NHI and MRP in terms of the quote, not the pixels. It only looks
+at policies whose screenshots differ, since a data change on a page that looks the same does not
+affect what the customer sees, and names each difference in their saved quote data. For each side it reads the
 `quoteResult` of the last quote response the page received, in `nhi-api/` and `tcas-api/`: the
 quote summary, or a later `save-details` re-quote when the page priced the quote again (both NHI
 and MRP pages can), since that is the quote the page showed:
@@ -457,28 +458,21 @@ and MRP pages can), since that is the quote the page showed:
 ```text
 Quote changes (…/playright-diff-output)
 
-Changes in the quote data (252 policies with saved data compared)
-  108× Buildings cover: offered on NHI, not on MRP
+Changes in the quote data (112 policies with differing screenshots and saved data)
+  102× Buildings cover: offered on NHI, not on MRP
         …/024F72ABDE3C4FF18A56AD3AC920AFAE-1
         …/02986F9663DC4AD694E569D6D8C4CB15-1
         …/040E53264C8B4DB4AE87E69CE58C4A2E-1
-        and 105 more
-  6× Annual premium differs
-        …/323B3C1BB0D9423EADD80A5E76C6B9A6-1  £329.22 on NHI, £301.09 on MRP
+        and 99 more
+  10× Personal possessions and high-risk items: allowed on NHI, not on MRP
         …
 
-Data differs, screenshots match (129)
-  …/00DD15DBC34640879634698B07006ACB-1  Personal possessions and high-risk items: allowed on NHI, not on MRP
-
-Data not captured, so not compared (996): run them again
-  995× captured before end points were recorded
-  1× no NHI quote response saved
-
 Totals
-112 different of 1248 compared; 241 with data changes, 996 not captured.
+112 different of 1248 compared; 112 with data changes, 0 not captured.
 ```
 
-- **Changes in the quote data:** each change counted across policies, most common first, with
+- **Changes in the quote data:** each change counted across the policies whose screenshots
+  differ, most common first, with
   up to three example policies and their values. The named changes are cover offered (buildings,
   contents, personal possessions and high-risk items), sums insured, premiums and the admin fee,
   excesses by name, endorsements by code (in any order), listed items (named by category and
@@ -489,15 +483,16 @@ Totals
   side's own references and GUIDs, the agent, date formats and defaults one side fills where the
   other sends nothing — listed in `noiseFields` in `src/quote-changes.ts`. `null` and an empty
   value count as the same, and fields only one response has are left out.
-- **Data differs, screenshots match:** policies the screenshots alone miss, such as referrals,
-  which show no cover rows.
 - **Screenshots differ, data matches:** differences in how the page renders.
-- **Data not captured:** results without recorded end points (from versions before they were
-  recorded) or without a saved response are counted by reason, never compared or guessed at.
-  Run them again to compare them.
+- **Data not captured:** policies whose screenshots differ but whose results have no recorded
+  end points (from versions before they were recorded) or no saved response, counted by reason,
+  never compared or guessed at. Run them again to compare them.
 - **Totals:** how many compared policies' screenshots differ (the policies
-  [`retry-different`](#quote-pages) reruns), how many have data changes, and how many could not
-  be compared.
+  [`retry-different`](#quote-pages) reruns), how many of those have data changes, and how many
+  could not be compared.
+
+Policies whose screenshots match are never listed, even when their data differs (for example a
+referral, which shows no cover rows), with or without `--detail`.
 
 Add `--detail` to also list each policy with its own changes, followed by the Visual-only
 differences, Text differences and Most common text changes sections of the screenshots and OCR

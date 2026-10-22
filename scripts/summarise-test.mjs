@@ -821,7 +821,7 @@ describe('summarise differences from the quote data', () => {
     return root;
   }
 
-  test('counts each change with its examples, and lists what the screenshots alone get wrong', async (context) => {
+  test('counts each change with its examples on the pages whose screenshots differ', async (context) => {
     // arrange
     const root = await changesFixture(context);
 
@@ -830,19 +830,28 @@ describe('summarise differences from the quote data', () => {
 
     // assert
     assert.equal(code, 0, output);
-    assert.match(output, /Changes in the quote data \(3 policies with saved data compared\)\n/);
+    assert.match(output, /Changes in the quote data \(2 policies with differing screenshots and saved data\)\n/);
     assert.match(output, /\n {2}1× Annual premium differs\n {8}\S+B{32}-1 {2}£231\.33 on NHI, £240\.10 on MRP\n/);
-    assert.match(output, /\n {2}1× Buildings cover: offered on NHI, not on MRP\n {8}\S+A{32}-1\n/);
-    assert.match(
-      output,
-      /Data differs, screenshots match \(1\)\n {2}\S+A{32}-1 {2}Buildings cover: offered on NHI, not on MRP\n/
-    );
     assert.match(output, /Screenshots differ, data matches \(1\)\n {2}\S+E{32}-1 {2}0\.10% changed/);
-    assert.match(output, /Totals\n2 different of 3 compared; 2 with data changes, 0 not captured\.\n/);
+    assert.match(output, /Totals\n2 different of 3 compared; 1 with data changes, 0 not captured\.\n/);
     assert.doesNotMatch(output, /Data not captured/);
   });
 
-  test('--detail lists each policy with its own changes', async (context) => {
+  for (const args of [[], ['--detail']]) {
+    test(`ignores data changes on pages whose screenshots match${args.length > 0 ? ', even with --detail' : ''}`, async (context) => {
+      // arrange
+      const root = await changesFixture(context);
+
+      // act
+      const { code, output } = await runCli(root, ['summarise', 'differences', ...args]);
+
+      // assert
+      assert.equal(code, 0, output);
+      assert.doesNotMatch(output, /Buildings cover|A{32}-1 {2}|Data differs, screenshots match|matching screenshots/);
+    });
+  }
+
+  test('--detail lists each policy whose screenshots differ with its own changes', async (context) => {
     // arrange
     const root = await changesFixture(context);
 
@@ -853,8 +862,9 @@ describe('summarise differences from the quote data', () => {
     assert.equal(code, 0, output);
     assert.match(
       output,
-      /Changes by policy \(2\)\n\S+A{32}-1\n {2}Buildings cover: offered on NHI, not on MRP\n\S+B{32}-1\n {2}Annual premium differs {2}£231\.33 on NHI, £240\.10 on MRP\n/
+      /Changes by policy \(1\)\n\S+B{32}-1\n {2}Annual premium differs {2}£231\.33 on NHI, £240\.10 on MRP\n/
     );
+    assert.match(output, /1 with data changes, 0 not captured\.\n/);
   });
 });
 
@@ -929,7 +939,7 @@ describe('summarise command', () => {
     assert.doesNotMatch(output, /MRP records not retrieved/);
   });
 
-  test('differences reports results captured before end points were recorded as not captured, not as changes', async () => {
+  test('differences reports different results captured before end points were recorded as not captured, not as changes', async () => {
     // arrange
     const { directory, mrp, guidList } = await projectFixture();
 
@@ -944,13 +954,13 @@ describe('summarise command', () => {
     assert.match(output, /Quote changes \(/);
     assert.match(
       output,
-      /Changes in the quote data \(0 policies with saved data compared\)\n {2}No changes in the quote data\./
+      /Changes in the quote data \(0 policies with differing screenshots and saved data\)\n {2}No changes in the quote data\./
     );
     assert.match(
       output,
-      /Data not captured, so not compared \(3\): run them again\n {2}3× captured before end points were recorded\n/
+      /Data not captured, so not compared \(2\): run them again\n {2}2× captured before end points were recorded\n/
     );
-    assert.match(output, /Totals\n2 different of 3 compared; 0 with data changes, 3 not captured\.\n/);
+    assert.match(output, /Totals\n2 different of 3 compared; 0 with data changes, 2 not captured\.\n/);
     assert.doesNotMatch(output, /Visual-only differences|Text differences/);
   });
 

@@ -448,13 +448,14 @@ function printQuoteResultsSummary(
 }
 
 /**
- * Prints what differs between NHI and MRP, labelling each policy with its full folder path so terminals can open it:
- * 1. Each change in the quote data, counted across policies, most common first, with up to {@link changeExampleLimit}
- *    example policies and their values.
- * 2. Policies whose data differs but whose screenshots match, which the screenshots alone would miss.
- * 3. Policies whose screenshots differ but whose data matches (rendering differences).
- * 4. Policies whose data cannot be compared, by reason, to run again.
- * 5. The totals.
+ * Prints what differs between NHI and MRP on the quote page, labelling each policy with its full folder path so
+ * terminals can open it. Only policies whose screenshots differ count: a data change on a page that looks the same
+ * does not affect what the customer sees.
+ * 1. Each change in the quote data, counted across those policies, most common first, with up to
+ *    {@link changeExampleLimit} example policies and their values.
+ * 2. Policies whose screenshots differ but whose data matches (rendering differences).
+ * 3. Policies whose data cannot be compared, by reason, to run again.
+ * 4. The totals.
  * With `detail`, each policy's own changes and the screenshot and OCR text differences follow the first section.
  */
 function printQuoteChanges(
@@ -464,38 +465,40 @@ function printQuoteChanges(
 ): void {
   const { root, compared } = summary;
   const label = (name: string) => policyLabel(name, root);
+  const differentPolicies = compared.filter(({ kind }) => kind === 'different');
+  // Only changes that can show on the quote page matter, so a policy whose screenshots match is left out.
+  const differentChanges = new Map(
+    differentPolicies.flatMap(({ name }) => {
+      const result = changes.get(name);
+      return result === undefined ? [] : [[name, result] as const];
+    })
+  );
   const changedData = new Map(
-    [...changes].flatMap(([name, result]) =>
+    [...differentChanges].flatMap(([name, result]) =>
       result.status === 'compared' && result.changes.length > 0 ? [[name, result.changes] as const] : []
     )
   );
   console.log(color.Cyan(`Quote changes (${root})`));
-  printChangeCounts(countQuoteChanges(changes), changes, label);
+  printChangeCounts(countQuoteChanges(differentChanges), differentChanges, label);
   if (detail) {
     printPolicyChanges(changedData, label);
     printDifferenceSections(compared, root);
   }
 
-  const hidden = compared.filter(({ name, kind }) => kind !== 'different' && changedData.has(name));
-  printPolicyList(
-    `Data differs, screenshots match (${hidden.length})`,
-    hidden.map(({ name }) => `${label(name)}  ${describeChanges(changedData.get(name) ?? [])}`)
-  );
-  const rendering = compared.filter(
-    ({ name, kind }) => kind === 'different' && changes.get(name)?.status === 'compared' && !changedData.has(name)
+  const rendering = differentPolicies.filter(
+    ({ name }) => differentChanges.get(name)?.status === 'compared' && !changedData.has(name)
   );
   printPolicyList(
     `Screenshots differ, data matches (${rendering.length})`,
     rendering.map((policy) => `${label(policy.name)}  ${describeChange(policy)}`)
   );
-  printNotCaptured(changes);
+  printNotCaptured(differentChanges);
 
-  const different = compared.filter(({ kind }) => kind === 'different').length;
-  const differentText = `${different} different`;
-  const notCaptured = [...changes.values()].filter(({ status }) => status === 'not-captured').length;
+  const differentText = `${differentPolicies.length} different`;
+  const notCaptured = [...differentChanges.values()].filter(({ status }) => status === 'not-captured').length;
   console.log(`\n${color.Cyan('Totals')}`);
   console.log(
-    `${different > 0 ? color.Yellow(differentText) : differentText} of ${compared.length} compared; ${
+    `${differentPolicies.length > 0 ? color.Yellow(differentText) : differentText} of ${compared.length} compared; ${
       changedData.size
     } with data changes, ${notCaptured} not captured.`
   );
@@ -564,7 +567,9 @@ function printChangeCounts(
   label: (name: string) => string
 ): void {
   const compared = [...changes.values()].filter(({ status }) => status === 'compared').length;
-  console.log(`\n${color.Cyan(`Changes in the quote data (${compared} policies with saved data compared)`)}`);
+  console.log(
+    `\n${color.Cyan(`Changes in the quote data (${compared} policies with differing screenshots and saved data)`)}`
+  );
   if (counts.length === 0) {
     console.log(color.Green('  No changes in the quote data.'));
     return;
@@ -621,12 +626,6 @@ function printNotCaptured(changes: Map<string, QuoteChangesResult>): void {
   for (const [reason, count] of [...reasons].sort((a, b) => b[1] - a[1])) {
     console.log(`  ${color.Yellow(`${count}×`)} ${reason}`);
   }
-}
-
-/** Names a policy's first change in the quote data, and how many more it has. */
-function describeChanges(list: QuoteChange[]): string {
-  const [first] = list;
-  return first === undefined ? '' : `${first.summary}${list.length > 1 ? ` (and ${list.length - 1} more)` : ''}`;
 }
 
 function printCommonTextChanges(changes: { change: string; count: number }[]): void {

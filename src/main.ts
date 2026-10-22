@@ -125,10 +125,10 @@ Summarises the quote-page results in <policyDetailsId>-<historyId>/ (in DIFF_OUT
 Modes:
   (none)            Full report: each policy's differences, most common text changes, failed
                     policies and failures by reason, MRP records not retrieved, Oops pages, totals
-  differences       What differs between NHI and MRP: each change in the quote data (such as
-                    "Buildings cover: offered on NHI, not on MRP") counted across policies with
-                    examples, policies whose data differs but screenshots match, screenshots that
-                    differ with no data change, and results whose data was not captured
+  differences       What differs between NHI and MRP on the quote page: for policies whose
+                    screenshots differ, each change in the quote data (such as "Buildings cover:
+                    offered on NHI, not on MRP") counted across them with examples, screenshots
+                    that differ with no data change, and results whose data was not captured
   changed-answers   Combines every answer-changes.json (leaving out cover start changes) into
                     changed-answers.json and counts changes per question, most changed first
 

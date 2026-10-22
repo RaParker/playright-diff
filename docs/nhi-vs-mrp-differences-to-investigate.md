@@ -15,10 +15,11 @@ asking anyone. Follow every step; keep everything below the notes in the same st
    - Output folder: DIFF_OUTPUT_DIR in the project's .env (D:\temp\playright-diff-output). One folder per policy,
      <policyDetailsId>-<historyId>.
    - Totals: `npm run summarise` (the Totals line).
-   - What differs: `npm run summarise differences` names each change in the quote data, counted across policies with
-     examples ("Changes in the quote data"), lists the pages whose data differs but whose screenshots match, the pages
-     that differ only in rendering, and the results whose data was not captured; `-- --detail` lists every policy's
-     changes. Use it as the main source for sections 1 to 4 and "Not covered above".
+   - What differs: `npm run summarise differences` names each change in the quote data on the pages whose
+     screenshots differ, counted across policies with examples ("Changes in the quote data"), and lists the pages
+     that differ only in rendering and the results whose data was not captured; `-- --detail` lists every such
+     policy's changes. Pages whose screenshots match are never reported, even when their data differs. Use it as the
+     main source for sections 1 to 4 and "Not covered above".
      Check the startedAt range in each folder's result.json: say in the intro which run the figures are from, and
      whether some policies were run again later.
    - Per policy: result.json (outcome, endpoints: quote | referred | conditional | declined, issues), report.json
@@ -37,8 +38,7 @@ asking anyone. Follow every step; keep everything below the notes in the same st
      2 Personal possessions: "Personal possessions and high-risk items: allowed on NHI, not on MRP" (open issue 6).
      3 Contents: "Contents cover: offered on NHI, not on MRP" (open issue 11).
      4 Sum insured: "Buildings sum insured differs" with three decimal places on MRP, shown as £1 (open issue 10).
-   - Count a kind's differing pages from `-- --detail` (policies in "Changes by policy" whose screenshots differ);
-     its pages whose screenshots match are under "Data differs, screenshots match".
+   - Count a kind's pages from "Changes in the quote data", and list them from "Changes by policy" in `-- --detail`.
    - A change that belongs to no kind (premiums, excesses, endorsements, "Other data differs: …") is a new kind:
      add a section for it with one example, or list it under "Not covered above" when its pages are few.
    - A page can be in more than one kind; say so ("also one of the 8 in section 2"), and make the counts add up.
@@ -61,16 +61,15 @@ asking anyone. Follow every step; keep everything below the notes in the same st
      where it matters. "Question": who decides, and what.
 
 5. "Not covered above"
-   - Tenants whose MRP response has buildingsIsAllowed false but whose pages match, and why (for example both
-     ended on a referral: endpoints referred/referred, or "We need to double check a few details with you").
    - Failed policies that matter to a kind above (for example a tenant that failed), with their current issue.
    - Rendering-only differences, and pages that stopped differing since the last update.
    - Each item lists policyDetailsId and quote GUID, labelled, with its history ID. A list longer than about ten goes
      in its own section at the end of the document, linked from the item; not in a <details> block, whose blank line
      Prettier removes, so the list would not render.
-   - Pages whose cover flags disagree but whose screenshots match are listed here too, by kind; only results with
-     recorded end points count. Results captured before end points were recorded are not trusted: run them again
-     rather than reading anything from them, and give their count under "Not investigated here".
+   - Pages whose screenshots match are out of scope, even when their cover flags disagree, since nothing differs on
+     the quote page; leave them out. Only results with recorded end points count. Results captured before end points
+     were recorded are not trusted: run them again rather than reading anything from them, and give their count under
+     "Not investigated here".
    - End with the totals not investigated here (failed captures, declined quotes).
 
 6. Conventions
