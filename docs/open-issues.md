@@ -1,7 +1,7 @@
 # Open issues
 
 **Draft for review by the relevant teams before anyone acts on it.** Raised while investigating the NHI and MRP quote
-differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last updated 2026-10-21.
+differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last updated 2026-10-22.
 
 | #   | Issue                                                   | Status      | Needs                          |
 | --- | ------------------------------------------------------- | ----------- | ------------------------------ |
@@ -17,6 +17,7 @@ differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last update
 | 10  | MRP shows a £1 buildings sum insured                    | Open        | QJS or quote page fix          |
 | 11  | MRP drops Contents insurance for a home owner           | Open        | Investigate                    |
 | 12  | playwright-diff flags rendering noise                   | Open        | playwright-diff tweak          |
+| 13  | NHI's saved quote and its re-quote disagree             | Open        | NHI investigation              |
 
 ## 1. NHI can no longer price the original quotes
 
@@ -198,6 +199,40 @@ differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last update
     NHI and a filled one on MRP, probably a step state or a hover effect when the screenshot is taken.
 - **Next step:** raise `--threshold` (default 20), or stop counting a page as different when every changed region is
   small and its OCR text is unchanged; check the progress bar's state before the screenshot.
+
+## 13. NHI's saved quote and its re-quote disagree
+
+- **What (2026-10-21, captured between 14:18 and 14:30 UTC):** on six policies, NHI's page priced the quote twice:
+  first its quote summary (`GET /api/quote-summary/<quote GUID>/user/<agent>`), then a re-quote
+  (`POST /api/save-details`). The two disagree on the same answers. The page shows the re-quote, which matches MRP's
+  quote, so NHI's and MRP's pages are identical; this is a difference within NHI, not between NHI and MRP.
+- **How the two differ, on all six:**
+  - NHI's quote summary is a conditional quote (`isConditional: true`); the re-quote is not.
+  - The quote summary has the `EXTPERIL` endorsement (Amendments to cover for unoccupied property); the re-quote has
+    `UNOCCOVR` (Cover limitations for unoccupied property) instead.
+  - The quote summary has a £1,000 Subsidence, Landslip and Heave excess; the re-quote has none.
+  - The quote summary's annual premium is higher. On the first policy below, the quote summary also has a £2,500
+    Flooding excess that the re-quote does not.
+- **Policies** (each historyId 1; annual premium in NHI's quote summary, then in its re-quote and in MRP's quote):
+  - policyDetailsId `323B3C1BB0D9423EADD80A5E76C6B9A6`, quote GUID `8914c660-9955-4dee-8b68-24249198e5c3`: £329.22,
+    £301.09
+  - policyDetailsId `6C68B0B7C5B64073B55345E404646C66`, quote GUID `8a420f25-e85e-43fd-a9e8-f3a85e956292`: £329.22,
+    £297.96
+  - policyDetailsId `77FC32F83C1744ECA5B77A3C80595E4B`, quote GUID `988cec39-2c9a-48a5-b61c-0125ec418935`: £597.43,
+    £361.44
+  - policyDetailsId `94B3603B4FD14CE3B26BBF2129958CE9`, quote GUID `74923b3b-9cba-43a8-b2fe-66a237f1b338`: £516.05,
+    £367.23
+  - policyDetailsId `AC46A23B21F948A48B821AB3A4FDDEA9`, quote GUID `21de8ff3-3d42-47e6-ade9-3d6a0798a4bd`: £350.68,
+    £286.94
+  - policyDetailsId `D9633A9C18C643608FDEE7F2D0D810E9`, quote GUID `b0581376-ca35-41d3-8d1c-20a1544767c9`: £204.00,
+    £173.08
+- **Found by:** `npm run summarise differences`, which first compared NHI's quote summary with MRP's last response and
+  reported these as NHI/MRP differences. It now compares each side's last quote response, the one its page showed, so
+  these six no longer appear there.
+- **Unknown:** why NHI's page re-quoted these quotes, and which of the two quotes is right for the answers.
+- **Next step:** compare the answers in each policy's saved NHI quote with those in its re-quote
+  (`nhi-api/*-GET-answers-*.json` and `*-POST-answers-*.json` in the playwright-diff output folder), then take the
+  difference to NHI.
 
 ## Closed
 
