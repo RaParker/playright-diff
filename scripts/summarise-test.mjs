@@ -853,7 +853,10 @@ describe('summarise differences from the quote data', () => {
     // assert
     assert.equal(code, 0, output);
     assert.match(output, /Changes in the quote data \(2 policies with differing screenshots and saved data\)\n/);
-    assert.match(output, /\n {2}1× Annual premium differs\n {8}\S+B{32}-1 {2}£231\.33 on NHI, £240\.10 on MRP\n/);
+    assert.match(
+      output,
+      /\n {2}1× Annual premium differs \S*\(yearlyAmount\)\S*\n {8}\S+B{32}-1 {2}£231\.33 on NHI, £240\.10 on MRP\n/
+    );
     assert.match(output, /Screenshots differ, data matches \(1\)\n {2}\S+E{32}-1 {2}0\.10% changed/);
     assert.match(output, /Totals\n2 different of 3 compared; 1 with data changes, 0 not captured\.\n/);
     assert.doesNotMatch(output, /Data not captured/);
@@ -884,7 +887,7 @@ describe('summarise differences from the quote data', () => {
     assert.equal(code, 0, output);
     assert.match(
       output,
-      /Changes by policy \(1\)\n\S+B{32}-1\n {2}Annual premium differs {2}£231\.33 on NHI, £240\.10 on MRP\n/
+      /Changes by policy \(1\)\n\S+B{32}-1\n {2}Annual premium differs \S*\(yearlyAmount\)\S* {2}£231\.33 on NHI, £240\.10 on MRP\n/
     );
     assert.match(output, /1 with data changes, 0 not captured\.\n/);
   });

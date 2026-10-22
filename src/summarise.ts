@@ -286,15 +286,20 @@ export function listDifferentPolicies(summary: QuoteResultsSummary): PolicyToRun
  * Counts each change in the quote data across policies, most common first (ties in order of their summary).
  * @param changes Each compared policy's changes, by folder name, from {@link collectQuoteChanges}.
  * @returns Each distinct change with the number of policies showing it and, in folder order, every policy and its own
- * values, joined with `; ` when a policy shows the change more than once.
+ * values, joined with `; ` when a policy shows the change more than once, and the fields the change was read from.
  */
 export function countQuoteChanges(
   changes: Map<string, QuoteChangesResult>
-): { summary: string; count: number; policies: { name: string; detail?: string }[] }[] {
+): { summary: string; field?: string; count: number; policies: { name: string; detail?: string }[] }[] {
   const counts = new Map<string, { name: string; detail?: string }[]>();
+  const fields = new Map<string, string>();
   for (const name of [...changes.keys()].sort()) {
     const result = changes.get(name);
-    for (const { summary, detail } of result?.status === 'compared' ? result.changes : []) {
+    for (const { summary, detail, field } of result?.status === 'compared' ? result.changes : []) {
+      if (field !== undefined) {
+        fields.set(summary, field);
+      }
+
       const policies = counts.get(summary) ?? [];
       const last = policies.at(-1);
       // A policy can show the same change more than once (for example two listed items); it counts once, with each
@@ -310,7 +315,10 @@ export function countQuoteChanges(
   }
 
   return [...counts]
-    .map(([summary, policies]) => ({ summary, count: policies.length, policies }))
+    .map(([summary, policies]) => {
+      const field = fields.get(summary);
+      return { summary, ...(field === undefined ? {} : { field }), count: policies.length, policies };
+    })
     .sort((a, b) => (b.count !== a.count ? b.count - a.count : a.summary.localeCompare(b.summary)));
 }
 
@@ -588,8 +596,8 @@ function printChangeCounts(
     return;
   }
 
-  for (const { summary, count, policies } of counts) {
-    console.log(`  ${color.Yellow(`${count}×`)} ${summary}`);
+  for (const { summary, field, count, policies } of counts) {
+    console.log(`  ${color.Yellow(`${count}×`)} ${describeQuoteChange(summary, field)}`);
     for (const { name, detail } of policies.slice(0, changeExampleLimit)) {
       console.log(color.Gray(`        ${label(name)}${detail === undefined ? '' : `  ${detail}`}`));
     }
@@ -605,10 +613,15 @@ function printPolicyChanges(changedData: Map<string, QuoteChange[]>, label: (nam
   console.log(`\n${color.Cyan(`Changes by policy (${changedData.size})`)}`);
   for (const [name, list] of [...changedData].sort(([a], [b]) => a.localeCompare(b))) {
     console.log(label(name));
-    for (const { summary, detail } of list) {
-      console.log(`  ${summary}${detail === undefined ? '' : color.Gray(`  ${detail}`)}`);
+    for (const { summary, detail, field } of list) {
+      console.log(`  ${describeQuoteChange(summary, field)}${detail === undefined ? '' : color.Gray(`  ${detail}`)}`);
     }
   }
+}
+
+/** Writes a change's summary followed by the fields it was read from, in gray, such as `(buildingsIsAllowed)`. */
+function describeQuoteChange(summary: string, field: string | undefined): string {
+  return field === undefined ? summary : `${summary} ${color.Gray(`(${field})`)}`;
 }
 
 /** Prints a titled list of policies, one line each; nothing when the list is empty. */

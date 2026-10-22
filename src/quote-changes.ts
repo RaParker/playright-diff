@@ -13,6 +13,11 @@ export interface QuoteChange {
   summary: string;
   /** This policy's values, for example `£329.22 on NHI, £301.09 on MRP`, when the summary does not hold them. */
   detail?: string;
+  /**
+   * The `quoteResult` fields the change was read from, by their own names without the path, for example
+   * `buildingsIsAllowed`, when it was read from named fields rather than from a list.
+   */
+  field?: string;
 }
 
 /** What a policy's saved responses say about how its NHI and MRP quotes differ. */
@@ -235,7 +240,10 @@ function compareCover(nhi: QuoteResultData, mrp: QuoteResultData, handled: Set<s
     possessionsChecks.forEach(({ path }) => handled.add(path));
     return [
       ...changes,
-      { summary: `Personal possessions and high-risk items: ${offeredOn(highRisk[0] === true, 'allowed')}` }
+      {
+        summary: `Personal possessions and high-risk items: ${offeredOn(highRisk[0] === true, 'allowed')}`,
+        field: nameFields(possessionsChecks.map(({ path }) => path))
+      }
     ];
   }
 
@@ -258,7 +266,7 @@ function compareMoney(
     const skipTotal = path === highRiskTotalPath && (!compareItems || isExplainedByListedItems(a, b, nhi, mrp));
     return sameValue(a, b) || skipTotal
       ? []
-      : [{ summary: `${label} differs`, detail: `${money(a)} on NHI, ${money(b)} on MRP` }];
+      : [{ summary: `${label} differs`, detail: `${money(a)} on NHI, ${money(b)} on MRP`, field: nameFields([path]) }];
   });
 }
 
@@ -350,7 +358,7 @@ function compareFlags(nhi: QuoteResultData, mrp: QuoteResultData, handled: Set<s
     handled.add(path);
     const [a, b] = [readPath(nhi, path), readPath(mrp, path)];
     return typeof a === 'boolean' && typeof b === 'boolean' && a !== b
-      ? [{ summary: `${label}: ${a ? 'yes on NHI, no on MRP' : 'no on NHI, yes on MRP'}` }]
+      ? [{ summary: `${label}: ${a ? 'yes on NHI, no on MRP' : 'no on NHI, yes on MRP'}`, field: nameFields([path]) }]
       : [];
   });
 }
@@ -411,7 +419,7 @@ function compareOffered(
   handled.add(path);
   const [a, b] = [readPath(nhi, path), readPath(mrp, path)];
   return typeof a === 'boolean' && typeof b === 'boolean' && a !== b
-    ? [{ summary: `${label}: ${offeredOn(a, verb)}` }]
+    ? [{ summary: `${label}: ${offeredOn(a, verb)}`, field: nameFields([path]) }]
     : [];
 }
 
@@ -495,6 +503,11 @@ function collectLeaves(quote: QuoteResultData): Map<string, string> {
 /** Reads a dotted path, such as `buildingsInsurance.buildingsIsAllowed`. */
 function readPath(quote: QuoteResultData, path: string): unknown {
   return path.split('.').reduce<unknown>((value, key) => (isRecord(value) ? value[key] : undefined), quote);
+}
+
+/** Names dotted `quoteResult` paths by their last part, such as `adminFee` for `quoteAmounts.adminFee`. */
+function nameFields(paths: readonly string[]): string {
+  return paths.map((path) => path.split('.').pop()).join(', ');
 }
 
 function offeredOn(onNhi: boolean, verb: string): string {

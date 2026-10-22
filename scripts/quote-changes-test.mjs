@@ -100,33 +100,47 @@ describe('compareQuotes', () => {
       'names buildings cover offered on NHI only',
       {},
       { buildingsInsurance: { buildingsIsAllowed: false } },
-      [{ summary: 'Buildings cover: offered on NHI, not on MRP' }]
+      [{ summary: 'Buildings cover: offered on NHI, not on MRP', field: 'buildingsIsAllowed' }]
     ],
     [
       'names contents cover offered on MRP only',
       { contentsInsurance: { contentsIsAllowed: false } },
       {},
-      [{ summary: 'Contents cover: not offered on NHI, offered on MRP' }]
+      [{ summary: 'Contents cover: not offered on NHI, offered on MRP', field: 'contentsIsAllowed' }]
     ],
     [
       'reports the two personal possessions flags as one change when they move together',
       {},
       { contentsInsurance: { isHighRiskHighValueItemsAllowed: false, isGeneralValuablesCoveredAllowed: false } },
-      [{ summary: 'Personal possessions and high-risk items: allowed on NHI, not on MRP' }]
+      [
+        {
+          summary: 'Personal possessions and high-risk items: allowed on NHI, not on MRP',
+          field: 'isHighRiskHighValueItemsAllowed, isGeneralValuablesCoveredAllowed'
+        }
+      ]
     ],
     [
       'reports each personal possessions flag when only one differs',
       {},
       { contentsInsurance: { isHighRiskHighValueItemsAllowed: false } },
-      [{ summary: 'High-risk items cover: allowed on NHI, not on MRP' }]
+      [
+        {
+          summary: 'High-risk items cover: allowed on NHI, not on MRP',
+          field: 'isHighRiskHighValueItemsAllowed'
+        }
+      ]
     ],
     [
       'gives both amounts, keeping a third decimal place',
       {},
       { buildingsInsurance: { buildingsSumInsured: 1000000.675 }, quoteAmounts: { yearlyAmount: 240.1 } },
       [
-        { summary: 'Buildings sum insured differs', detail: '£1,000,000 on NHI, £1,000,000.675 on MRP' },
-        { summary: 'Annual premium differs', detail: '£231.33 on NHI, £240.10 on MRP' }
+        {
+          summary: 'Buildings sum insured differs',
+          field: 'buildingsSumInsured',
+          detail: '£1,000,000 on NHI, £1,000,000.675 on MRP'
+        },
+        { summary: 'Annual premium differs', field: 'yearlyAmount', detail: '£231.33 on NHI, £240.10 on MRP' }
       ]
     ],
     [
@@ -221,7 +235,11 @@ describe('compareQuotes', () => {
         contentsInsurance: { highRiskHighValueItemsTotal: 0 }
       },
       [
-        { summary: 'High-risk items total differs', detail: '£2,500 on NHI, £0 on MRP' },
+        {
+          summary: 'High-risk items total differs',
+          field: 'highRiskHighValueItemsTotal',
+          detail: '£2,500 on NHI, £0 on MRP'
+        },
         { summary: 'Listed item: included on NHI, not on MRP', detail: 'Pedal Cycle, £2,000' }
       ]
     ],
@@ -236,7 +254,12 @@ describe('compareQuotes', () => {
           highRiskHighValueItemsTotal: 0
         }
       },
-      [{ summary: 'Personal possessions and high-risk items: allowed on NHI, not on MRP' }]
+      [
+        {
+          summary: 'Personal possessions and high-risk items: allowed on NHI, not on MRP',
+          field: 'isHighRiskHighValueItemsAllowed, isGeneralValuablesCoveredAllowed'
+        }
+      ]
     ],
     [
       'names a listed item only one side has',
@@ -249,8 +272,8 @@ describe('compareQuotes', () => {
       { isConditional: true },
       { requiresSpecificTermsCheck: true },
       [
-        { summary: 'Conditional quote: yes on NHI, no on MRP' },
-        { summary: 'Specific terms check: no on NHI, yes on MRP' }
+        { summary: 'Conditional quote: yes on NHI, no on MRP', field: 'isConditional' },
+        { summary: 'Specific terms check: no on NHI, yes on MRP', field: 'requiresSpecificTermsCheck' }
       ]
     ],
     [
@@ -419,7 +442,7 @@ describe('readQuoteChanges', () => {
     // assert
     assert.deepEqual(result, {
       status: 'compared',
-      changes: [{ summary: 'Buildings cover: offered on NHI, not on MRP' }]
+      changes: [{ summary: 'Buildings cover: offered on NHI, not on MRP', field: 'buildingsIsAllowed' }]
     });
   });
 
@@ -457,7 +480,7 @@ describe('readQuoteChanges', () => {
     // assert
     assert.deepEqual(result, {
       status: 'compared',
-      changes: [{ summary: 'Admin fee differs', detail: '£50 on NHI, £0 on MRP' }]
+      changes: [{ summary: 'Admin fee differs', field: 'adminFee', detail: '£50 on NHI, £0 on MRP' }]
     });
   });
 
@@ -476,7 +499,7 @@ describe('readQuoteChanges', () => {
     // assert
     assert.deepEqual(result, {
       status: 'compared',
-      changes: [{ summary: 'Admin fee differs', detail: '£50 on NHI, £0 on MRP' }]
+      changes: [{ summary: 'Admin fee differs', field: 'adminFee', detail: '£50 on NHI, £0 on MRP' }]
     });
   });
 
