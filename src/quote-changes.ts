@@ -19,7 +19,7 @@ export type QuoteChangesResult =
   | { status: 'compared'; changes: QuoteChange[] }
   | {
       status: 'not-captured';
-      /** Why the quotes cannot be compared, for example `no NHI quote summary saved`. */
+      /** Why the quotes cannot be compared, for example `no NHI quote response saved`. */
       reason: string;
     };
 
@@ -89,6 +89,9 @@ const noiseFields: ReadonlySet<string> = new Set([
   'propertyAddress.addressSearchText'
 ]);
 
+/** Saved responses that carry a priced quote: a quote summary, or a `save-details` re-quote. */
+const quoteResponsePattern = /-GET-quote-summary-|-POST-save-details/;
+
 /** Parts of `quoteResult` the named checks compare as a whole, so the catch-all leaves every field under them alone. */
 const checkedPrefixes: readonly string[] = [
   'compulsoryExcesses[]',
@@ -111,14 +114,12 @@ export async function readQuoteChanges(folder: string, endpoints?: QuoteEndpoint
     return { status: 'not-captured', reason: 'captured before end points were recorded' };
   }
 
-  const nhi = await readLatestQuoteResult(join(folder, 'nhi-api'), /-GET-quote-summary-/);
+  const nhi = await readLatestQuoteResult(join(folder, 'nhi-api'));
   if (nhi === undefined) {
-    return { status: 'not-captured', reason: 'no NHI quote summary saved' };
+    return { status: 'not-captured', reason: 'no NHI quote response saved' };
   }
 
-  const mrp =
-    (await readLatestQuoteResult(join(folder, 'tcas-api'), /-POST-save-details/)) ??
-    (await readLatestQuoteResult(join(folder, 'tcas-api'), /-GET-quote-summary-/));
+  const mrp = await readLatestQuoteResult(join(folder, 'tcas-api'));
   if (mrp === undefined) {
     return { status: 'not-captured', reason: 'no MRP quote response saved' };
   }
@@ -151,10 +152,12 @@ export function compareQuotes(nhi: QuoteResultData, mrp: QuoteResultData, endpoi
 }
 
 /**
- * Reads the `quoteResult` of the last saved response matching a file name pattern, the one the page showed.
- * @returns The `quoteResult`, or `undefined` when the folder or a matching response is missing.
+ * Reads the `quoteResult` of the last quote response a flow's page received: its quote summary, or a later
+ * `save-details` re-quote when the page priced the quote again (NHI's page can do this too). The responses are
+ * numbered in the order they arrived, and the last one is the quote the page showed.
+ * @returns The `quoteResult`, or `undefined` when the folder or a quote response is missing.
  */
-async function readLatestQuoteResult(folder: string, pattern: RegExp): Promise<QuoteResultData | undefined> {
+async function readLatestQuoteResult(folder: string): Promise<QuoteResultData | undefined> {
   let names: string[];
   try {
     names = await readdir(folder);
@@ -163,7 +166,7 @@ async function readLatestQuoteResult(folder: string, pattern: RegExp): Promise<Q
   }
 
   const name = names
-    .filter((file) => pattern.test(file))
+    .filter((file) => quoteResponsePattern.test(file))
     .sort()
     .pop();
   if (name === undefined) {

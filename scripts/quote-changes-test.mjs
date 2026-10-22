@@ -289,7 +289,7 @@ describe('readQuoteChanges', () => {
 
   const endpoints = { nhi: 'quote', tcas: 'quote' };
 
-  test("compares NHI's last quote summary with MRP's last save-details response", async (context) => {
+  test("compares each side's last quote response, the one its page showed", async (context) => {
     // arrange
     const folder = await policyFolder(
       context,
@@ -309,6 +309,26 @@ describe('readQuoteChanges', () => {
       status: 'compared',
       changes: [{ summary: 'Buildings cover: offered on NHI, not on MRP' }]
     });
+  });
+
+  test("uses NHI's re-quote when its page priced the quote again after its quote summary", async (context) => {
+    // arrange
+    const nhiQuoteSummary = quote({ quoteAmounts: { yearlyAmount: 329.22 }, isConditional: true });
+    const nhiRequote = quote({ quoteAmounts: { yearlyAmount: 301.09 } });
+    const folder = await policyFolder(
+      context,
+      [
+        ['001-GET-quote-summary-guid-user-agent.json', nhiQuoteSummary],
+        ['006-POST-save-details.json', nhiRequote]
+      ],
+      [['008-POST-save-details.json', quote({ quoteAmounts: { yearlyAmount: 301.09 } })]]
+    );
+
+    // act
+    const result = await readQuoteChanges(folder, endpoints);
+
+    // assert
+    assert.deepEqual(result, { status: 'compared', changes: [] });
   });
 
   test("uses MRP's quote summary when it has no save-details response", async (context) => {
@@ -338,11 +358,11 @@ describe('readQuoteChanges', () => {
       'captured before end points were recorded'
     ],
     [
-      'a missing NHI quote summary',
+      'a missing NHI quote response',
       [['002-POST-answers.json', {}]],
       [['006-POST-save-details.json', quote()]],
       endpoints,
-      'no NHI quote summary saved'
+      'no NHI quote response saved'
     ],
     [
       'a missing MRP response',

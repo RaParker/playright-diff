@@ -756,7 +756,7 @@ describe('countQuoteChanges', () => {
           ]
         }
       ],
-      ['C-1', { status: 'not-captured', reason: 'no NHI quote summary saved' }]
+      ['C-1', { status: 'not-captured', reason: 'no NHI quote response saved' }]
     ]);
 
     // act

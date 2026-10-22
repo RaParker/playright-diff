@@ -449,8 +449,10 @@ npm run summarise differences
 ```
 
 This says what differs between NHI and MRP in terms of the quote, not the pixels. It compares
-each policy's saved quote data (`quoteResult` in NHI's quote summary and in MRP's
-`save-details` response, from `nhi-api/` and `tcas-api/`) and names each difference:
+each policy's saved quote data and names each difference. For each side it reads the
+`quoteResult` of the last quote response the page received, in `nhi-api/` and `tcas-api/`: the
+quote summary, or a later `save-details` re-quote when the page priced the quote again (both NHI
+and MRP pages can), since that is the quote the page showed:
 
 ```text
 Quote changes (…/playright-diff-output)
@@ -470,7 +472,7 @@ Data differs, screenshots match (129)
 
 Data not captured, so not compared (996): run them again
   995× captured before end points were recorded
-  1× no NHI quote summary saved
+  1× no NHI quote response saved
 
 Totals
 112 different of 1248 compared; 241 with data changes, 996 not captured.
