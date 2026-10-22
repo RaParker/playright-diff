@@ -482,7 +482,9 @@ Totals
 - **Ignored:** fields that differ on every comparison without meaning a different quote — each
   side's own references and GUIDs, the agent, date formats and defaults one side fills where the
   other sends nothing — listed in `noiseFields` in `src/quote-changes.ts`. `null` and an empty
-  value count as the same, and fields only one response has are left out.
+  value count as the same, and fields only one response has are left out. A joint policyholder's
+  relationship is also left out when it is `0` on NHI (whose saved quote does not keep it) and
+  not `0` on MRP, listed in `nhiUnsetFields`; any other relationship difference is still named.
 - **Screenshots differ, data matches:** differences in how the page renders.
 - **Data not captured:** policies whose screenshots differ but whose results have no recorded
   end points (from versions before they were recorded) or no saved response, counted by reason,

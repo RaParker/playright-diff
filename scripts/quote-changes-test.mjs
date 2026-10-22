@@ -218,6 +218,36 @@ describe('compareQuotes', () => {
       { typeOfCover: 'BC', voucherCodeViewModel: { amount: 5 } },
       { typeOfCover: 'B', addOnsNew: { home: { basic: { isAvailable: true } } } },
       [{ summary: 'Other data differs: typeOfCover', detail: '"BC" on NHI, "B" on MRP' }]
+    ],
+    [
+      "ignores a joint policyholder's relationship NHI leaves at 0",
+      { jointPolicyHolders: [{ relationship: 0 }] },
+      { jointPolicyHolders: [{ relationship: 11 }] },
+      []
+    ],
+    [
+      "ignores every joint policyholder's relationship NHI leaves at 0",
+      { jointPolicyHolders: [{ relationship: 0 }, { relationship: 0 }] },
+      { jointPolicyHolders: [{ relationship: 5 }, { relationship: 5 }] },
+      []
+    ],
+    [
+      "names a joint policyholder's relationship that differs on both sides",
+      { jointPolicyHolders: [{ relationship: 5 }] },
+      { jointPolicyHolders: [{ relationship: 6 }] },
+      [{ summary: 'Other data differs: jointPolicyHolders[].relationship', detail: '5 on NHI, 6 on MRP' }]
+    ],
+    [
+      "names a joint policyholder's relationship MRP leaves at 0",
+      { jointPolicyHolders: [{ relationship: 11 }] },
+      { jointPolicyHolders: [{ relationship: 0 }] },
+      [{ summary: 'Other data differs: jointPolicyHolders[].relationship', detail: '11 on NHI, 0 on MRP' }]
+    ],
+    [
+      "names joint policyholders' relationships when MRP also has a 0",
+      { jointPolicyHolders: [{ relationship: 0 }, { relationship: 0 }] },
+      { jointPolicyHolders: [{ relationship: 0 }, { relationship: 5 }] },
+      [{ summary: 'Other data differs: jointPolicyHolders[].relationship', detail: '0, 0 on NHI, 0, 5 on MRP' }]
     ]
   ]) {
     test(name, () => {

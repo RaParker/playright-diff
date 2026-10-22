@@ -89,6 +89,13 @@ const noiseFields: ReadonlySet<string> = new Set([
   'propertyAddress.addressSearchText'
 ]);
 
+/**
+ * Fields NHI's saved quote reports as `0`, a code that does not exist, whatever the customer answered: a joint
+ * policyholder's relationship comes back `0` from NHI and as the answered code from MRP (found 2026-10-22). Ignored
+ * only when every NHI value is `0` and no MRP value is, so any other difference is still reported.
+ */
+const nhiUnsetFields: ReadonlySet<string> = new Set(['jointPolicyHolders[].relationship']);
+
 /** Saved responses that carry a priced quote: a quote summary, or a `save-details` re-quote. */
 const quoteResponsePattern = /-GET-quote-summary-|-POST-save-details/;
 
@@ -297,7 +304,7 @@ function compareFlags(nhi: QuoteResultData, mrp: QuoteResultData, handled: Set<s
 /**
  * Reports, by field, every other leaf both quotes have that differs. Array elements are compared as a set of values
  * per field (so a change of order alone is not reported), and fields the named checks or the noise list cover are left
- * out.
+ * out, as are fields NHI leaves unset (see {@link nhiUnsetFields}).
  */
 function compareOtherFields(nhi: QuoteResultData, mrp: QuoteResultData, handled: Set<string>): QuoteChange[] {
   const [a, b] = [collectLeaves(nhi), collectLeaves(mrp)];
@@ -306,11 +313,21 @@ function compareOtherFields(nhi: QuoteResultData, mrp: QuoteResultData, handled:
     .filter((path) => !handled.has(path) && !noiseFields.has(path))
     .filter((path) => !checkedPrefixes.some((prefix) => path.startsWith(`${prefix}.`)))
     .filter((path) => a.get(path) !== b.get(path))
+    .filter((path) => !(nhiUnsetFields.has(path) && isUnsetOnNhiOnly(a.get(path), b.get(path))))
     .sort()
     .map((path) => ({
       summary: `Other data differs: ${path}`,
       detail: `${shorten(a.get(path))} on NHI, ${shorten(b.get(path))} on MRP`
     }));
+}
+
+/**
+ * Whether a field's values, as {@link collectLeaves} joins them, are all `0` on NHI and none `0` on MRP. The fields this
+ * is used for hold numbers, so splitting the joined values is safe.
+ */
+function isUnsetOnNhiOnly(nhiValues: string | undefined, mrpValues: string | undefined): boolean {
+  const split = (values: string | undefined) => (values ?? '').split(', ');
+  return split(nhiValues).every((value) => value === '0') && split(mrpValues).every((value) => value !== '0');
 }
 
 /** Reports a yes/no cover flag that differs, worded with `verb` (`offered`, `allowed`). */
