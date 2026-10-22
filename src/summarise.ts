@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { color, failureColor } from './color.js';
 import type { ComparisonReportBasics } from './compare.js';
 import type { FailedQuotePages } from './failed-quote-pages.js';
+import { flowOutputPaths, legacyFlowOutputPaths } from './flow-output.js';
 import { isMissing, parseJson, readDirectoryNames, readOptionalTextFile } from './fs-helpers.js';
 import { fetchedHistoryId, filterMissingMrpFiles } from './mrp-fetch.js';
 import {
@@ -27,10 +28,10 @@ const commonTextChangeLimit = 10;
 /** How many example policies `summarise differences` lists under each change in the quote data. */
 const changeExampleLimit = 3;
 
-/** Flows whose failure page, `<flow>-failed.html` in the policy's folder, is checked for Oops. */
+/** Flows whose failure page, `failed-<flow>.html` in the policy's folder, is checked for Oops. */
 const oopsFlows = [
-  { flow: 'NHI', file: 'nhi-failed.html' },
-  { flow: 'TCAS', file: 'tcas-failed.html' }
+  { flow: 'NHI', name: 'nhi' },
+  { flow: 'TCAS', name: 'mrp' }
 ] as const;
 
 /** The Oops heading quote-page stops on (see `OopsError`). */
@@ -209,10 +210,11 @@ export async function collectQuoteChanges(summary: QuoteResultsSummary): Promise
 }
 
 /**
- * Counts each flow's saved failure pages (`nhi-failed.html`, `tcas-failed.html` in each policy's folder) that show the
- * Oops heading, and how many of those policies still compared or declined, for example after NHI retried with a
- * replacement quote GUID. A page saved before its policy's last recorded run started is left over from an earlier run
- * (one that stopped before clearing old output, such as for a missing MRP), so it is not counted.
+ * Counts each flow's saved failure pages (`failed-nhi.html`, `failed-mrp.html` in each policy's folder, or
+ * `nhi-failed.html`, `tcas-failed.html` in results saved before those names) that show the Oops heading, and how many
+ * of those policies still compared or declined, for example after NHI retried with a replacement quote GUID. A page
+ * saved before its policy's last recorded run started is left over from an earlier run (one that stopped before
+ * clearing old output, such as for a missing MRP), so it is not counted.
  * @param summary The results summary, giving the folder to read, which policies recovered and when each last run
  * started.
  * @returns One count for NHI, then one for TCAS.
@@ -222,9 +224,16 @@ export async function countOopsPages(summary: QuoteResultsSummary): Promise<Oops
   const recoveredNames = new Set([...summary.compared.map(({ name }) => name), ...summary.declined]);
   const names = (await readDirectoryNames(summary.root)).filter((name) => policyFolderPattern.test(name));
   return Promise.all(
-    oopsFlows.map(async ({ flow, file }) => {
+    oopsFlows.map(async ({ flow, name: flowName }) => {
       const oops = await Promise.all(
-        names.map((name) => isCurrentOopsPage(join(summary.root, name, file), summary.runStarts.get(name)))
+        names.map(async (name) => {
+          const folder = join(summary.root, name);
+          const runStartedAt = summary.runStarts.get(name);
+          return (
+            (await isCurrentOopsPage(flowOutputPaths(folder, flowName).stopped.failed.html, runStartedAt)) ||
+            (await isCurrentOopsPage(legacyFlowOutputPaths(folder, flowName).failedHtml, runStartedAt))
+          );
+        })
       );
       const oopsNames = names.filter((_name, index) => oops[index] === true);
       return {

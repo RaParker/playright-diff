@@ -55,7 +55,7 @@ try {
   // A previous run's stale output for this policy, removed before the new captures.
   const policyFolder = join(directory, 'ABCDEF1234567890ABCDEF1234567890-42');
   await mkdir(policyFolder);
-  await writeFile(join(policyFolder, 'nhi-failed.png'), '');
+  await writeFile(join(policyFolder, 'screenshot-failed-nhi.png'), '');
   await writeFile(
     join(directory, '.env'),
     [
@@ -109,18 +109,18 @@ try {
   // The screenshots and the comparison share the policy's folder; the stale failure screenshot is gone.
   assert.deepEqual((await readdir(policyFolder)).sort(), [
     'diff.png',
-    'nhi-quote-page-standardized.html',
-    'nhi-quote-page.html',
-    'nhi.png',
+    'quote-page-mrp.html',
+    'quote-page-nhi.html',
+    'quote-page-standardized-mrp.html',
+    'quote-page-standardized-nhi.html',
     'report.json',
     'report.md',
     'result.json',
-    'tcas-quote-page-standardized.html',
-    'tcas-quote-page.html',
-    'tcas.png'
+    'screenshot-quote-page-mrp.png',
+    'screenshot-quote-page-nhi.png'
   ]);
-  for (const flow of ['nhi', 'tcas']) {
-    const png = await readFile(join(policyFolder, `${flow}.png`));
+  for (const flow of ['nhi', 'mrp']) {
+    const png = await readFile(join(policyFolder, `screenshot-quote-page-${flow}.png`));
     assert.equal(png.readUInt32BE(16), 1440);
   }
 
@@ -130,8 +130,8 @@ try {
   const report = JSON.parse(await readFile(join(policyFolder, 'report.json'), 'utf8'));
   assert.equal(report.changedPixels, 0);
   assert.equal(report.ocrEnabled, false);
-  assert.equal(report.before, join(policyFolder, 'nhi.png'));
-  assert.equal(report.after, join(policyFolder, 'tcas.png'));
+  assert.equal(report.before, join(policyFolder, 'screenshot-quote-page-nhi.png'));
+  assert.equal(report.after, join(policyFolder, 'screenshot-quote-page-mrp.png'));
   console.log('Quote-page integration test passed.');
 } finally {
   server.closeAllConnections();

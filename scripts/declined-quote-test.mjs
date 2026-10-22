@@ -58,6 +58,38 @@ for (const [name, html, beforeCapture, expectedDeclined] of [
   });
 }
 
+test('declined quote: saves the declined screenshot and HTML where stoppedOutputs says', async (context) => {
+  // arrange
+  const server = createServer((_request, response) => {
+    response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    response.end(declinedPageHtml);
+  });
+  await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+  const directory = await mkdtemp(join(tmpdir(), 'declined-quote-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const stopped = (stop) => ({
+    screenshot: join(directory, `screenshot-${stop}-nhi.png`),
+    html: join(directory, `${stop}-nhi.html`)
+  });
+  try {
+    // act
+    const capture = screenshot(`http://127.0.0.1:${server.address().port}`, {
+      output: join(directory, 'screenshot-quote-page-nhi.png'),
+      wait: 0,
+      timeout: 3000,
+      stoppedOutputs: { declined: stopped('declined'), failed: stopped('failed') }
+    });
+
+    // assert
+    await assert.rejects(capture, DeclinedError);
+    assert.deepEqual((await readdir(directory)).sort(), ['declined-nhi.html', 'screenshot-declined-nhi.png']);
+    assert.match(await readFile(join(directory, 'declined-nhi.html'), 'utf8'), /unable to offer you a quote/);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+  }
+});
+
 test('failure HTML is the rendered DOM, not the served source', async (context) => {
   // arrange
   const server = createServer((_request, response) => {

@@ -6,7 +6,7 @@ import { outputPath } from './output-paths.js';
 /**
  * Deletes the output folder a previous quote-page run wrote for one policy (its screenshots, failure HTML, API
  * responses, comparison report, result and answer changes), so a new run cannot leave stale results (for example an
- * old `nhi-failed.png` beside a new screenshot, or an old response numbered among the new ones).
+ * old `screenshot-failed-nhi.png` beside a new screenshot, or an old response numbered among the new ones).
  * @param basename Output folder name, `<policyDetailsId>-<historyId>`.
  * @returns Whether there was a folder to remove.
  */

@@ -681,21 +681,21 @@ describe('quote-page declined quotes', () => {
       'compares the declined pages when NHI and TCAS both decline',
       ['/nhi/', '/tcas/'],
       { nhi: 'declined', tcas: 'declined' },
-      ['nhi-declined.png', 'tcas-declined.png'],
+      ['screenshot-declined-nhi.png', 'screenshot-declined-mrp.png'],
       'NHI and TCAS both declined.'
     ],
     [
       "compares NHI's declined page with TCAS's quote page when only NHI declines",
       ['/nhi/'],
       { nhi: 'declined', tcas: 'quote' },
-      ['nhi-declined.png', 'tcas.png'],
+      ['screenshot-declined-nhi.png', 'screenshot-quote-page-mrp.png'],
       'NHI declined, TCAS quoted.'
     ],
     [
       "compares NHI's quote page with TCAS's declined page when only TCAS declines",
       ['/tcas/'],
       { nhi: 'quote', tcas: 'declined' },
-      ['nhi.png', 'tcas-declined.png'],
+      ['screenshot-quote-page-nhi.png', 'screenshot-declined-mrp.png'],
       'NHI quoted, TCAS declined.'
     ]
   ]) {
@@ -803,7 +803,7 @@ describe('quote-page referrals and conditional quotes', () => {
         const saved = await readComparedResult(directory);
         assert.deepEqual(
           { outcome: saved.outcome, endpoints: saved.endpoints, images: [saved.before, saved.after] },
-          { outcome: 'compared', endpoints, images: ['nhi.png', 'tcas.png'] }
+          { outcome: 'compared', endpoints, images: ['screenshot-quote-page-nhi.png', 'screenshot-quote-page-mrp.png'] }
         );
       });
     });
@@ -925,7 +925,7 @@ describe('quote-pages', () => {
       assert.ok(result.output.includes('\u001b[32m0 identical'), result.output);
       assert.ok(result.output.includes('\u001b[33m1 different'), result.output);
       assert.ok(result.output.includes(`\n${policyA}-1\n`), result.output);
-      assert.ok((await readdir(join(directory, `${policyB}-1`))).includes('nhi.png'));
+      assert.ok((await readdir(join(directory, `${policyB}-1`))).includes('screenshot-quote-page-nhi.png'));
       const saved = await readFailed(directory);
       assert.deepEqual(
         saved.failed.map(({ policyDetailsId }) => policyDetailsId),

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, describe, test } from 'node:test';
@@ -102,11 +102,11 @@ async function projectFixture() {
   await mkdir(join(root, '.ocr-cache'));
   await writeReport(join(root, 'comparisons'), 'run-2026-10-12', { changedPixels: 5 });
 
-  await writeFile(join(root, `${identicalPolicy}-1`, 'nhi-failed.html'), '<body><h2 class="x"> Oops </h2></body>');
-  await writeFile(join(root, `${failedPolicy}-1`, 'nhi-failed.html'), '<h2>Oops</h2>');
-  await writeFile(join(root, `${failedPolicy}-1`, 'tcas-failed.html'), '<h2>Oops</h2>');
-  await writeFile(join(root, `${visualPolicy}-1`, 'tcas-failed.html'), '<h1>Cover details</h1>');
-  await writeFile(join(root, `${identicalPolicy}-1`, 'nhi.png'), '');
+  await writeFile(join(root, `${identicalPolicy}-1`, 'failed-nhi.html'), '<body><h2 class="x"> Oops </h2></body>');
+  await writeFile(join(root, `${failedPolicy}-1`, 'failed-nhi.html'), '<h2>Oops</h2>');
+  await writeFile(join(root, `${failedPolicy}-1`, 'failed-mrp.html'), '<h2>Oops</h2>');
+  await writeFile(join(root, `${visualPolicy}-1`, 'failed-mrp.html'), '<h1>Cover details</h1>');
+  await writeFile(join(root, `${identicalPolicy}-1`, 'screenshot-quote-page-nhi.png'), '');
 
   const mrp = join(directory, 'mrp');
   await mkdir(mrp);
@@ -446,6 +446,28 @@ describe('countOopsPages', () => {
       { flow: 'TCAS', total: 1, recovered: 0 }
     ]);
   });
+
+  test('counts Oops failure pages saved under the names results used before', async () => {
+    // arrange
+    const { root } = await projectFixture();
+    for (const [current, legacy] of [
+      ['failed-nhi.html', 'nhi-failed.html'],
+      ['failed-mrp.html', 'tcas-failed.html']
+    ]) {
+      await rename(join(root, `${failedPolicy}-1`, current), join(root, `${failedPolicy}-1`, legacy));
+    }
+
+    const summary = await collectQuoteResults(root);
+
+    // act
+    const counts = await countOopsPages(summary);
+
+    // assert
+    assert.deepEqual(counts, [
+      { flow: 'NHI', total: 2, recovered: 1 },
+      { flow: 'TCAS', total: 1, recovered: 0 }
+    ]);
+  });
 });
 
 describe('countOopsPages with earlier runs', () => {
@@ -453,7 +475,7 @@ describe('countOopsPages with earlier runs', () => {
     // arrange
     const { root } = await projectFixture();
     const stale = new Date('1999-12-31T00:00:00.000Z');
-    await utimes(join(root, `${failedPolicy}-1`, 'tcas-failed.html'), stale, stale);
+    await utimes(join(root, `${failedPolicy}-1`, 'failed-mrp.html'), stale, stale);
     const summary = await collectQuoteResults(root);
 
     // act
@@ -470,7 +492,7 @@ describe('countOopsPages with earlier runs', () => {
     // arrange
     const { root } = await projectFixture();
     const stale = new Date('1999-12-31T00:00:00.000Z');
-    await utimes(join(root, `${identicalPolicy}-1`, 'nhi-failed.html'), stale, stale);
+    await utimes(join(root, `${identicalPolicy}-1`, 'failed-nhi.html'), stale, stale);
     const summary = await collectQuoteResults(root);
 
     // act
@@ -795,8 +817,8 @@ describe('summarise differences from the quote data', () => {
       root
     );
     for (const [side, file, quoteResult] of [
-      ['nhi-api', '001-GET-quote-summary-guid-user-agent.json', nhiQuote],
-      ['tcas-api', '006-POST-save-details.json', mrpQuote]
+      ['api-nhi', '001-GET-quote-summary-guid-user-agent.json', nhiQuote],
+      ['api-mrp', '006-POST-save-details.json', mrpQuote]
     ]) {
       await mkdir(join(root, `${policy}-1`, side), { recursive: true });
       await writeFile(join(root, `${policy}-1`, side, file), JSON.stringify({ status: 200, body: { quoteResult } }));

@@ -1,5 +1,6 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { flowOutputPaths, legacyFlowOutputPaths, type FlowName } from './flow-output.js';
 import { parseJson, readOptionalTextFile } from './fs-helpers.js';
 import { nameEndpoint, type QuoteEndpoints } from './quote-endpoint.js';
 
@@ -125,12 +126,12 @@ export async function readQuoteChanges(folder: string, endpoints?: QuoteEndpoint
     return { status: 'not-captured', reason: 'captured before end points were recorded' };
   }
 
-  const nhi = await readLatestQuoteResult(join(folder, 'nhi-api'));
+  const nhi = await readFlowQuoteResult(folder, 'nhi');
   if (nhi === undefined) {
     return { status: 'not-captured', reason: 'no NHI quote response saved' };
   }
 
-  const mrp = await readLatestQuoteResult(join(folder, 'tcas-api'));
+  const mrp = await readFlowQuoteResult(folder, 'mrp');
   if (mrp === undefined) {
     return { status: 'not-captured', reason: 'no MRP quote response saved' };
   }
@@ -160,6 +161,18 @@ export function compareQuotes(nhi: QuoteResultData, mrp: QuoteResultData, endpoi
     ...compareFlags(nhi, mrp, handled)
   ];
   return [...changes, ...compareOtherFields(nhi, mrp, handled)];
+}
+
+/**
+ * Reads a flow's quote (see {@link readLatestQuoteResult}) from its API responses folder, or from the folder results
+ * saved before the current names used, when it has none.
+ * @returns The `quoteResult`, or `undefined` when neither folder holds a quote response.
+ */
+async function readFlowQuoteResult(folder: string, flow: FlowName): Promise<QuoteResultData | undefined> {
+  return (
+    (await readLatestQuoteResult(flowOutputPaths(folder, flow).apiResponses)) ??
+    (await readLatestQuoteResult(legacyFlowOutputPaths(folder, flow).apiResponses))
+  );
 }
 
 /**

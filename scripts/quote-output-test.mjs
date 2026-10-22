@@ -22,13 +22,13 @@ describe('removeQuoteOutput', () => {
 
   test("removes the policy's folder with everything in it and keeps other policies and history IDs", async () => {
     // arrange
-    await mkdir(join(directory, basename, 'nhi-api'), { recursive: true });
+    await mkdir(join(directory, basename, 'api-nhi'), { recursive: true });
     for (const file of [
-      'nhi.png',
-      'tcas-failed.html',
+      'screenshot-quote-page-nhi.png',
+      'failed-mrp.html',
       'report.json',
       'result.json',
-      join('nhi-api', '001-GET-x.json')
+      join('api-nhi', '001-GET-x.json')
     ]) {
       await writeFile(join(directory, basename, file), '');
     }

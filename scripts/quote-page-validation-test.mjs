@@ -259,15 +259,15 @@ for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].ma
       assert.match((await readFailedResult(directory)).issues.join('\n'), /Website displayed <h2>Oops<\/h2>/);
       assert.doesNotMatch(result.output, /Report:/);
       // The other flow's screenshot and quote page HTML and this flow's failure page, but no comparison.
-      const other = flow === 'nhi' ? 'tcas' : 'nhi';
+      const [name, other] = flow === 'nhi' ? ['nhi', 'mrp'] : ['mrp', 'nhi'];
       assert.deepEqual(
         (await readdir(join(directory, 'ABCDEF1234567890ABCDEF1234567890-42'))).sort(),
         [
-          `${other}.png`,
-          `${other}-quote-page.html`,
-          `${other}-quote-page-standardized.html`,
-          `${flow}-failed.html`,
-          `${flow}-failed.png`,
+          `screenshot-quote-page-${other}.png`,
+          `quote-page-${other}.html`,
+          `quote-page-standardized-${other}.html`,
+          `failed-${name}.html`,
+          `screenshot-failed-${name}.png`,
           'result.json'
         ].sort()
       );
@@ -313,11 +313,11 @@ test('quote-page stops after an HTTP failure and respects environment over .env'
     assert.equal(saved.issues[0], 'Quote capture failed; comparison skipped.');
     assert.equal(saved.validation, false);
     assert.deepEqual((await readdir(join(directory, 'ABCDEF1234567890ABCDEF1234567890-42'))).sort(), [
-      'nhi-failed.html',
-      'nhi-failed.png',
+      'failed-mrp.html',
+      'failed-nhi.html',
       'result.json',
-      'tcas-failed.html',
-      'tcas-failed.png'
+      'screenshot-failed-mrp.png',
+      'screenshot-failed-nhi.png'
     ]);
     assert.equal(await readFile(join(directory, '.env'), 'utf8'), 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=invalid');
   } finally {

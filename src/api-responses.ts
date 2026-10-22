@@ -1,12 +1,9 @@
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
-import { dirname, extname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { Page, Response } from 'playwright';
 import { isApiUrl } from './api-requests.js';
 import { color } from './color.js';
 import { isMissing } from './fs-helpers.js';
-
-/** Suffix added to a screenshot's name (without its extension) for the folder of its capture's API responses. */
-export const apiResponsesSuffix = '-api';
 
 /** One saved API response, as written to its JSON file. */
 export interface SavedApiResponse {
@@ -27,16 +24,6 @@ export interface ApiResponseRecorder {
 
 /** Longest part of a response file name taken from the endpoint's path, so names stay within Windows path limits. */
 const maxPathNameLength = 80;
-
-/**
- * Gives the folder that holds the API responses of a screenshot's capture: the screenshot's path without its extension,
- * plus {@link apiResponsesSuffix} (for example `<ID>-1/nhi-api` for `<ID>-1/nhi.png`).
- * @param screenshotPath Path of the screenshot.
- * @returns The folder path.
- */
-export function apiResponsesFolder(screenshotPath: string): string {
-  return `${screenshotPath.slice(0, screenshotPath.length - extname(screenshotPath).length)}${apiResponsesSuffix}`;
-}
 
 /**
  * Starts saving every JSON response the page receives from the site's own API (`/api/` on the given origin), one file

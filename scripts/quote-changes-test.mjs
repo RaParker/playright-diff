@@ -337,13 +337,16 @@ describe('compareQuotes', () => {
 });
 
 describe('readQuoteChanges', () => {
-  /** Writes a policy folder with the given NHI and MRP responses, each a list of [file name, quoteResult]. */
-  async function policyFolder(context, nhiFiles, mrpFiles) {
+  /**
+   * Writes a policy folder with the given NHI and MRP responses, each a list of [file name, quoteResult], in the API
+   * response folders named by `folders` (the current names by default).
+   */
+  async function policyFolder(context, nhiFiles, mrpFiles, folders = ['api-nhi', 'api-mrp']) {
     const folder = await mkdtemp(join(tmpdir(), 'quote-changes-'));
     context.after(() => rm(folder, { recursive: true, force: true }));
     for (const [side, files] of [
-      ['nhi-api', nhiFiles],
-      ['tcas-api', mrpFiles]
+      [folders[0], nhiFiles],
+      [folders[1], mrpFiles]
     ]) {
       await mkdir(join(folder, side), { recursive: true });
       for (const [name, quoteResult] of files) {
@@ -406,6 +409,25 @@ describe('readQuoteChanges', () => {
       context,
       [['001-GET-quote-summary-guid-user-agent.json', quote()]],
       [['001-GET-quote-summary-guid-user-agent.json', quote({ quoteAmounts: { adminFee: 0 } })]]
+    );
+
+    // act
+    const result = await readQuoteChanges(folder, endpoints);
+
+    // assert
+    assert.deepEqual(result, {
+      status: 'compared',
+      changes: [{ summary: 'Admin fee differs', detail: '£50 on NHI, £0 on MRP' }]
+    });
+  });
+
+  test('reads the API response folders results used before the current names', async (context) => {
+    // arrange
+    const folder = await policyFolder(
+      context,
+      [['001-GET-quote-summary-guid-user-agent.json', quote()]],
+      [['006-POST-save-details.json', quote({ quoteAmounts: { adminFee: 0 } })]],
+      ['nhi-api', 'tcas-api']
     );
 
     // act

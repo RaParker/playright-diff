@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { extname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import type { Page } from 'playwright';
 import {
   answerChangesFileName,
@@ -8,13 +8,13 @@ import {
   writeAnswerChanges,
   type AnswerChangesByFlow
 } from './answer-changes.js';
-import { apiResponsesFolder } from './api-responses.js';
 import { color, failureColor } from './color.js';
 import { compare, type ComparisonCounts } from './compare.js';
 import { runConcurrently, validateConcurrency } from './concurrency.js';
 import { isMissing, parseJson, readOptionalTextFile } from './fs-helpers.js';
 import { runWithLogPrefix, withPrefixedConsole } from './log-context.js';
 import { writeFailedQuotePages, type FailedQuotePage } from './failed-quote-pages.js';
+import { flowOutputPaths, type FlowOutputPaths } from './flow-output.js';
 import {
   readQuoteGuidMapping,
   requestQuoteGuid,
@@ -37,7 +37,6 @@ import {
   DeclinedError,
   OopsError,
   screenshot,
-  stoppedScreenshotPath,
   UnexpectedPageError,
   ValidationError,
   type ScreenshotOptions
@@ -339,7 +338,7 @@ interface CaptureAndCompareResult {
 
 /**
  * Captures both flows for a policy whose ID is valid, then compares them unless a side failed. A decline is compared
- * through its `-declined.png` screenshot, against the other side's quote page or decline.
+ * through its `screenshot-declined-<flow>.png`, against the other side's quote page or decline.
  * @returns `'compared'` with the comparison's counts and where each flow ended, and when the quote pages listed the
  * endorsements in different orders, each flow's order.
  * @throws As {@link quotePage}.
@@ -363,8 +362,8 @@ async function captureAndCompare(
     policyDetailsId,
     historyId: String(historyId)
   });
-  const nhiPath = outputPath(basename, 'nhi.png');
-  const tcasPath = outputPath(basename, 'tcas.png');
+  const nhiPaths = flowOutputPaths(outputPath(basename), 'nhi');
+  const tcasPaths = flowOutputPaths(outputPath(basename), 'mrp');
   const mappingPath = resolve(fallback?.mappingPath ?? 'quote-guid-mapping.json');
   const mappedGuid = fallback === undefined ? undefined : (await readQuoteGuidMapping(mappingPath))[artemisQuoteGuid];
   // Inputs are valid, so clear the previous run's results before writing new ones.
@@ -373,15 +372,14 @@ async function captureAndCompare(
   const originalTcasAttempt =
     mappedGuid === undefined
       ? startAnswerChangeAttempt(() =>
-          captureAt('TCAS', tcasUrl, {
-            output: tcasPath,
+          captureAt('TCAS', tcasUrl, tcasPaths, {
             timeout: options.timeout,
             beforeCapture: withAnnualPayment('TCAS', tcasQuote)
           })
         )
       : undefined;
   const [nhi, originalTcas] = await Promise.allSettled([
-    captureNhi(artemisQuoteGuid, mappedGuid, mappingPath, policyDetailsId, historyId, nhiPath, options),
+    captureNhi(artemisQuoteGuid, mappedGuid, mappingPath, policyDetailsId, historyId, nhiPaths, options),
     originalTcasAttempt?.result
   ]);
   let tcas = originalTcas;
@@ -402,8 +400,7 @@ async function captureAndCompare(
     // The replacement's quote summary shows NHI's saved quote, so it is re-quoted the way the original TCAS journey's
     // Get your quote does; otherwise differences in TCAS's own pricing would not be captured.
     [tcas] = await Promise.allSettled([
-      captureAt('TCAS', replacementUrl, {
-        output: tcasPath,
+      captureAt('TCAS', replacementUrl, tcasPaths, {
         timeout: options.timeout,
         beforeCapture: withAnnualPayment('TCAS', inSequence(quoteSummary('TCAS'), requote('TCAS')))
       })
@@ -435,8 +432,8 @@ async function captureAndCompare(
   }
 
   const comparison = await compare(
-    endpointScreenshot(nhiPath, endpoints.nhi),
-    endpointScreenshot(tcasPath, endpoints.tcas),
+    endpointScreenshot(nhiPaths, endpoints.nhi),
+    endpointScreenshot(tcasPaths, endpoints.tcas),
     {
       output: outputPath(basename),
       reuseOutput: true,
@@ -446,13 +443,13 @@ async function captureAndCompare(
   );
   return {
     quotePageResult: { outcome: 'compared', comparison, endpoints },
-    endorsementOrder: await readEndorsementOrder(nhiPath, tcasPath)
+    endorsementOrder: await readEndorsementOrder(nhiPaths, tcasPaths)
   };
 }
 
-/** The screenshot that shows where a flow ended: its `-declined.png` for a decline, otherwise its quote page. */
-function endpointScreenshot(path: string, endpoint: QuoteEndpoint): string {
-  return endpoint === 'declined' ? stoppedScreenshotPath(path, 'declined') : path;
+/** The screenshot that shows where a flow ended: its declined screenshot for a decline, otherwise its quote page. */
+function endpointScreenshot(paths: FlowOutputPaths, endpoint: QuoteEndpoint): string {
+  return endpoint === 'declined' ? paths.stopped.declined.screenshot : paths.screenshot;
 }
 
 /**
@@ -524,12 +521,11 @@ async function captureNhi(
   mappingPath: string,
   policyDetailsId: string,
   historyId: number,
-  output: string,
+  paths: FlowOutputPaths,
   options: QuotePageOptions
 ): Promise<NhiCapture> {
   const capture = (quoteGuid: string) =>
-    captureAt('NHI', templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), {
-      output,
+    captureAt('NHI', templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), paths, {
       timeout: options.timeout,
       beforeCapture: withAnnualPayment('NHI', quoteSummary('NHI'))
     });
@@ -543,8 +539,7 @@ async function captureNhi(
 
   // Replacement quotes exist only in the question set store until the journey's quote button saves them to NHI.
   const captureUnsaved = (quoteGuid: string) =>
-    captureAt('NHI', templateUrl(fallback.unsavedQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), {
-      output,
+    captureAt('NHI', templateUrl(fallback.unsavedQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), paths, {
       timeout: options.timeout,
       beforeCapture: withAnnualPayment('NHI', unsavedQuote)
     });
@@ -599,28 +594,33 @@ async function keepAnswerChangesUnlessOops<T>(task: () => Promise<T>): Promise<T
 }
 
 /**
- * Logs the URL a flow opens, captures it, and adds the URL to any failure. The page's API responses are saved beside
- * the screenshot (see {@link apiResponsesFolder}), so the data behind a difference can be compared.
- * @returns `'declined'` when the site declined to quote (its `-declined.png` is saved), otherwise the kind of quote the
- * captured page shows (see {@link readQuoteEndpoint}).
+ * Logs the URL a flow opens, captures it to the flow's files (see {@link FlowOutputPaths}), and adds the URL to any
+ * failure. The page's API responses and HTML are saved with the screenshot, so the data behind a difference can be
+ * compared.
+ * @returns `'declined'` when the site declined to quote (its declined screenshot is saved), otherwise the kind of quote
+ * the captured page shows (see {@link readQuoteEndpoint}).
  * @throws The capture's error with the URL appended; an {@link OopsError}, {@link ValidationError} or
  * {@link UnexpectedPageError} keeps its class.
  */
-async function captureAt(label: string, url: string, options: ScreenshotOptions): Promise<QuoteEndpoint> {
+async function captureAt(
+  label: string,
+  url: string,
+  paths: FlowOutputPaths,
+  options: Pick<ScreenshotOptions, 'timeout' | 'beforeCapture'>
+): Promise<QuoteEndpoint> {
   console.log(`${label}: opening ${url}`);
-  const htmlPaths = options.output === undefined ? undefined : quotePageHtmlPaths(options.output);
   try {
     await screenshot(url, {
       ...options,
+      output: paths.screenshot,
       mask: maskedSelectors,
-      apiResponsesFolder: options.output === undefined ? undefined : apiResponsesFolder(options.output),
-      html:
-        htmlPaths === undefined
-          ? undefined
-          : {
-              ...htmlPaths,
-              standardise: (page) => standardiseQuotePage(page, label)
-            }
+      apiResponsesFolder: paths.apiResponses,
+      stoppedOutputs: paths.stopped,
+      html: {
+        output: paths.html,
+        standardisedOutput: paths.standardisedHtml,
+        standardise: (page) => standardiseQuotePage(page, label)
+      }
     });
   } catch (error) {
     if (error instanceof DeclinedError) {
@@ -643,7 +643,7 @@ async function captureAt(label: string, url: string, options: ScreenshotOptions)
     throw new Error(`${error instanceof Error ? error.message : String(error)} (${url})`, { cause: error });
   }
 
-  const html = htmlPaths === undefined ? undefined : await readOptionalTextFile(htmlPaths.output);
+  const html = await readOptionalTextFile(paths.html);
   return html === undefined ? 'quote' : readQuoteEndpoint(html);
 }
 
@@ -695,23 +695,17 @@ function withAnnualPayment(label: string, journey: (page: Page) => Promise<void>
 }
 
 /**
- * Where a capture saves its quote page HTML: `<flow>-quote-page.html` as the site rendered it, and
- * `<flow>-quote-page-standardized.html` as the screenshot shows it, beside the `<flow>.png` screenshot.
- */
-function quotePageHtmlPaths(screenshotPath: string): { output: string; standardisedOutput: string } {
-  const base = screenshotPath.slice(0, -extname(screenshotPath).length);
-  return { output: `${base}-quote-page.html`, standardisedOutput: `${base}-quote-page-standardized.html` };
-}
-
-/**
  * Reads the order each flow's quote page listed the endorsements in, before {@link standardiseQuotePage} put them in
- * standard order, from the HTML saved beside the screenshots.
+ * standard order, from the HTML saved with the screenshots.
  * @returns Both orders, or `undefined` when they are the same (or a page's HTML was not saved).
  */
-async function readEndorsementOrder(nhiPath: string, tcasPath: string): Promise<EndorsementOrder | undefined> {
+async function readEndorsementOrder(
+  nhiPaths: FlowOutputPaths,
+  tcasPaths: FlowOutputPaths
+): Promise<EndorsementOrder | undefined> {
   const [nhi, tcas] = await Promise.all(
-    [nhiPath, tcasPath].map(async (path) => {
-      const html = await readOptionalTextFile(quotePageHtmlPaths(path).output);
+    [nhiPaths, tcasPaths].map(async (paths) => {
+      const html = await readOptionalTextFile(paths.html);
       return html === undefined ? undefined : readEndorsementTitles(html);
     })
   );

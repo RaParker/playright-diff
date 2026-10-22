@@ -173,12 +173,12 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
 
   ```text
   <ID>-<historyId>/
-  ├── nhi.png, tcas.png              screenshots (NHI = before, TCAS = after)
-  ├── nhi-quote-page.html            the captured page's HTML as rendered (likewise tcas)
-  ├── nhi-quote-page-standardized.html  the same, standardised as screenshotted (likewise tcas)
-  ├── nhi-failed.png, .html          when a flow failed (likewise tcas-failed)
-  ├── nhi-declined.png, .html        when a flow declined (likewise tcas-declined)
-  ├── nhi-api/, tcas-api/            API responses (see below)
+  ├── screenshot-quote-page-nhi.png  screenshots (NHI = before, MRP = after; likewise -mrp)
+  ├── quote-page-nhi.html            the captured page's HTML as rendered (likewise -mrp)
+  ├── quote-page-standardized-nhi.html  the same, standardised as screenshotted (likewise -mrp)
+  ├── screenshot-failed-nhi.png, failed-nhi.html      when a flow failed (likewise -mrp)
+  ├── screenshot-declined-nhi.png, declined-nhi.html  when a flow declined (likewise -mrp)
+  ├── api-nhi/, api-mrp/             API responses (see below)
   ├── diff.png, region-N-before.png, region-N-after.png
   ├── report.md, report.json         the comparison
   ├── result.json                    how the run ended (see below)
@@ -186,9 +186,12 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   ```
 
   Before capturing (once the inputs are valid), the policy's previous folder is deleted with
-  everything in it. `quote-guid-mapping.json` is kept. Older versions wrote to `screenshots/`
-  and `comparisons/<ID>-<historyId>/` instead; move that output with
-  [migrate-output](#migrate-output).
+  everything in it. `quote-guid-mapping.json` is kept. The MRP side's files are named `mrp`
+  (it is the TCAS journey). Results saved before these names used `nhi.png`, `tcas.png`,
+  `nhi-quote-page.html`, `nhi-failed.html`, `nhi-api/`, `tcas-api/` and so on; they are not
+  renamed, and [summarise](#summarise) still reads their API responses and failure pages.
+  Older versions still wrote to `screenshots/` and `comparisons/<ID>-<historyId>/`; move that
+  output with [migrate-output](#migrate-output).
 
 - **Result:** every run with a valid policy and history ID ends by writing
   `<ID>-<historyId>/result.json` — `outcome` (`compared` or `failed`; versions before declines
@@ -207,7 +210,7 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   See [Answer changes file](#answer-changes-file) for its format.
 - **API responses:** every JSON response each flow's page gets from the site's own API
   (`/api/` on the page's origin) is saved, whether the capture succeeds or fails, in
-  `<ID>-<historyId>/nhi-api/` and `tcas-api/`. Each response is one file,
+  `<ID>-<historyId>/api-nhi/` and `api-mrp/`. Each response is one file,
   numbered in the order it arrived, such as `001-GET-quote-summary-<guid>.json`, holding the
   `url`, `method`, `status`, `requestBody` and `body` (parsed when they are JSON). An NHI Oops
   attempt and its replacement journey, or the original and replacement TCAS captures, share
@@ -216,7 +219,7 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   test policy's details, so keep the output folder local. If a response cannot be saved, a
   yellow `Could not save API response …` warning is shown and the capture carries on.
 - **Masked areas:** the footer (`.hp-footer`) is painted over in flat grey in both screenshots,
-  `-declined` ones included (not in `-failed` ones), so it is never compared. It is the same on both sides,
+  `screenshot-declined-` ones included (not in `screenshot-failed-` ones), so it is never compared. It is the same on both sides,
   but OCR read its separators (`»`, `=`, `+`) differently between captures, reporting false text
   changes. Real footer differences, such as a build version, are therefore not caught. Add
   selectors to `maskedSelectors` in `src/quote-page.ts` to mask other areas. Existing
@@ -227,8 +230,8 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   show up in the comparison, while any difference in wording still does. When the step moves
   anything it logs the order shown, such as
   `TCAS: endorsements put in standard order; shown as: Unoccupancy clause, Bike security endorsement.`
-  Both versions of the page are kept: `nhi-quote-page.html` as the site rendered it and
-  `nhi-quote-page-standardized.html` as screenshotted (likewise `tcas`), whether or not anything
+  Both versions of the page are kept: `quote-page-nhi.html` as the site rendered it and
+  `quote-page-standardized-nhi.html` as screenshotted (likewise `-mrp`), whether or not anything
   moved. If the orders differed, `result.json` records both (`endorsementOrder`) and
   [summarise](#summarise) counts the policy. The step lives in `src/standardise-page.ts`.
 
@@ -433,8 +436,9 @@ Endorsement order: 12 compared after putting NHI's and TCAS's different orders i
 - **GUID list:** read from `QUOTE_GUID_LIST_PATH` and `MRP_AND_QUOTE_OUTPUT_DIR` in `.env`.
   Unlike for the other commands, both are optional; without them the GUID list line and MRP
   section are skipped.
-- **Oops pages:** counts the `<ID>-<historyId>/nhi-failed.html` and
-  `tcas-failed.html` pages that show the Oops heading. A policy that "later compared or
+- **Oops pages:** counts the `<ID>-<historyId>/failed-nhi.html` and
+  `failed-mrp.html` pages (`nhi-failed.html` and `tcas-failed.html` in results saved before
+  those names) that show the Oops heading. A policy that "later compared or
   declined" recovered, usually through the [NHI Oops fallback](#nhi-oops-fallback). A page
   saved before the policy's last recorded run started (`startedAt`) is left over from an earlier
   run and is not counted.
@@ -451,7 +455,8 @@ npm run summarise differences
 This says what differs between NHI and MRP in terms of the quote, not the pixels. It only looks
 at policies whose screenshots differ, since a data change on a page that looks the same does not
 affect what the customer sees, and names each difference in their saved quote data. For each side it reads the
-`quoteResult` of the last quote response the page received, in `nhi-api/` and `tcas-api/`: the
+`quoteResult` of the last quote response the page received, in `api-nhi/` and `api-mrp/`
+(`nhi-api/` and `tcas-api/` in results saved before those names): the
 quote summary, or a later `save-details` re-quote when the page priced the quote again (both NHI
 and MRP pages can), since that is the quote the page showed:
 
@@ -541,7 +546,8 @@ A question changed more than once for one policy (such as each claim) is counted
 Older versions split each policy's output between `screenshots/` and
 `comparisons/<ID>-<historyId>/`, which `summarise`, `retry-different` and `changed-answers` no
 longer read. This command moves that output into one `<ID>-<historyId>/` folder per policy,
-[as quote-page now writes it](#quote-page).
+[as quote-page wrote it](#quote-page) before the files were renamed (`nhi.png`, `tcas.png` and so
+on), which [summarise](#summarise) still reads.
 
 ```sh
 npm run migrate-output                                   # list what would move
@@ -935,9 +941,10 @@ so run them again to compare them.
 ### Failure screenshots and HTML
 
 If navigation or a Playwright step fails after the page opens, the current page is saved
-next to the intended output with a `-failed.png` suffix (for example
-`ABCDEF1234567890ABCDEF1234567890-42/tcas-failed.png`), along with its rendered DOM as
-`-failed.html` (`document.documentElement.outerHTML`, so it holds what React built, not the
+next to the intended output with a `-failed.png` suffix (quote-page names it
+`screenshot-failed-<flow>.png` instead, for example
+`ABCDEF1234567890ABCDEF1234567890-42/screenshot-failed-mrp.png`), along with its rendered DOM as
+`-failed.html` (`failed-<flow>.html` for quote-page; `document.documentElement.outerHTML`, so it holds what React built, not the
 served source; typed input values are not included). Use the HTML to build test fixtures.
 The original error is still reported. If the failure screenshot or HTML can't be saved, that
 error is logged without hiding the original.
@@ -1019,7 +1026,7 @@ endpoint from the start, and QuestionSetQuote rejects with a 400 any `/api` requ
 
 - **New replacement:** TCAS first runs concurrently for the original policy (the replacement
   isn't known yet), then runs again for the replacement once NHI has saved it. The second
-  capture overwrites `-tcas.png`, and only its result counts. If the first capture failed, its
+  capture overwrites `screenshot-quote-page-mrp.png`, and only its result counts. If the first capture failed, its
   error is logged in grey (`TCAS: original capture failed, so the replacement takes its place:
 …`), since it is not part of the run's result.
 - **Mapped replacement:** TCAS waits for NHI, then runs only for the replacement.
@@ -1043,7 +1050,7 @@ The Quote Journey API reference is in [docs/api-documentation.json](docs/api-doc
   answer, or delete the mapping entry to request a new GUID.
 - **NHI keeps showing Oops** — the mapped GUID in `quote-guid-mapping.json` is bad; delete its
   entry to request a new one. After a successful retry, the first attempt's
-  `nhi-failed.png` stays in the policy's folder — this is expected.
+  `screenshot-failed-nhi.png` stays in the policy's folder — this is expected.
 
 ## Development
 

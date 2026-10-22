@@ -23,11 +23,12 @@ asking anyone. Follow every step; keep everything below the notes in the same st
      Check the startedAt range in each folder's result.json: say in the intro which run the figures are from, and
      whether some policies were run again later.
    - Per policy: result.json (outcome, endpoints: quote | referred | conditional | declined, issues), report.json
-     (changedPercent, dimensions.before/after = NHI/MRP page sizes), nhi-api/ and tcas-api/ (NHI's
+     (changedPercent, dimensions.before/after = NHI/MRP page sizes), api-nhi/ and api-mrp/ (NHI's
      *-GET-quote-summary-<quote GUID>-*.json; MRP's *-POST-save-details.json, else its quote-summary), and
-     nhi-/tcas-quote-page-standardized.html (what each screenshot shows).
+     quote-page-standardized-nhi/-mrp.html (what each screenshot shows). Results saved before these names
+     have nhi-api/, tcas-api/ and nhi-/tcas-quote-page-standardized.html instead.
    - Quote GUID: the GUID in the NHI quote-summary file name or its url.
-   - Ownership: answers["6516e060-3d1f-11ea-b235-d7e3a967f0e2"].customer in nhi-api/*-GET-answers-*.json
+   - Ownership: answers["6516e060-3d1f-11ea-b235-d7e3a967f0e2"].customer in api-nhi/*-GET-answers-*.json
      (RPL01 landlord, RHA01 housing association, RLA01 local authority, OWN01 owned outright, MOR01 mortgaged; other
      codes such as ky99 are quoted as they are).
 
@@ -74,7 +75,8 @@ asking anyone. Follow every step; keep everything below the notes in the same st
 
 6. Conventions
    - The two sides are NHI and MRP. Never write TCAS in the prose, though identifiers that contain it stay as they are
-     (the `&source=tcas` link parameter, the `tcas-api/` and `tcas.png` files). Say "MRP file" for
+     (the `&source=tcas` link parameter, and the `tcas-api/` and `tcas.png` files of results saved before the
+     `-mrp` names). Say "MRP file" for
      <policyDetailsId>-1-mrp.json, so it is not confused with the MRP side.
    - Every heading and summary item says which side does what ("MRP hides …, NHI offers it").
    - Links: [Open the NHI quote page](https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid=<quote GUID>&callmediauser=richard.parker&bid=1066)

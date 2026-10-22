@@ -4,7 +4,6 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test';
-import { apiResponsesFolder } from '../dist/api-responses.js';
 import { screenshot } from '../dist/screenshot.js';
 
 /** Calls each endpoint in turn, so the responses arrive (and are numbered) in a fixed order. */
@@ -179,22 +178,4 @@ describe('API responses', () => {
     // assert
     assert.deepEqual(await readdir(directory), ['plain.png']);
   });
-});
-
-describe('apiResponsesFolder', () => {
-  for (const [screenshotPath, expected] of [
-    [join('ID-1', 'nhi.png'), join('ID-1', 'nhi-api')],
-    [join('ID-1', 'tcas.jpeg'), join('ID-1', 'tcas-api')]
-  ]) {
-    test(`gives ${expected} for ${screenshotPath}`, () => {
-      // arrange
-      const path = screenshotPath;
-
-      // act
-      const folder = apiResponsesFolder(path);
-
-      // assert
-      assert.equal(folder, expected);
-    });
-  }
 });

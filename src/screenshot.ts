@@ -25,6 +25,21 @@ export interface ScreenshotOptions {
   apiResponsesFolder?: string;
   /** Saves the page's HTML beside the screenshot, before and after standardising it (see {@link PageHtmlOptions}). */
   html?: PageHtmlOptions;
+  /**
+   * Where a capture that stops saves its screenshot and HTML instead of the normal screenshot; by default beside it, as
+   * named by {@link stoppedScreenshotPath}.
+   */
+  stoppedOutputs?: Record<CaptureStop, StoppedOutput>;
+}
+
+/** Why a capture stopped: the site declined to quote, or anything else went wrong. */
+export type CaptureStop = 'declined' | 'failed';
+
+/** Where a capture that stopped saves its screenshot and the page's HTML. */
+export interface StoppedOutput {
+  /** The screenshot, always a PNG. */
+  screenshot: string;
+  html: string;
 }
 
 /**
@@ -148,7 +163,7 @@ export async function extendWhileLoading<T>(page: Page, wait: () => Promise<T>):
  * @param stop Why the capture stopped.
  * @returns The path, always a PNG.
  */
-export function stoppedScreenshotPath(output: string, stop: 'declined' | 'failed'): string {
+export function stoppedScreenshotPath(output: string, stop: CaptureStop): string {
   return `${output.slice(0, -extname(output).length)}-${stop}.png`;
 }
 
@@ -184,12 +199,14 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
     if (page !== undefined && !(await isQuoteLoading(page).catch(() => false))) {
       const stoppedPage = page;
       const declined = error instanceof DeclinedError;
-      const failedOutput = stoppedScreenshotPath(output, declined ? 'declined' : 'failed').slice(0, -'.png'.length);
+      const stop = declined ? 'declined' : 'failed';
+      const stopped = options.stoppedOutputs?.[stop] ?? defaultStoppedOutput(output, stop);
       try {
-        await mkdir(dirname(failedOutput), { recursive: true });
+        await mkdir(dirname(stopped.screenshot), { recursive: true });
+        await mkdir(dirname(stopped.html), { recursive: true });
         // A decline is compared like a quote page, so it is masked the same way; a failure is kept as the page showed.
         await stoppedPage.screenshot({
-          path: `${failedOutput}.png`,
+          path: stopped.screenshot,
           type: 'png',
           fullPage: true,
           timeout,
@@ -199,8 +216,8 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
             : {})
         });
         // The rendered DOM (React builds the page in the browser), saved for turning into test fixtures.
-        await writeFile(`${failedOutput}.html`, await readPageHtml(page));
-        const saved = `${declined ? 'Declined' : 'Failure'} screenshot and HTML saved to ${failedOutput}.png/.html`;
+        await writeFile(stopped.html, await readPageHtml(page));
+        const saved = `${declined ? 'Declined' : 'Failure'} screenshot and HTML saved to ${stopped.screenshot} and ${stopped.html}`;
         console.error(declined ? saved : error instanceof ValidationError ? color.Yellow(saved) : color.Red(saved));
       } catch (captureError) {
         console.error(color.Red(`Could not capture failure screenshot: ${String(captureError)}`));
@@ -213,6 +230,12 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
     await apiResponses?.settled();
     await browser.close();
   }
+}
+
+/** Where a capture that stopped saves its files when not told: beside the normal screenshot, `<name>-<stop>.png/.html`. */
+function defaultStoppedOutput(output: string, stop: CaptureStop): StoppedOutput {
+  const screenshot = stoppedScreenshotPath(output, stop);
+  return { screenshot, html: `${screenshot.slice(0, -'.png'.length)}.html` };
 }
 
 /** Where and how {@link capturePage} saves its screenshot. */
