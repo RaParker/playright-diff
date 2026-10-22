@@ -286,7 +286,7 @@ export function listDifferentPolicies(summary: QuoteResultsSummary): PolicyToRun
  * Counts each change in the quote data across policies, most common first (ties in order of their summary).
  * @param changes Each compared policy's changes, by folder name, from {@link collectQuoteChanges}.
  * @returns Each distinct change with the number of policies showing it and, in folder order, every policy and its own
- * values.
+ * values, joined with `; ` when a policy shows the change more than once.
  */
 export function countQuoteChanges(
   changes: Map<string, QuoteChangesResult>
@@ -296,9 +296,13 @@ export function countQuoteChanges(
     const result = changes.get(name);
     for (const { summary, detail } of result?.status === 'compared' ? result.changes : []) {
       const policies = counts.get(summary) ?? [];
-      // A policy can show the same change more than once (for example two listed items); it counts once.
-      if (policies.at(-1)?.name !== name) {
+      const last = policies.at(-1);
+      // A policy can show the same change more than once (for example two listed items); it counts once, with each
+      // of its values.
+      if (last?.name !== name) {
         policies.push({ name, ...(detail === undefined ? {} : { detail }) });
+      } else if (detail !== undefined) {
+        last.detail = last.detail === undefined ? detail : `${last.detail}; ${detail}`;
       }
 
       counts.set(summary, policies);

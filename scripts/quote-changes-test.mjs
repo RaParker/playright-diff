@@ -199,6 +199,46 @@ describe('compareQuotes', () => {
       [{ summary: 'Listed item: included on NHI, not on MRP', detail: 'Pedal Cycle, £2,000' }]
     ],
     [
+      'leaves out a high-risk items total that differs by the listed items one side does not include',
+      { quoteListedItems: [pedalCycle, laptop], contentsInsurance: { highRiskHighValueItemsTotal: 3350 } },
+      {
+        quoteListedItems: [
+          { ...pedalCycle, includeInQuote: false },
+          { ...laptop, includeInQuote: false }
+        ],
+        contentsInsurance: { highRiskHighValueItemsTotal: 0 }
+      },
+      [
+        { summary: 'Listed item: included on NHI, not on MRP', detail: 'Pedal Cycle, £2,000' },
+        { summary: 'Listed item: included on NHI, not on MRP', detail: 'Portable Computer, £1,350' }
+      ]
+    ],
+    [
+      'reports a high-risk items total that differs by more than the listed items explain',
+      { quoteListedItems: [pedalCycle], contentsInsurance: { highRiskHighValueItemsTotal: 2500 } },
+      {
+        quoteListedItems: [{ ...pedalCycle, includeInQuote: false }],
+        contentsInsurance: { highRiskHighValueItemsTotal: 0 }
+      },
+      [
+        { summary: 'High-risk items total differs', detail: '£2,500 on NHI, £0 on MRP' },
+        { summary: 'Listed item: included on NHI, not on MRP', detail: 'Pedal Cycle, £2,000' }
+      ]
+    ],
+    [
+      'leaves out listed items and their total when personal possessions cover differs',
+      { quoteListedItems: [pedalCycle], contentsInsurance: { highRiskHighValueItemsTotal: 2000 } },
+      {
+        quoteListedItems: [{ ...pedalCycle, includeInQuote: false }, laptop],
+        contentsInsurance: {
+          isHighRiskHighValueItemsAllowed: false,
+          isGeneralValuablesCoveredAllowed: false,
+          highRiskHighValueItemsTotal: 0
+        }
+      },
+      [{ summary: 'Personal possessions and high-risk items: allowed on NHI, not on MRP' }]
+    ],
+    [
       'names a listed item only one side has',
       { quoteListedItems: [pedalCycle] },
       { quoteListedItems: [] },

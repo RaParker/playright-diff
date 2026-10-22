@@ -33,17 +33,26 @@ const coverChecks: readonly { path: string; label: string }[] = [
   { path: 'contentsInsurance.contentsIsAllowed', label: 'Contents cover' }
 ];
 
+/**
+ * Whether personal possessions are covered. When it differs, the listed items (and their total) differ because of it,
+ * so they are not compared.
+ */
+const generalValuablesAllowedPath = 'contentsInsurance.isGeneralValuablesCoveredAllowed';
+
 /** The two personal possessions flags, reported as one change when they move together. */
 const possessionsChecks: readonly { path: string; label: string }[] = [
   { path: 'contentsInsurance.isHighRiskHighValueItemsAllowed', label: 'High-risk items cover' },
-  { path: 'contentsInsurance.isGeneralValuablesCoveredAllowed', label: 'Personal possessions cover' }
+  { path: generalValuablesAllowedPath, label: 'Personal possessions cover' }
 ];
+
+/** The total of the listed items included in the quote, which the listed-item checks may already explain. */
+const highRiskTotalPath = 'contentsInsurance.highRiskHighValueItemsTotal';
 
 /** Amounts in pounds, named for readers. */
 const moneyChecks: readonly { path: string; label: string }[] = [
   { path: 'buildingsInsurance.buildingsSumInsured', label: 'Buildings sum insured' },
   { path: 'contentsInsurance.contentsSumInsured', label: 'Contents sum insured' },
-  { path: 'contentsInsurance.highRiskHighValueItemsTotal', label: 'High-risk items total' },
+  { path: highRiskTotalPath, label: 'High-risk items total' },
   { path: 'quoteAmounts.yearlyAmount', label: 'Annual premium' },
   { path: 'quoteAmounts.monthlyAmount', label: 'Monthly premium' },
   { path: 'quoteAmounts.depositAmount', label: 'Deposit' },
@@ -141,7 +150,8 @@ export async function readQuoteChanges(folder: string, endpoints?: QuoteEndpoint
 
 /**
  * Describes how two quotes differ, in reader's terms: where each flow ended, cover offered, amounts, excesses,
- * endorsements, listed items and yes/no facts, then any other field both quotes have that differs, by name. Noise
+ * endorsements, listed items and yes/no facts, then any other field both quotes have that differs, by name. Listed
+ * items and their total are left out when personal possessions cover differs, since that explains them. Noise
  * fields (see {@link noiseFields}) are ignored, `null` and an empty string count as the same, and fields only one
  * response has are left out, since the two responses carry different extras.
  * @param nhi NHI's `quoteResult`.
@@ -151,13 +161,14 @@ export async function readQuoteChanges(folder: string, endpoints?: QuoteEndpoint
  */
 export function compareQuotes(nhi: QuoteResultData, mrp: QuoteResultData, endpoints?: QuoteEndpoints): QuoteChange[] {
   const handled = new Set<string>();
+  const compareItems = !flagDiffers(nhi, mrp, generalValuablesAllowedPath);
   const changes = [
     ...compareEndpoints(endpoints),
     ...compareCover(nhi, mrp, handled),
-    ...compareMoney(nhi, mrp, handled),
+    ...compareMoney(nhi, mrp, handled, compareItems),
     ...compareExcesses(nhi, mrp),
     ...compareEndorsements(nhi, mrp),
-    ...compareListedItems(nhi, mrp),
+    ...(compareItems ? compareListedItems(nhi, mrp) : []),
     ...compareFlags(nhi, mrp, handled)
   ];
   return [...changes, ...compareOtherFields(nhi, mrp, handled)];
@@ -234,12 +245,38 @@ function compareCover(nhi: QuoteResultData, mrp: QuoteResultData, handled: Set<s
   ];
 }
 
-function compareMoney(nhi: QuoteResultData, mrp: QuoteResultData, handled: Set<string>): QuoteChange[] {
+/** Reports amounts that differ, leaving out the high-risk items total when the listed items are not compared. */
+function compareMoney(
+  nhi: QuoteResultData,
+  mrp: QuoteResultData,
+  handled: Set<string>,
+  compareItems: boolean
+): QuoteChange[] {
   return moneyChecks.flatMap(({ path, label }) => {
     handled.add(path);
     const [a, b] = [readPath(nhi, path), readPath(mrp, path)];
-    return sameValue(a, b) ? [] : [{ summary: `${label} differs`, detail: `${money(a)} on NHI, ${money(b)} on MRP` }];
+    const skipTotal = path === highRiskTotalPath && (!compareItems || isExplainedByListedItems(a, b, nhi, mrp));
+    return sameValue(a, b) || skipTotal
+      ? []
+      : [{ summary: `${label} differs`, detail: `${money(a)} on NHI, ${money(b)} on MRP` }];
   });
+}
+
+/**
+ * Whether the high-risk items total differs by exactly the value of the listed items one side includes and the other
+ * does not, so the listed-item changes already report it. Items both sides include alike cancel out.
+ */
+function isExplainedByListedItems(
+  nhiTotal: unknown,
+  mrpTotal: unknown,
+  nhi: QuoteResultData,
+  mrp: QuoteResultData
+): boolean {
+  return (
+    typeof nhiTotal === 'number' &&
+    typeof mrpTotal === 'number' &&
+    nhiTotal - mrpTotal === includedItemsValue(nhi) - includedItemsValue(mrp)
+  );
 }
 
 function compareExcesses(nhi: QuoteResultData, mrp: QuoteResultData): QuoteChange[] {
@@ -357,6 +394,12 @@ function isUnsetOnNhiOnly(
 }
 
 /** Reports a yes/no cover flag that differs, worded with `verb` (`offered`, `allowed`). */
+/** Whether a yes/no flag is set on both sides and differs. */
+function flagDiffers(nhi: QuoteResultData, mrp: QuoteResultData, path: string): boolean {
+  const [a, b] = [readPath(nhi, path), readPath(mrp, path)];
+  return typeof a === 'boolean' && typeof b === 'boolean' && a !== b;
+}
+
 function compareOffered(
   nhi: QuoteResultData,
   mrp: QuoteResultData,
@@ -401,6 +444,13 @@ function endorsementsByCode(quote: QuoteResultData): Map<string, { title?: strin
 function listedItems(quote: QuoteResultData): Record<string, unknown>[] {
   const items = readPath(quote, 'quoteListedItems');
   return (Array.isArray(items) ? items : []).filter(isRecord);
+}
+
+/** The total value of a quote's listed items included in the quote. */
+function includedItemsValue(quote: QuoteResultData): number {
+  return listedItems(quote)
+    .filter((item) => item['includeInQuote'] === true)
+    .reduce((total, item) => total + (typeof item['value'] === 'number' ? item['value'] : 0), 0);
 }
 
 /** What identifies a listed item on both sides: its category, value and whether it is covered away from home. */

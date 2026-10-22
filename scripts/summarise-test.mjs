@@ -763,7 +763,7 @@ describe('retry selections', () => {
 });
 
 describe('countQuoteChanges', () => {
-  test('counts each change once per policy, most common first, keeping each policy and its values', () => {
+  test('counts each change once per policy, most common first, keeping each policy and all its values', () => {
     // arrange
     const changes = new Map([
       ['B-1', { status: 'compared', changes: [{ summary: 'Buildings cover: offered on NHI, not on MRP' }] }],
@@ -794,7 +794,7 @@ describe('countQuoteChanges', () => {
       {
         summary: 'Listed item: included on NHI, not on MRP',
         count: 1,
-        policies: [{ name: 'A-1', detail: 'Pedal Cycle, £2,000' }]
+        policies: [{ name: 'A-1', detail: 'Pedal Cycle, £2,000; Mobile Phone, £1,300' }]
       }
     ]);
   });
