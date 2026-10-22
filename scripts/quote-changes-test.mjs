@@ -248,6 +248,45 @@ describe('compareQuotes', () => {
       { jointPolicyHolders: [{ relationship: 0 }, { relationship: 0 }] },
       { jointPolicyHolders: [{ relationship: 0 }, { relationship: 5 }] },
       [{ summary: 'Other data differs: jointPolicyHolders[].relationship', detail: '0, 0 on NHI, 0, 5 on MRP' }]
+    ],
+    [
+      "ignores an evidence pack's code NHI leaves unset",
+      { importantInformation: { evidencePacks: [{ transactorCode: null }] } },
+      { importantInformation: { evidencePacks: [{ transactorCode: 'EVIBEDS' }] } },
+      []
+    ],
+    [
+      "names an evidence pack's code that differs on both sides",
+      { importantInformation: { evidencePacks: [{ transactorCode: 'EVIBEDS' }] } },
+      { importantInformation: { evidencePacks: [{ transactorCode: 'EVISINS' }] } },
+      [
+        {
+          summary: 'Other data differs: importantInformation.evidencePacks[].transactorCode',
+          detail: '"EVIBEDS" on NHI, "EVISINS" on MRP'
+        }
+      ]
+    ],
+    [
+      "names an evidence pack's code MRP leaves unset",
+      { importantInformation: { evidencePacks: [{ transactorCode: 'EVIBEDS' }] } },
+      { importantInformation: { evidencePacks: [{ transactorCode: null }] } },
+      [
+        {
+          summary: 'Other data differs: importantInformation.evidencePacks[].transactorCode',
+          detail: '"EVIBEDS" on NHI, null on MRP'
+        }
+      ]
+    ],
+    [
+      "names evidence packs' codes when MRP also leaves one unset",
+      { importantInformation: { evidencePacks: [{ transactorCode: null }, { transactorCode: null }] } },
+      { importantInformation: { evidencePacks: [{ transactorCode: null }, { transactorCode: 'EVIBEDS' }] } },
+      [
+        {
+          summary: 'Other data differs: importantInformation.evidencePacks[].transactorCode',
+          detail: 'null, null on NHI, "EVIBEDS", null on MRP'
+        }
+      ]
     ]
   ]) {
     test(name, () => {

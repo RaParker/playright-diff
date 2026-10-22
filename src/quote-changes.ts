@@ -90,11 +90,15 @@ const noiseFields: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Fields NHI's saved quote reports as `0`, a code that does not exist, whatever the customer answered: a joint
- * policyholder's relationship comes back `0` from NHI and as the answered code from MRP (found 2026-10-22). Ignored
- * only when every NHI value is `0` and no MRP value is, so any other difference is still reported.
+ * Fields NHI's saved quote leaves unset where MRP's is set, by the value NHI reports (as {@link collectLeaves} writes
+ * it). A joint policyholder's relationship comes back `0`, a code that does not exist, whatever the customer answered,
+ * and an evidence pack's code comes back `null` though its title and text match MRP's (both found 2026-10-22). Ignored
+ * only when every NHI value is the unset one and no MRP value is, so any other difference is still reported.
  */
-const nhiUnsetFields: ReadonlySet<string> = new Set(['jointPolicyHolders[].relationship']);
+const nhiUnsetFields: ReadonlyMap<string, string> = new Map([
+  ['jointPolicyHolders[].relationship', '0'],
+  ['importantInformation.evidencePacks[].transactorCode', 'null']
+]);
 
 /** Saved responses that carry a priced quote: a quote summary, or a `save-details` re-quote. */
 const quoteResponsePattern = /-GET-quote-summary-|-POST-save-details/;
@@ -313,7 +317,7 @@ function compareOtherFields(nhi: QuoteResultData, mrp: QuoteResultData, handled:
     .filter((path) => !handled.has(path) && !noiseFields.has(path))
     .filter((path) => !checkedPrefixes.some((prefix) => path.startsWith(`${prefix}.`)))
     .filter((path) => a.get(path) !== b.get(path))
-    .filter((path) => !(nhiUnsetFields.has(path) && isUnsetOnNhiOnly(a.get(path), b.get(path))))
+    .filter((path) => !isUnsetOnNhiOnly(a.get(path), b.get(path), nhiUnsetFields.get(path)))
     .sort()
     .map((path) => ({
       summary: `Other data differs: ${path}`,
@@ -322,12 +326,21 @@ function compareOtherFields(nhi: QuoteResultData, mrp: QuoteResultData, handled:
 }
 
 /**
- * Whether a field's values, as {@link collectLeaves} joins them, are all `0` on NHI and none `0` on MRP. The fields this
- * is used for hold numbers, so splitting the joined values is safe.
+ * Whether a field's values, as {@link collectLeaves} joins them, are all `unset` on NHI and none `unset` on MRP; never
+ * when the field has no unset value. The fields this is used for hold numbers and codes without commas, so splitting
+ * the joined values is safe.
  */
-function isUnsetOnNhiOnly(nhiValues: string | undefined, mrpValues: string | undefined): boolean {
+function isUnsetOnNhiOnly(
+  nhiValues: string | undefined,
+  mrpValues: string | undefined,
+  unset: string | undefined
+): boolean {
   const split = (values: string | undefined) => (values ?? '').split(', ');
-  return split(nhiValues).every((value) => value === '0') && split(mrpValues).every((value) => value !== '0');
+  return (
+    unset !== undefined &&
+    split(nhiValues).every((value) => value === unset) &&
+    split(mrpValues).every((value) => value !== unset)
+  );
 }
 
 /** Reports a yes/no cover flag that differs, worded with `verb` (`offered`, `allowed`). */
