@@ -401,6 +401,10 @@ npm run summarise
 Each folder's `result.json` gives its outcome. A folder with only a `report.json` (from a run
 before results were saved) counts as compared, since a report exists only when both sides were
 captured; failures from those older runs were not recorded, so rerun them to see their reasons.
+A policy whose only changed regions read the same on both sides and show the declaration
+checkbox's label, "I agree with the statements above and the specific endorsements that apply
+to my policy." (OCR sometimes reads the `I` as `|`), counts as matching: the screenshots
+differ only because that label is sometimes misaligned.
 In order, it prints:
 
 - **Visual-only differences:** compared policies whose images differ with no text change,

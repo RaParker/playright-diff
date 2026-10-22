@@ -397,6 +397,43 @@ describe('collectQuoteResults', () => {
     assert.deepEqual(policy.textDifferences, []);
   });
 
+  const agreement = 'I agree with the statements above and the specific endorsements that apply to my policy.';
+  const agreementCases = [
+    { name: 'the agreement statement', regions: [region(1, agreement, agreement)], kind: 'identical' },
+    {
+      name: 'the agreement statement read with a pipe for the I',
+      regions: [region(1, `[] ${agreement.replace('I', '|')}`, `[] ${agreement.replace('I', '|')}`)],
+      kind: 'identical'
+    },
+    {
+      name: 'the agreement statement read differently on each side',
+      regions: [{ ...region(1, agreement, `[] ${agreement}`), textChanges: [] }],
+      kind: 'different'
+    },
+    { name: 'a text change', regions: [region(1, agreement, `${agreement} Changed`)], kind: 'different' },
+    {
+      name: 'another region without the statement',
+      regions: [region(1, agreement, agreement), region(2, 'Cover', 'Cover')],
+      kind: 'different'
+    },
+    { name: 'no regions', regions: [], kind: 'different' }
+  ];
+  for (const { name, regions, kind } of agreementCases) {
+    test(`counts a misaligned agreement statement as ${kind} with ${name}`, async (context) => {
+      // arrange
+      const root = await mkdtemp(join(tmpdir(), 'summarise-'));
+      context.after(() => rm(root, { recursive: true, force: true }));
+      await writeReport(root, `${visualPolicy}-1`, { changedPixels: 50, regions });
+
+      // act
+      const summary = await collectQuoteResults(root);
+
+      // assert
+      assert.equal(summary.compared[0].kind, kind);
+      assert.equal(summary.compared[0].changedPixels, 50);
+    });
+  }
+
   test('marks a policy whose endorsements were listed in different orders', async () => {
     // arrange
     const { root } = await projectFixture();

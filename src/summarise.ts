@@ -40,6 +40,13 @@ const oopsHeadingPattern = /<h[1-3][^>]*>\s*Oops\s*<\/h[1-3]>/i;
 /** First line of a capture failure, shared by every such failure, so it is left out of the reasons. */
 const captureFailedHeading = 'Quote capture failed; comparison skipped.';
 
+/**
+ * The declaration checkbox's label, which the screenshots sometimes render a pixel or two apart; OCR reads the leading
+ * `I` as `I` or `|`.
+ */
+const agreementStatementPattern =
+  /[I|] agree with the statements above and the specific endorsements that apply to my policy\./;
+
 /** A region whose recognised text changed, reduced to the lines that differ. */
 export interface TextDifference {
   regionId: number;
@@ -779,7 +786,7 @@ function summariseReport(
   const sameSize = before.width === after.width && before.height === after.height;
   return {
     ...(endpoints === undefined ? {} : { endpoints }),
-    kind: classifyComparison(report.changedPixels, endpoints),
+    kind: classifyComparison(isAgreementMisalignment(report) ? 0 : report.changedPixels, endpoints),
     name,
     changedPixels: report.changedPixels,
     changedPercent: report.changedPercent,
@@ -790,6 +797,20 @@ function summariseReport(
       .filter((difference) => difference.removed.length + difference.added.length > 0),
     endorsementOrderDiffers
   };
+}
+
+/**
+ * True when every changed region's OCR text is the same on both sides and shows the declaration checkbox's label, so
+ * the screenshots differ only because that label is misaligned.
+ */
+function isAgreementMisalignment(report: ComparisonReport): boolean {
+  return (
+    report.regions.length > 0 &&
+    report.regions.every(
+      ({ before, after, textChanges }) =>
+        textChanges.length === 0 && before.text === after.text && agreementStatementPattern.test(before.text)
+    )
+  );
 }
 
 /**
