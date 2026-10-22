@@ -10,6 +10,7 @@ import {
   collectQuoteResults,
   countFailureReasons,
   countOopsPages,
+  countQuoteChanges,
   countTextChanges,
   listDifferentPolicies,
   listPoliciesToRecompare,
@@ -739,6 +740,124 @@ describe('retry selections', () => {
   });
 });
 
+describe('countQuoteChanges', () => {
+  test('counts each change once per policy, most common first, keeping each policy and its values', () => {
+    // arrange
+    const changes = new Map([
+      ['B-1', { status: 'compared', changes: [{ summary: 'Buildings cover: offered on NHI, not on MRP' }] }],
+      [
+        'A-1',
+        {
+          status: 'compared',
+          changes: [
+            { summary: 'Buildings cover: offered on NHI, not on MRP' },
+            { summary: 'Listed item: included on NHI, not on MRP', detail: 'Pedal Cycle, £2,000' },
+            { summary: 'Listed item: included on NHI, not on MRP', detail: 'Mobile Phone, £1,300' }
+          ]
+        }
+      ],
+      ['C-1', { status: 'not-captured', reason: 'no NHI quote summary saved' }]
+    ]);
+
+    // act
+    const counts = countQuoteChanges(changes);
+
+    // assert
+    assert.deepEqual(counts, [
+      {
+        summary: 'Buildings cover: offered on NHI, not on MRP',
+        count: 2,
+        policies: [{ name: 'A-1' }, { name: 'B-1' }]
+      },
+      {
+        summary: 'Listed item: included on NHI, not on MRP',
+        count: 1,
+        policies: [{ name: 'A-1', detail: 'Pedal Cycle, £2,000' }]
+      }
+    ]);
+  });
+});
+
+describe('summarise differences from the quote data', () => {
+  /** A quote as both sides return it when they match. */
+  const quote = (overrides = {}) => ({
+    buildingsInsurance: { buildingsIsAllowed: true, buildingsSumInsured: 1000000 },
+    contentsInsurance: { contentsIsAllowed: true },
+    quoteAmounts: { yearlyAmount: 231.33 },
+    ...overrides
+  });
+
+  /** Writes a compared policy with recorded end points, its comparison report and both flows' quote responses. */
+  async function comparedPolicy(root, policy, changedPixels, nhiQuote, mrpQuote) {
+    await writeReport(root, `${policy}-1`, { changedPixels });
+    await writeQuoteResult(
+      { ...failedResult(policy, []), outcome: 'compared', endpoints: { nhi: 'quote', tcas: 'quote' } },
+      root
+    );
+    for (const [side, file, quoteResult] of [
+      ['nhi-api', '001-GET-quote-summary-guid-user-agent.json', nhiQuote],
+      ['tcas-api', '006-POST-save-details.json', mrpQuote]
+    ]) {
+      await mkdir(join(root, `${policy}-1`, side), { recursive: true });
+      await writeFile(join(root, `${policy}-1`, side, file), JSON.stringify({ status: 200, body: { quoteResult } }));
+    }
+  }
+
+  async function changesFixture(context) {
+    const root = await mkdtemp(join(tmpdir(), 'summarise-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
+    // Screenshots match, but MRP does not offer buildings cover.
+    await comparedPolicy(
+      root,
+      identicalPolicy,
+      0,
+      quote(),
+      quote({ buildingsInsurance: { buildingsIsAllowed: false, buildingsSumInsured: 1000000 } })
+    );
+    // Screenshots and premium differ.
+    await comparedPolicy(root, textPolicy, 30, quote(), quote({ quoteAmounts: { yearlyAmount: 240.1 } }));
+    // Screenshots differ, data matches.
+    await comparedPolicy(root, visualPolicy, 144, quote(), quote());
+    return root;
+  }
+
+  test('counts each change with its examples, and lists what the screenshots alone get wrong', async (context) => {
+    // arrange
+    const root = await changesFixture(context);
+
+    // act
+    const { code, output } = await runCli(root, ['summarise', 'differences']);
+
+    // assert
+    assert.equal(code, 0, output);
+    assert.match(output, /Changes in the quote data \(3 policies with saved data compared\)\n/);
+    assert.match(output, /\n {2}1× Annual premium differs\n {8}\S+B{32}-1 {2}£231\.33 on NHI, £240\.10 on MRP\n/);
+    assert.match(output, /\n {2}1× Buildings cover: offered on NHI, not on MRP\n {8}\S+A{32}-1\n/);
+    assert.match(
+      output,
+      /Data differs, screenshots match \(1\)\n {2}\S+A{32}-1 {2}Buildings cover: offered on NHI, not on MRP\n/
+    );
+    assert.match(output, /Screenshots differ, data matches \(1\)\n {2}\S+E{32}-1 {2}0\.10% changed/);
+    assert.match(output, /Totals\n2 different of 3 compared; 2 with data changes, 0 not captured\.\n/);
+    assert.doesNotMatch(output, /Data not captured/);
+  });
+
+  test('--detail lists each policy with its own changes', async (context) => {
+    // arrange
+    const root = await changesFixture(context);
+
+    // act
+    const { code, output } = await runCli(root, ['summarise', 'differences', '--detail']);
+
+    // assert
+    assert.equal(code, 0, output);
+    assert.match(
+      output,
+      /Changes by policy \(2\)\n\S+A{32}-1\n {2}Buildings cover: offered on NHI, not on MRP\n\S+B{32}-1\n {2}Annual premium differs {2}£231\.33 on NHI, £240\.10 on MRP\n/
+    );
+  });
+});
+
 describe('collectGuidListStatus', () => {
   test('counts the list, the policies not run and the MRP records not retrieved', async () => {
     // arrange
@@ -810,7 +929,7 @@ describe('summarise command', () => {
     assert.doesNotMatch(output, /MRP records not retrieved/);
   });
 
-  test('differences prints only the differences and how many compared policies differ', async () => {
+  test('differences reports results captured before end points were recorded as not captured, not as changes', async () => {
     // arrange
     const { directory, mrp, guidList } = await projectFixture();
 
@@ -822,10 +941,42 @@ describe('summarise command', () => {
 
     // assert
     assert.equal(code, 0, output);
-    assert.match(output, /Different quote results \(/);
+    assert.match(output, /Quote changes \(/);
+    assert.match(
+      output,
+      /Changes in the quote data \(0 policies with saved data compared\)\n {2}No changes in the quote data\./
+    );
+    assert.match(
+      output,
+      /Data not captured, so not compared \(3\): run them again\n {2}3× captured before end points were recorded\n/
+    );
+    assert.match(output, /Totals\n2 different of 3 compared; 0 with data changes, 3 not captured\.\n/);
+    assert.doesNotMatch(output, /Visual-only differences|Text differences/);
+  });
+
+  test('differences --detail adds the screenshot and OCR text differences', async () => {
+    // arrange
+    const { directory } = await projectFixture();
+
+    // act
+    const { code, output } = await runCli(directory, ['summarise', 'differences', '--detail']);
+
+    // assert
+    assert.equal(code, 0, output);
     assert.match(output, /Visual-only differences \(1\)\n {2}\S+E{32}-1 /);
     assert.match(output, /Text differences \(1\)\n\S+B{32}-1 /);
-    assert.match(output, /Totals\n2 different of 3 compared\.\n/);
+  });
+
+  test('rejects --detail without differences', async () => {
+    // arrange
+    const { directory } = await projectFixture();
+
+    // act
+    const { code, output } = await runCli(directory, ['summarise', '--detail']);
+
+    // assert
+    assert.notEqual(code, 0);
+    assert.match(output, /--detail is only for summarise differences\./);
   });
 
   test('differences leaves out failures, MRP records, the GUID list and Oops pages', async () => {
@@ -857,11 +1008,11 @@ describe('summarise command', () => {
     const { directory } = await projectFixture();
 
     // act
-    const { code, output } = await runCli(directory, ['summarise', 'differences']);
+    const { code, output } = await runCli(directory, ['summarise', 'differences', '--detail']);
 
     // assert
     assert.equal(code, 0, output);
-    const [, root] = /Different quote results \((.+)\)\n/.exec(output) ?? [];
+    const [, root] = /Quote changes \((.+)\)\n/.exec(output) ?? [];
     assert.match(root ?? '', /summarise-\w+$/, output);
     assert.ok(output.includes(`\n  ${join(root, `${visualPolicy}-1`)}  0.10% changed`), output);
     assert.ok(output.includes(`\n${join(root, `${textPolicy}-1`)}  0.02% changed`), output);

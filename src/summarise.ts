@@ -13,6 +13,7 @@ import {
   type ComparisonKind,
   type QuoteEndpoints
 } from './quote-endpoint.js';
+import { readQuoteChanges, type QuoteChange, type QuoteChangesResult } from './quote-changes.js';
 import { readQuoteGuidList } from './quote-guid-list.js';
 import { readQuoteResult, type QuoteResult } from './quote-result.js';
 import { outputPath, policyFolderPattern } from './output-paths.js';
@@ -22,6 +23,9 @@ const lowOcrConfidence = 60;
 
 /** How many of the most common text changes to list. */
 const commonTextChangeLimit = 10;
+
+/** How many example policies `summarise differences` lists under each change in the quote data. */
+const changeExampleLimit = 3;
 
 /** Flows whose failure page, `<flow>-failed.html` in the policy's folder, is checked for Oops. */
 const oopsFlows = [
@@ -87,8 +91,13 @@ export interface SummariseOptions {
   guidListPath?: string;
   /** mrp-and-quote's output folder (`MRP_AND_QUOTE_OUTPUT_DIR`), checked for each listed policy's MRP record. */
   mrpAndQuoteOutputDir?: string;
-  /** Print only the policies whose screenshots differ, and their count, leaving out failures, MRP records and Oops pages. */
+  /**
+   * Print only what differs: the changes in the quote data, counted across policies, then the policies whose data or
+   * screenshots differ, leaving out failures, MRP records and Oops pages.
+   */
   differentOnly?: boolean;
+  /** With `differentOnly`, also print each policy's data changes and the screenshot and OCR text differences. */
+  detail?: boolean;
 }
 
 /** How many of one flow's failure pages showed Oops, and how many of those policies still compared or declined. */
@@ -124,14 +133,14 @@ export interface GuidListStatus {
  * Prints a summary of every quote-page result in the output folder: the visual and text differences of each
  * compared policy, the most common text changes, each failed policy with its issues, failures grouped by reason,
  * the MRP records not retrieved, and the totals (including the GUID list size and Oops pages). With `differentOnly`, it
- * prints only the differences, the most common text changes and how many compared policies differ.
+ * prints only what differs (see {@link printQuoteChanges}).
  * @param options Folder to read, optionally the GUID list and MRP folder, and whether to print only the differences.
- * @throws When a `result.json`, `report.json` or the GUID list cannot be read or parsed.
+ * @throws When a `result.json`, `report.json`, saved API response or the GUID list cannot be read or parsed.
  */
 export async function summariseQuoteResults(options: SummariseOptions = {}): Promise<void> {
   const summary = await collectQuoteResults(options.root ?? outputPath());
   if (options.differentOnly === true) {
-    printDifferentPolicies(summary);
+    printQuoteChanges(summary, await collectQuoteChanges(summary), options.detail === true);
     return;
   }
 
@@ -181,6 +190,22 @@ export async function collectQuoteResults(root: string): Promise<QuoteResultsSum
   }
 
   return summary;
+}
+
+/**
+ * Reads how each compared policy's NHI and MRP quote data differ (see {@link readQuoteChanges}), from the responses
+ * saved in its folder.
+ * @param summary The results summary, giving the folder to read and each compared policy's end points.
+ * @returns Each compared policy's changes, or why its data cannot be compared, by folder name.
+ * @throws When a saved response cannot be read or parsed.
+ */
+export async function collectQuoteChanges(summary: QuoteResultsSummary): Promise<Map<string, QuoteChangesResult>> {
+  const results = await Promise.all(
+    summary.compared.map(
+      async ({ name, endpoints }) => [name, await readQuoteChanges(join(summary.root, name), endpoints)] as const
+    )
+  );
+  return new Map(results);
 }
 
 /**
@@ -246,6 +271,34 @@ export async function collectGuidListStatus(
  */
 export function listDifferentPolicies(summary: QuoteResultsSummary): PolicyToRun[] {
   return summary.compared.filter(({ kind }) => kind === 'different').map(({ name }) => parsePolicyFolderName(name));
+}
+
+/**
+ * Counts each change in the quote data across policies, most common first (ties in order of their summary).
+ * @param changes Each compared policy's changes, by folder name, from {@link collectQuoteChanges}.
+ * @returns Each distinct change with the number of policies showing it and, in folder order, every policy and its own
+ * values.
+ */
+export function countQuoteChanges(
+  changes: Map<string, QuoteChangesResult>
+): { summary: string; count: number; policies: { name: string; detail?: string }[] }[] {
+  const counts = new Map<string, { name: string; detail?: string }[]>();
+  for (const name of [...changes.keys()].sort()) {
+    const result = changes.get(name);
+    for (const { summary, detail } of result?.status === 'compared' ? result.changes : []) {
+      const policies = counts.get(summary) ?? [];
+      // A policy can show the same change more than once (for example two listed items); it counts once.
+      if (policies.at(-1)?.name !== name) {
+        policies.push({ name, ...(detail === undefined ? {} : { detail }) });
+      }
+
+      counts.set(summary, policies);
+    }
+  }
+
+  return [...counts]
+    .map(([summary, policies]) => ({ summary, count: policies.length, policies }))
+    .sort((a, b) => (b.count !== a.count ? b.count - a.count : a.summary.localeCompare(b.summary)));
 }
 
 /**
@@ -394,13 +447,58 @@ function printQuoteResultsSummary(
   printTotals(summary, oops, guidList);
 }
 
-function printDifferentPolicies({ root, compared }: QuoteResultsSummary): void {
-  const count = compared.filter(({ kind }) => kind === 'different').length;
-  const different = `${count} different`;
-  console.log(color.Cyan(`Different quote results (${root})`));
-  printDifferenceSections(compared, root);
+/**
+ * Prints what differs between NHI and MRP, labelling each policy with its full folder path so terminals can open it:
+ * 1. Each change in the quote data, counted across policies, most common first, with up to {@link changeExampleLimit}
+ *    example policies and their values.
+ * 2. Policies whose data differs but whose screenshots match, which the screenshots alone would miss.
+ * 3. Policies whose screenshots differ but whose data matches (rendering differences).
+ * 4. Policies whose data cannot be compared, by reason, to run again.
+ * 5. The totals.
+ * With `detail`, each policy's own changes and the screenshot and OCR text differences follow the first section.
+ */
+function printQuoteChanges(
+  summary: QuoteResultsSummary,
+  changes: Map<string, QuoteChangesResult>,
+  detail: boolean
+): void {
+  const { root, compared } = summary;
+  const label = (name: string) => policyLabel(name, root);
+  const changedData = new Map(
+    [...changes].flatMap(([name, result]) =>
+      result.status === 'compared' && result.changes.length > 0 ? [[name, result.changes] as const] : []
+    )
+  );
+  console.log(color.Cyan(`Quote changes (${root})`));
+  printChangeCounts(countQuoteChanges(changes), changes, label);
+  if (detail) {
+    printPolicyChanges(changedData, label);
+    printDifferenceSections(compared, root);
+  }
+
+  const hidden = compared.filter(({ name, kind }) => kind !== 'different' && changedData.has(name));
+  printPolicyList(
+    `Data differs, screenshots match (${hidden.length})`,
+    hidden.map(({ name }) => `${label(name)}  ${describeChanges(changedData.get(name) ?? [])}`)
+  );
+  const rendering = compared.filter(
+    ({ name, kind }) => kind === 'different' && changes.get(name)?.status === 'compared' && !changedData.has(name)
+  );
+  printPolicyList(
+    `Screenshots differ, data matches (${rendering.length})`,
+    rendering.map((policy) => `${label(policy.name)}  ${describeChange(policy)}`)
+  );
+  printNotCaptured(changes);
+
+  const different = compared.filter(({ kind }) => kind === 'different').length;
+  const differentText = `${different} different`;
+  const notCaptured = [...changes.values()].filter(({ status }) => status === 'not-captured').length;
   console.log(`\n${color.Cyan('Totals')}`);
-  console.log(`${count > 0 ? color.Yellow(different) : different} of ${compared.length} compared.`);
+  console.log(
+    `${different > 0 ? color.Yellow(differentText) : differentText} of ${compared.length} compared; ${
+      changedData.size
+    } with data changes, ${notCaptured} not captured.`
+  );
 }
 
 /**
@@ -457,6 +555,78 @@ function printMatchingEndpoints(policies: ComparedPolicy[]): void {
   for (const policy of policies) {
     console.log(`  ${policy.name}  ${color.Yellow(describeEndpoints(policy.endpoints) ?? '')}`);
   }
+}
+
+/** Prints each change in the quote data with its count and up to {@link changeExampleLimit} example policies. */
+function printChangeCounts(
+  counts: ReturnType<typeof countQuoteChanges>,
+  changes: Map<string, QuoteChangesResult>,
+  label: (name: string) => string
+): void {
+  const compared = [...changes.values()].filter(({ status }) => status === 'compared').length;
+  console.log(`\n${color.Cyan(`Changes in the quote data (${compared} policies with saved data compared)`)}`);
+  if (counts.length === 0) {
+    console.log(color.Green('  No changes in the quote data.'));
+    return;
+  }
+
+  for (const { summary, count, policies } of counts) {
+    console.log(`  ${color.Yellow(`${count}×`)} ${summary}`);
+    for (const { name, detail } of policies.slice(0, changeExampleLimit)) {
+      console.log(color.Gray(`        ${label(name)}${detail === undefined ? '' : `  ${detail}`}`));
+    }
+
+    if (policies.length > changeExampleLimit) {
+      console.log(color.Gray(`        and ${policies.length - changeExampleLimit} more`));
+    }
+  }
+}
+
+/** Prints each policy's own changes in the quote data, for `--detail`. */
+function printPolicyChanges(changedData: Map<string, QuoteChange[]>, label: (name: string) => string): void {
+  console.log(`\n${color.Cyan(`Changes by policy (${changedData.size})`)}`);
+  for (const [name, list] of [...changedData].sort(([a], [b]) => a.localeCompare(b))) {
+    console.log(label(name));
+    for (const { summary, detail } of list) {
+      console.log(`  ${summary}${detail === undefined ? '' : color.Gray(`  ${detail}`)}`);
+    }
+  }
+}
+
+/** Prints a titled list of policies, one line each; nothing when the list is empty. */
+function printPolicyList(title: string, lines: string[]): void {
+  if (lines.length === 0) {
+    return;
+  }
+
+  console.log(`\n${color.Cyan(title)}`);
+  lines.forEach((line) => console.log(`  ${line}`));
+}
+
+/** Prints how many compared policies' data cannot be compared, by reason, to run again. */
+function printNotCaptured(changes: Map<string, QuoteChangesResult>): void {
+  const reasons = new Map<string, number>();
+  for (const result of changes.values()) {
+    if (result.status === 'not-captured') {
+      reasons.set(result.reason, (reasons.get(result.reason) ?? 0) + 1);
+    }
+  }
+
+  const total = [...reasons.values()].reduce((sum, count) => sum + count, 0);
+  if (total === 0) {
+    return;
+  }
+
+  console.log(`\n${color.Cyan(`Data not captured, so not compared (${total}): run them again`)}`);
+  for (const [reason, count] of [...reasons].sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${color.Yellow(`${count}×`)} ${reason}`);
+  }
+}
+
+/** Names a policy's first change in the quote data, and how many more it has. */
+function describeChanges(list: QuoteChange[]): string {
+  const [first] = list;
+  return first === undefined ? '' : `${first.summary}${list.length > 1 ? ` (and ${list.length - 1} more)` : ''}`;
 }
 
 function printCommonTextChanges(changes: { change: string; count: number }[]): void {

@@ -125,11 +125,16 @@ Summarises the quote-page results in <policyDetailsId>-<historyId>/ (in DIFF_OUT
 Modes:
   (none)            Full report: each policy's differences, most common text changes, failed
                     policies and failures by reason, MRP records not retrieved, Oops pages, totals
-  differences       Only the policies that differ (the ones quote-pages retry-different reruns)
+  differences       What differs between NHI and MRP: each change in the quote data (such as
+                    "Buildings cover: offered on NHI, not on MRP") counted across policies with
+                    examples, policies whose data differs but screenshots match, screenshots that
+                    differ with no data change, and results whose data was not captured
   changed-answers   Combines every answer-changes.json (leaving out cover start changes) into
                     changed-answers.json and counts changes per question, most changed first
 
 Options:
+  --detail          With differences, also list each policy's changes and the screenshot and OCR
+                    text differences
   -h, --help        Show help
 
 Environment (.env or environment, both optional):
@@ -393,11 +398,15 @@ async function runSummarise(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
-    options: { help: { type: 'boolean', short: 'h' } }
+    options: { detail: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } }
   });
   if (values.help === true) {
     console.log(summariseHelp);
     return;
+  }
+
+  if (values.detail === true && positionals[0] !== 'differences') {
+    throw new Error(usageError('--detail is only for summarise differences.', summariseUsage, 'summarise'));
   }
 
   if (positionals.length > 1) {
@@ -423,7 +432,8 @@ async function runSummarise(args: string[]): Promise<void> {
   await summariseQuoteResults({
     guidListPath: optional(environment, 'QUOTE_GUID_LIST_PATH'),
     mrpAndQuoteOutputDir: optional(environment, 'MRP_AND_QUOTE_OUTPUT_DIR'),
-    differentOnly: positionals[0] === 'differences'
+    differentOnly: positionals[0] === 'differences',
+    detail: values.detail === true
   });
 }
 

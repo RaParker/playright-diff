@@ -14,7 +14,11 @@ asking anyone. Follow every step; keep everything below the notes in the same st
 2. Sources (all read-only; never write into the output folder)
    - Output folder: DIFF_OUTPUT_DIR in the project's .env (D:\temp\playright-diff-output). One folder per policy,
      <policyDetailsId>-<historyId>.
-   - Totals: `npm run summarise` (the Totals line), and the differing pages from `npm run summarise differences`.
+   - Totals: `npm run summarise` (the Totals line).
+   - What differs: `npm run summarise differences` names each change in the quote data, counted across policies with
+     examples ("Changes in the quote data"), lists the pages whose data differs but whose screenshots match, the pages
+     that differ only in rendering, and the results whose data was not captured; `-- --detail` lists every policy's
+     changes. Use it as the main source for sections 1 to 4 and "Not covered above".
      Check the startedAt range in each folder's result.json: say in the intro which run the figures are from, and
      whether some policies were run again later.
    - Per policy: result.json (outcome, endpoints: quote | referred | conditional | declined, issues), report.json
@@ -27,13 +31,16 @@ asking anyone. Follow every step; keep everything below the notes in the same st
      codes such as ky99 are quoted as they are).
 
 3. Sorting the differing pages into kinds
-   - For each differing page, compare NHI's and MRP's buildingsIsAllowed, contentsIsAllowed,
-     isHighRiskHighValueItemsAllowed, isGeneralValuablesCoveredAllowed and buildingsSumInsured, and the end points.
-   - Current kinds (section: rule, open issue):
-     1 Tenants: buildingsIsAllowed true on NHI, false on MRP (open issue 2).
-     2 Personal possessions: both high-risk flags true on NHI, false on MRP (open issue 6).
-     3 Contents: contentsIsAllowed true on NHI, false on MRP (open issue 11).
-     4 Sum insured: MRP buildingsSumInsured with more than two decimal places, shown as £1 (open issue 10).
+   - Each kind is one or more of the changes `summarise differences` names. Current kinds (section: change, open
+     issue):
+     1 Tenants: "Buildings cover: offered on NHI, not on MRP" (open issue 2).
+     2 Personal possessions: "Personal possessions and high-risk items: allowed on NHI, not on MRP" (open issue 6).
+     3 Contents: "Contents cover: offered on NHI, not on MRP" (open issue 11).
+     4 Sum insured: "Buildings sum insured differs" with three decimal places on MRP, shown as £1 (open issue 10).
+   - Count a kind's differing pages from `-- --detail` (policies in "Changes by policy" whose screenshots differ);
+     its pages whose screenshots match are under "Data differs, screenshots match".
+   - A change that belongs to no kind (premiums, excesses, endorsements, "Other data differs: …") is a new kind:
+     add a section for it with one example, or list it under "Not covered above" when its pages are few.
    - A page can be in more than one kind; say so ("also one of the 8 in section 2"), and make the counts add up.
    - A page that fits no kind: diff the visible text of the two standardised HTML files (tags, scripts and styles
      removed; leave out lines with names or emails) and the API flags to find the cause. Add a new section for it,

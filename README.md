@@ -31,18 +31,18 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 
 ## Commands
 
-| Command                             | What it does                                                |
-| ----------------------------------- | ----------------------------------------------------------- |
-| `npm run screenshot`                | Capture a full-page screenshot of one URL                   |
-| `npm run compare`                   | Compare two images and report changed regions and text      |
-| `npm run quote-page`                | Capture NHI and TCAS versions of one quote and compare them |
-| `npm run quote-pages`               | Run `quote-page` for every policy in a GUID list            |
-| `npm run summarise`                 | Summarise every quote-page result (alias `summarize`)       |
-| `npm run summarise differences`     | Show only the quote-page results that differ                |
-| `npm run summarise changed-answers` | Combine every policy's answer changes and count them        |
-| `npm run migrate-output`            | Move output from the old layout into one folder per policy  |
-| `npm run clear-output`              | Delete the output folder (`DIFF_OUTPUT_DIR`)                |
-| `npm run help`                      | List these commands                                         |
+| Command                             | What it does                                                 |
+| ----------------------------------- | ------------------------------------------------------------ |
+| `npm run screenshot`                | Capture a full-page screenshot of one URL                    |
+| `npm run compare`                   | Compare two images and report changed regions and text       |
+| `npm run quote-page`                | Capture NHI and TCAS versions of one quote and compare them  |
+| `npm run quote-pages`               | Run `quote-page` for every policy in a GUID list             |
+| `npm run summarise`                 | Summarise every quote-page result (alias `summarize`)        |
+| `npm run summarise differences`     | Show what differs in the quote data, counted across policies |
+| `npm run summarise changed-answers` | Combine every policy's answer changes and count them         |
+| `npm run migrate-output`            | Move output from the old layout into one folder per policy   |
+| `npm run clear-output`              | Delete the output folder (`DIFF_OUTPUT_DIR`)                 |
+| `npm run help`                      | List these commands                                          |
 
 Add `-- --help` to any command for its options (for example `npm run compare -- --help`).
 
@@ -448,9 +448,63 @@ To see only what differs, add `differences`:
 npm run summarise differences
 ```
 
-This prints the Visual-only differences, Text differences and Most common text changes
-sections, then how many of the compared policies differ (the policies
-[`retry-different`](#quote-pages) reruns), for example `404 different of 1237 compared.`
+This says what differs between NHI and MRP in terms of the quote, not the pixels. It compares
+each policy's saved quote data (`quoteResult` in NHI's quote summary and in MRP's
+`save-details` response, from `nhi-api/` and `tcas-api/`) and names each difference:
+
+```text
+Quote changes (…/playright-diff-output)
+
+Changes in the quote data (252 policies with saved data compared)
+  108× Buildings cover: offered on NHI, not on MRP
+        …/024F72ABDE3C4FF18A56AD3AC920AFAE-1
+        …/02986F9663DC4AD694E569D6D8C4CB15-1
+        …/040E53264C8B4DB4AE87E69CE58C4A2E-1
+        and 105 more
+  6× Annual premium differs
+        …/323B3C1BB0D9423EADD80A5E76C6B9A6-1  £329.22 on NHI, £301.09 on MRP
+        …
+
+Data differs, screenshots match (129)
+  …/00DD15DBC34640879634698B07006ACB-1  Personal possessions and high-risk items: allowed on NHI, not on MRP
+
+Data not captured, so not compared (996): run them again
+  995× captured before end points were recorded
+  1× no NHI quote summary saved
+
+Totals
+112 different of 1248 compared; 241 with data changes, 996 not captured.
+```
+
+- **Changes in the quote data:** each change counted across policies, most common first, with
+  up to three example policies and their values. The named changes are cover offered (buildings,
+  contents, personal possessions and high-risk items), sums insured, premiums and the admin fee,
+  excesses by name, endorsements by code (in any order), listed items (named by category and
+  value, never the description the customer typed), whether the quote is conditional, a referral
+  or a decline, the specific terms check, and different [end points](#quote-end-points). Any
+  other field both responses have that differs is named as `Other data differs: <field>`.
+- **Ignored:** fields that differ on every comparison without meaning a different quote — each
+  side's own references and GUIDs, the agent, date formats and defaults one side fills where the
+  other sends nothing — listed in `noiseFields` in `src/quote-changes.ts`. `null` and an empty
+  value count as the same, and fields only one response has are left out.
+- **Data differs, screenshots match:** policies the screenshots alone miss, such as referrals,
+  which show no cover rows.
+- **Screenshots differ, data matches:** differences in how the page renders.
+- **Data not captured:** results without recorded end points (from versions before they were
+  recorded) or without a saved response are counted by reason, never compared or guessed at.
+  Run them again to compare them.
+- **Totals:** how many compared policies' screenshots differ (the policies
+  [`retry-different`](#quote-pages) reruns), how many have data changes, and how many could not
+  be compared.
+
+Add `--detail` to also list each policy with its own changes, followed by the Visual-only
+differences, Text differences and Most common text changes sections of the screenshots and OCR
+text:
+
+```sh
+npm run summarise differences -- --detail
+```
+
 Failures, MRP records, the GUID list and Oops pages are left out. Each policy is shown by the
 full path of its policy folder rather than its folder name, so you can Ctrl+click it in
 most terminals to open the screenshots and report.

@@ -91,6 +91,16 @@ export function classifyComparison(changedPixels: number, endpoints?: QuoteEndpo
 }
 
 /**
+ * Names an end point the way logs and summaries do, after a flow's name: `quoted`, `referred`, `conditional` or
+ * `declined`.
+ * @param endpoint The end point.
+ * @returns Its name.
+ */
+export function nameEndpoint(endpoint: QuoteEndpoint): string {
+  return endpointNames[endpoint];
+}
+
+/**
  * Describes where the flows ended, when either did not quote, for example `NHI referred, TCAS quoted`.
  * @param endpoints Where each flow ended, when recorded.
  * @returns The description, or `undefined` when both quoted or the end points were not recorded.
