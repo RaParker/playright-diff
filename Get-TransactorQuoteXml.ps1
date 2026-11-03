@@ -38,16 +38,24 @@ format XML (i.e. @prettier/plugin-xml is set up), otherwise with .NET's XmlWrite
 endings.
 
 .EXAMPLE
-./scripts/Get-TransactorQuoteXml.ps1 98B7F028F9C41780927C4F8B096782E7 1
+./Get-TransactorQuoteXml.ps1 98B7F028F9C41780927C4F8B096782E7 1
+
+Searches dev for files written in the last day.
 
 .EXAMPLE
-./scripts/Get-TransactorQuoteXml.ps1 98B7F028F9C41780927C4F8B096782E7 1 -Environment tst
+./Get-TransactorQuoteXml.ps1 98B7F028F9C41780927C4F8B096782E7 1 -Environment tst
+
+Searches tst instead of dev.
 
 .EXAMPLE
-./scripts/Get-TransactorQuoteXml.ps1 98B7F028F9C41780927C4F8B096782E7 1 -MaxAgeInDays 5
+./Get-TransactorQuoteXml.ps1 98B7F028F9C41780927C4F8B096782E7 1 -MaxAgeInDays 5 -Recurse
+
+Searches the last 5 days, including the archive subfolders.
 
 .EXAMPLE
-./scripts/Get-TransactorQuoteXml.ps1 98B7F028F9C41780927C4F8B096782E7 1 -NoFormat
+./Get-TransactorQuoteXml.ps1 98B7F028F9C41780927C4F8B096782E7 1 -NoFormat
+
+Copies the files without formatting them.
 #>
 param(
     [Parameter(Mandatory)]
@@ -176,7 +184,7 @@ $files = @(Get-ChildItem -LiteralPath $LogFolder -Filter $filter -File -Recurse:
 
 if ($files.Count -eq 0) {
     Write-Host "No QuoteXml or QuoteResponse files found in the last $MaxAgeInDays day(s)" -ForegroundColor Yellow
-    Get-Help $PSCommandPath -Detailed
+    Write-Host "Try a larger -MaxAgeInDays or -Recurse. For help, run: Get-Help '$PSCommandPath' -Detailed"
     exit 0
 }
 
