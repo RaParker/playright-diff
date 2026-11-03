@@ -37,6 +37,9 @@ Copy the files as they are. Without it, the copies are formatted so they diff cl
 format XML (i.e. @prettier/plugin-xml is set up), otherwise with .NET's XmlWriter using a 2-space indent and LF line
 endings.
 
+.PARAMETER Help
+Show this help.
+
 .EXAMPLE
 ./Get-TransactorQuoteXml.ps1 98B7F028F9C41780927C4F8B096782E7 1
 
@@ -57,26 +60,36 @@ Searches the last 5 days, including the archive subfolders.
 
 Copies the files without formatting them.
 #>
+[CmdletBinding(DefaultParameterSetName = "Find")]
 param(
-    [Parameter(Mandatory)]
+    [Parameter(Mandatory, Position = 0, ParameterSetName = "Find")]
     [string]$PolicyDetailsId,
 
-    [Parameter(Mandatory)]
+    [Parameter(Mandatory, Position = 1, ParameterSetName = "Find")]
     [string]$HistoryId,
 
+    [Parameter(Position = 2, ParameterSetName = "Find")]
     [ValidateSet("dev", "tst")]
     [string]$Environment = "dev",
 
+    [Parameter(Position = 3, ParameterSetName = "Find")]
     [ValidateRange(1, [int]::MaxValue)]
     [int]$MaxAgeInDays = 1,
 
+    [Parameter(Position = 4, ParameterSetName = "Find")]
     [string]$LogFolder = "\\$($Environment)tqs01\c$\Logs\Transactor_Xml_Log",
 
+    [Parameter(Position = 5, ParameterSetName = "Find")]
     [string]$Destination = "$((Get-Location).Path)\output",
 
+    [Parameter(ParameterSetName = "Find")]
     [switch]$Recurse,
 
-    [switch]$NoFormat
+    [Parameter(ParameterSetName = "Find")]
+    [switch]$NoFormat,
+
+    [Parameter(Mandatory, ParameterSetName = "Help")]
+    [switch]$Help
 )
 
 function Format-XmlFiles([string[]]$Paths) {
@@ -159,6 +172,12 @@ function Format-XmlFileWithXmlWriter([string]$Path) {
     }
 }
 
+if ($Help) {
+    . (Join-Path $PSScriptRoot "scripts" "Get-ScriptHelpText.ps1")
+    Write-Host (Get-ScriptHelpText $PSCommandPath)
+    exit 0
+}
+
 if ($PolicyDetailsId -notmatch "^[0-9A-Fa-f]{32}$") {
     Write-Host "PolicyDetailsId must be a GUID with the '-' removed (32 hex characters), got '$PolicyDetailsId'" -ForegroundColor Red
     exit 1
@@ -184,7 +203,7 @@ $files = @(Get-ChildItem -LiteralPath $LogFolder -Filter $filter -File -Recurse:
 
 if ($files.Count -eq 0) {
     Write-Host "No QuoteXml or QuoteResponse files found in the last $MaxAgeInDays day(s)" -ForegroundColor Yellow
-    Write-Host "Try a larger -MaxAgeInDays or -Recurse. For help, run: Get-Help '$PSCommandPath' -Detailed"
+    Write-Host "Try a larger -MaxAgeInDays or -Recurse. For help, run: $PSCommandPath -Help"
     exit 0
 }
 

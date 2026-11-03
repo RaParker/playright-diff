@@ -442,7 +442,8 @@ function Format-CommandLine([string[]]$command) {
 }
 
 if ($PSCmdlet.ParameterSetName -eq 'Help') {
-    Get-Help $PSCommandPath -Detailed
+    . (Join-Path $PSScriptRoot 'scripts' 'Get-ScriptHelpText.ps1')
+    Write-Host (Get-ScriptHelpText $PSCommandPath)
     exit 0
 }
 

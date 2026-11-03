@@ -138,6 +138,7 @@ Describe 'Run-Project.ps1 validation' {
 
         # assert
         $result.ExitCode | Should -Be 0
-        $result.Output | Should -BeLike '*SYNOPSIS*'
+        $result.Output | Should -BeLike '*./Run-Project.ps1 - *Usage:*Parameters:*Examples:*'
+        $result.Output | Should -Not -BeLike '*REMARKS*'
     }
 }
