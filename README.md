@@ -598,6 +598,24 @@ Deleted D:\temp\playright-diff-output.
 - **No confirmation prompt:** add `-WhatIf` to the PowerShell wrapper to see the command
   without running it.
 
+### Create-ZipFromOutput.ps1
+
+Zips one policy's `<ID>-<historyId>/` folder from the output folder to `<ID>-<historyId>.zip`,
+which extracts to a folder of the same name:
+
+```powershell
+./Create-ZipFromOutput.ps1 106D1920D02642E2A0F55131BB75ED7D          # history 1
+./Create-ZipFromOutput.ps1 106D1920D02642E2A0F55131BB75ED7D 2 -Force # replace without asking
+./Create-ZipFromOutput.ps1 -Help
+```
+
+- **Output folder:** `DIFF_OUTPUT_DIR` from the environment, otherwise from `.env`, otherwise
+  this project's folder.
+- **Destination:** the output folder, unless `-Destination` names another folder.
+- **Existing zip:** you are asked whether to replace it, unless `-Force` is given.
+- **Missing policy folder or invalid ID:** reported, exit code 1.
+- The zip holds the test policy's details, so share it with care.
+
 ## Configuration
 
 Every command reads `.env` in the current working directory. `quote-page`, `quote-pages` and
