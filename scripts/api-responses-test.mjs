@@ -21,7 +21,24 @@ function pageHtml(port) {
   </script></body></html>`;
 }
 
+/** Fetches a saved set of answers, then saves it. */
+const answersPageHtml = `<!doctype html><html><body><h1>Your answers</h1><script>
+    (async () => {
+      await fetch('/api/answers/p/a?nhi=true');
+      await fetch('/api/answers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      window.__done = true;
+    })();
+  </script></body></html>`;
+
+const coverTypeId = '041fb9d0-3d1f-11ea-b675-ffaf1ec7b93a';
+const answersResponse = {
+  questions: { [coverTypeId]: { questionId: coverTypeId, name: 'coverType', mappingField: 'TypeOfCover' } },
+  answers: { [coverTypeId]: { default: null, customer: 'Buildings' }, activeSectionId: 'section-1' }
+};
+
 const jsonRoutes = {
+  '/api/answers/p/a?nhi=true': [200, answersResponse],
+  '/api/answers': [200, answersResponse],
   '/api/quote-summary/abc?source=tcas': [200, { premium: 74.56 }],
   '/api/save': [201, { saved: true }],
   '/other.json': [200, { notApi: true }],
@@ -49,7 +66,8 @@ before(async () => {
     }
 
     response.setHeader('Content-Type', 'text/html');
-    response.end(request.url === '/no-api' ? '<!doctype html><h1>No API calls</h1>' : pageHtml(server.address().port));
+    const pages = { '/no-api': '<!doctype html><h1>No API calls</h1>', '/answers': answersPageHtml };
+    response.end(pages[request.url] ?? pageHtml(server.address().port));
   });
   await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -129,6 +147,49 @@ describe('API responses', () => {
       '003-POST-save.json',
       '004-GET-error.json'
     ]);
+  });
+
+  test('saves the labelled answers of an answers response beside it, and not of the answers save', async () => {
+    // arrange
+    const folder = join(directory, 'nhi-api');
+
+    // act
+    await screenshot(`${base}/answers`, {
+      output: join(directory, 'nhi.png'),
+      wait: 0,
+      beforeCapture: waitForCalls,
+      apiResponsesFolder: folder
+    });
+
+    // assert
+    assert.deepEqual((await readdir(folder)).sort(), [
+      '001-GET-answers-p-a-answers.json',
+      '001-GET-answers-p-a.json',
+      '002-POST-answers.json'
+    ]);
+    assert.equal(
+      await readFile(join(folder, '001-GET-answers-p-a-answers.json'), 'utf8'),
+      `${JSON.stringify({ activeSectionId: 'section-1', typeOfCover: { default: null, customer: 'Buildings' } }, null, 2)}\n`
+    );
+  });
+
+  test('does not count labelled answers files when continuing the numbering', async () => {
+    // arrange
+    const folder = join(directory, 'nhi-api');
+    await mkdir(folder);
+    await writeFile(join(folder, '001-GET-answers-p-a.json'), '{}');
+    await writeFile(join(folder, '001-GET-answers-p-a-answers.json'), '{}');
+
+    // act
+    await screenshot(`${base}/answers`, {
+      output: join(directory, 'nhi.png'),
+      wait: 0,
+      beforeCapture: waitForCalls,
+      apiResponsesFolder: folder
+    });
+
+    // assert
+    assert.ok((await readdir(folder)).includes('002-GET-answers-p-a.json'));
   });
 
   test('saves the responses of a capture that fails', async () => {

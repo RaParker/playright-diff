@@ -4,6 +4,7 @@ import type { Page, Response } from 'playwright';
 import { isApiUrl } from './api-requests.js';
 import { color } from './color.js';
 import { isMissing } from './fs-helpers.js';
+import { isAnswersUrl, labelAnswers } from './labelled-answers.js';
 
 /** One saved API response, as written to its JSON file. */
 export interface SavedApiResponse {
@@ -25,10 +26,15 @@ export interface ApiResponseRecorder {
 /** Longest part of a response file name taken from the endpoint's path, so names stay within Windows path limits. */
 const maxPathNameLength = 80;
 
+/** Ending of the file that holds an answers response's labelled answers, saved beside the response itself. */
+const labelledAnswersSuffix = '-answers.json';
+
 /**
  * Starts saving every JSON response the page receives from the site's own API (`/api/` on the given origin), one file
  * per response, numbered in the order they arrive: `001-GET-quote-summary-<guid>.json`. Numbering carries on from the
  * files already in the folder, so a second capture into the same folder (such as NHI's Oops fallback) adds to the first.
+ * An answers response (`GET /api/answers/…`) also gets a `…-answers.json` file beside it with just its answers, keyed by
+ * readable labels and sorted (see {@link labelAnswers}).
  * Call {@link ApiResponseRecorder.settled} before closing the browser, since bodies can only be read while it is open.
  * @param page Page about to open the site.
  * @param origin Origin of the site, for example `https://quotes.example.com`.
@@ -66,10 +72,10 @@ export async function recordApiResponses(page: Page, origin: string, folder: str
   };
 }
 
-/** @returns The number of entries in the folder, or 0 when it does not exist. */
+/** @returns The number of saved responses in the folder (not labelled answers files), or 0 when there is no folder. */
 async function countFiles(folder: string): Promise<number> {
   try {
-    return (await readdir(folder)).length;
+    return (await readdir(folder)).filter((name) => !name.endsWith(labelledAnswersSuffix)).length;
   } catch (error) {
     if (isMissing(error)) {
       return 0;
@@ -104,6 +110,20 @@ async function saveResponse(response: Response, path: string): Promise<void> {
   };
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(saved, null, 2)}\n`);
+  await saveLabelledAnswers(saved, path);
+}
+
+/** Writes an answers response's labelled answers beside it, as `<response name>-answers.json`. */
+async function saveLabelledAnswers(saved: SavedApiResponse, responsePath: string): Promise<void> {
+  if (!isAnswersUrl(saved.url, saved.method)) {
+    return;
+  }
+
+  const answers = labelAnswers(saved.body);
+  if (answers !== undefined) {
+    const path = responsePath.replace(/\.json$/, labelledAnswersSuffix);
+    await writeFile(path, `${JSON.stringify(answers, null, 2)}\n`);
+  }
 }
 
 /** @returns The text parsed as JSON, the text itself when it is not JSON, or `null` when there is none. */

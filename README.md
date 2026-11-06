@@ -212,7 +212,14 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   (`/api/` on the page's origin) is saved, whether the capture succeeds or fails, in
   `<ID>-<historyId>/api-nhi/` and `api-mrp/`. Each response is one file,
   numbered in the order it arrived, such as `001-GET-quote-summary-<guid>.json`, holding the
-  `url`, `method`, `status`, `requestBody` and `body` (parsed when they are JSON). An NHI Oops
+  `url`, `method`, `status`, `requestBody` and `body` (parsed when they are JSON). Each answers
+  response (`GET /api/answers/…`) also gets a file beside it ending `-answers.json`, such as
+  `001-GET-answers-<productId>-<answersId>-answers.json`, holding just its `answers` map sorted
+  by key. Each answer is keyed by its question's `mappingField`, else its `name` (both
+  camelCased, such as `typeOfCover`), else its question ID, keeping any repeating group suffix
+  such as `~G01`. Keys that are not questions, such as `activeSectionId`, stay as they are, and
+  an answer whose label is already taken keeps its question ID. These files do not count
+  towards the numbering. An NHI Oops
   attempt and its replacement journey, or the original and replacement TCAS captures, share
   one folder, with numbering carried on. Compare the two folders to see which data behind the
   page differs, such as premiums or add-ons the quote engine returned. The responses hold the
