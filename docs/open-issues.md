@@ -19,6 +19,20 @@ differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last update
 | 12  | playwright-diff flags rendering noise                   | Open        | playwright-diff tweak          |
 | 13  | NHI's saved quote and its re-quote disagree             | Open        | NHI investigation              |
 
+## Assumptions to verify
+
+- **Personal possessions need contents cover:** playwright-diff assumes that high-risk items and general valuables
+  (personal possessions) cannot be allowed without contents cover. Wherever a quote's `contentsIsAllowed` is `false`,
+  it reads `isHighRiskHighValueItemsAllowed` and `isGeneralValuablesCoveredAllowed` as `false`, both for the
+  [cover type re-check](../README.md#cover-type-re-check) outcome and in `summarise differences`, which also reports a
+  contents cover difference on its own, without the possessions differences that follow from it.
+  - **Why it matters:** on `106D1920D02642E2A0F55131BB75ED7D/1` (2026-11-18), after the re-check answered Buildings &
+    Contents, NHI priced the quote as Buildings only with `contentsIsAllowed` `false`, matching MRP, but still returned
+    both possessions flags as `true`, where MRP returned `false`. Under the assumption the two quotes match.
+  - **To verify:** with the rating team, that possessions cover is never allowed without contents cover; if NHI's
+    `true` can matter (for example on a later contents MTA), this is an NHI difference rather than noise. The rule is in
+    `readFlag` in `src/quote-changes.ts`.
+
 ## 1. NHI can no longer price the original quotes
 
 - **What:** since 14 Oct, NHI's `CalculateQuotePremium` returns 500 for the original MRP quote GUIDs of the two test
@@ -199,6 +213,15 @@ differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last update
     NHI and a filled one on MRP, probably a step state or a hover effect when the screenshot is taken.
 - **Next step:** raise `--threshold` (default 20), or stop counting a page as different when every changed region is
   small and its OCR text is unchanged; check the progress bar's state before the screenshot.
+- **OCR noise (2026-11-19):** symbol-only word changes (`©` vs `@`, `—`, an empty checkbox read as `[1]`) no longer
+  count as text changes: 228 to 189 of 374 saved region pairs, with no real change lost. A `|` standing alone is
+  compared as `I` ("| agree" vs "I agree"). Greyscale, contrast
+  stretching, a white margin, a stated resolution and the AUTO or SINGLE_BLOCK page modes were measured and left out:
+  each fixed some misreadings but caused others, and AUTO skipped lighter text such as "Plus specified items cover up
+  to £2,000".
+- **Still open:** white text on dark buttons is often not read (RECALCULATE YOUR QUOTE vs CONTINUE read as nothing on
+  both sides), so a changed button label shows only as a visual difference. Reading an inverted copy of each crop as
+  well would fix it, at about twice the OCR time.
 
 ## 13. NHI's saved quote and its re-quote disagree
 

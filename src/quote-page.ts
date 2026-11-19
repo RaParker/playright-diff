@@ -9,7 +9,7 @@ import {
   type AnswerChangesByFlow
 } from './answer-changes.js';
 import { color, failureColor } from './color.js';
-import { compare, type ComparisonCounts } from './compare.js';
+import { compare, type ComparisonCounts, type ImageNames } from './compare.js';
 import { runConcurrently, validateConcurrency } from './concurrency.js';
 import { isMissing, parseJson, readOptionalTextFile } from './fs-helpers.js';
 import { runWithLogPrefix, withPrefixedConsole } from './log-context.js';
@@ -30,9 +30,15 @@ import {
   type QuoteEndpoint,
   type QuoteEndpoints
 } from './quote-endpoint.js';
-import { removeQuoteOutput } from './quote-output.js';
-import { writeQuoteResult, type EndorsementOrder, type QuoteResult } from './quote-result.js';
-import { quoteSummary, requote } from './quote-summary.js';
+import {
+  nameCoverType,
+  readCoverTypeRecheckOutcome,
+  readCoverTypeRecheckTrigger,
+  type CoverTypeRecheckTrigger
+} from './quote-changes.js';
+import { removeFlowOutput, removeQuoteOutput } from './quote-output.js';
+import { writeQuoteResult, type CoverTypeRecheck, type EndorsementOrder, type QuoteResult } from './quote-result.js';
+import { quoteSummary, requote, selectBuildingsAndContents } from './quote-summary.js';
 import {
   DeclinedError,
   OopsError,
@@ -56,6 +62,13 @@ export interface QuotePageOptions {
    * screens get twice as long.
    */
   timeout?: number;
+  /**
+   * Device pixels per CSS pixel for every NHI and TCAS capture and their comparison (default 1.0, i.e. 100%; see
+   * {@link ScreenshotOptions.scale}).
+   */
+  scale?: number;
+  /** Names the comparison's region crops end with, `region-N-<name>.png` (default `before` and `after`). */
+  imageNames?: ImageNames;
   /** When set, an NHI Oops requests a replacement quote GUID, records it, and retries NHI once. */
   quoteGuidFallback?: QuoteGuidFallbackOptions;
 }
@@ -76,10 +89,23 @@ export interface QuotePageResult {
   endpoints: QuoteEndpoints;
 }
 
+/** A capture step run on the page before its screenshot is taken. */
+type CaptureStep = (page: Page) => Promise<void>;
+
 interface NhiCapture {
   /** Replacement quote GUID captured, or `undefined` when the original was captured. */
   replacementGuid?: string;
   endpoint: QuoteEndpoint;
+  /**
+   * Captures NHI again the same way (the same URL and journey) into the same files, running `extraStep` once the quote
+   * appears and before annual payments are selected.
+   */
+  recapture: (extraStep: CaptureStep) => Promise<QuoteEndpoint>;
+}
+
+/** The Buildings & Contents re-check of a quote-page run, filled in once it starts so a failed run records it too. */
+interface CoverTypeRecheckProgress {
+  coverTypeRecheck?: CoverTypeRecheck;
 }
 
 export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
@@ -126,9 +152,11 @@ export async function quotePage(
 
   const run = { policyDetailsId, historyId, startedAt: new Date().toISOString() };
   const changes: AnswerChangesByFlow = {};
+  const recheck: CoverTypeRecheckProgress = {};
+  const recorded = () => (recheck.coverTypeRecheck === undefined ? {} : { coverTypeRecheck: recheck.coverTypeRecheck });
   let result: CaptureAndCompareResult;
   try {
-    result = await collectAnswerChanges(changes, () => captureAndCompare(policyDetailsId, historyId, options));
+    result = await collectAnswerChanges(changes, () => captureAndCompare(policyDetailsId, historyId, options, recheck));
   } catch (error) {
     await saveAnswerChanges(policyDetailsId, historyId, changes);
     await saveQuoteResult({
@@ -136,6 +164,7 @@ export async function quotePage(
       outcome: 'failed',
       validation: error instanceof ValidationError,
       issues: (error instanceof Error ? error.message : String(error)).split('\n'),
+      ...recorded(),
       finishedAt: new Date().toISOString()
     });
     throw error;
@@ -150,6 +179,7 @@ export async function quotePage(
     issues: [],
     ...(endorsementOrder === undefined ? {} : { endorsementOrder }),
     endpoints: quotePageResult.endpoints,
+    ...recorded(),
     finishedAt: new Date().toISOString()
   });
   return quotePageResult;
@@ -338,7 +368,10 @@ interface CaptureAndCompareResult {
 
 /**
  * Captures both flows for a policy whose ID is valid, then compares them unless a side failed. A decline is compared
- * through its `screenshot-declined-<flow>.png`, against the other side's quote page or decline.
+ * through its `screenshot-declined-<flow>.png`, against the other side's quote page or decline. When NHI's buildings
+ * only or contents only quote allows cover MRP does not, NHI is captured again with Buildings & Contents first (see
+ * {@link recheckCoverType}).
+ * @param recheck Filled in with the Buildings & Contents re-check once it starts.
  * @returns `'compared'` with the comparison's counts and where each flow ended, and when the quote pages listed the
  * endorsements in different orders, each flow's order.
  * @throws As {@link quotePage}.
@@ -346,7 +379,8 @@ interface CaptureAndCompareResult {
 async function captureAndCompare(
   policyDetailsId: string,
   historyId: number,
-  options: QuotePageOptions
+  options: QuotePageOptions,
+  recheck: CoverTypeRecheckProgress
 ): Promise<CaptureAndCompareResult> {
   const basename = `${policyDetailsId}-${historyId}`;
   const artemisQuoteGuid = await readQuoteGuid(resolve(options.mrpAndQuoteOutputDir, `${basename}-mrp.json`));
@@ -374,14 +408,16 @@ async function captureAndCompare(
       ? startAnswerChangeAttempt(() =>
           captureAt('TCAS', tcasUrl, tcasPaths, {
             timeout: options.timeout,
+            scale: options.scale,
             beforeCapture: withAnnualPayment('TCAS', tcasQuote)
           })
         )
       : undefined;
-  const [nhi, originalTcas] = await Promise.allSettled([
-    captureNhi(artemisQuoteGuid, mappedGuid, mappingPath, policyDetailsId, historyId, nhiPaths, options),
-    originalTcasAttempt?.result
-  ]);
+  // NHI's answer changes are kept apart until it is known whether a Buildings & Contents re-check replaces its capture.
+  const nhiAttempt = startAnswerChangeAttempt(() =>
+    captureNhi(artemisQuoteGuid, mappedGuid, mappingPath, policyDetailsId, historyId, nhiPaths, options)
+  );
+  const [nhi, originalTcas] = await Promise.allSettled([nhiAttempt.result, originalTcasAttempt?.result]);
   let tcas = originalTcas;
   const replacementGuid = nhi.status === 'fulfilled' ? nhi.value.replacementGuid : undefined;
   // The original TCAS capture's answer changes are saved only when no replacement capture takes its place.
@@ -402,6 +438,7 @@ async function captureAndCompare(
     [tcas] = await Promise.allSettled([
       captureAt('TCAS', replacementUrl, tcasPaths, {
         timeout: options.timeout,
+        scale: options.scale,
         beforeCapture: withAnnualPayment('TCAS', inSequence(quoteSummary('TCAS'), requote('TCAS')))
       })
     ]);
@@ -411,21 +448,31 @@ async function captureAndCompare(
   const rejected = captures.flatMap((result, index) =>
     result.status === 'rejected' ? [{ label: index === 0 ? 'NHI' : 'TCAS', reason: result.reason as unknown }] : []
   );
-  if (rejected.length > 0) {
-    const message = `Quote capture failed; comparison skipped.\n${rejected
-      .map(({ label, reason }) => `${label}: ${reason instanceof Error ? reason.message : String(reason)}`)
-      .join('\n')}`;
-    // Shown in yellow only when every failed side stopped on validation; any other failure keeps it red.
-    throw rejected.every(({ reason }) => reason instanceof ValidationError)
-      ? new ValidationError(message)
-      : new Error(message);
+  // NHI's own status is checked again only so its value can be used below.
+  if (rejected.length > 0 || nhi.status === 'rejected') {
+    nhiAttempt.keep();
+    throw captureFailedError(rejected);
   }
 
   // Neither capture was rejected, so both reached an end point.
   const endpoints: QuoteEndpoints = {
-    nhi: nhi.status === 'fulfilled' ? nhi.value.endpoint : 'quote',
+    nhi: nhi.value.endpoint,
     tcas: (tcas.status === 'fulfilled' ? tcas.value : undefined) ?? 'quote'
   };
+  const folder = outputPath(basename);
+  const trigger = await readCoverTypeRecheckTrigger(folder, endpoints);
+  if (trigger === undefined) {
+    nhiAttempt.keep();
+  } else {
+    recheck.coverTypeRecheck = { originalCoverType: trigger.coverType };
+    endpoints.nhi = await recheckCoverType(trigger, nhi.value, nhiPaths);
+    const outcome = await readCoverTypeRecheckOutcome(folder);
+    if (outcome !== undefined) {
+      recheck.coverTypeRecheck.outcome = outcome;
+      console.log(color.Gray(`NHI: cover type re-check outcome: ${outcome}.`));
+    }
+  }
+
   const described = describeEndpoints(endpoints);
   if (described !== undefined) {
     console.log(`${described}.`);
@@ -438,6 +485,8 @@ async function captureAndCompare(
       output: outputPath(basename),
       reuseOutput: true,
       useOcr: options.useOcr,
+      imageScale: options.scale,
+      imageNames: options.imageNames,
       identicalMessage: described === undefined ? undefined : `Screenshots match; ${described}.`
     }
   );
@@ -445,6 +494,49 @@ async function captureAndCompare(
     quotePageResult: { outcome: 'compared', comparison, endpoints },
     endorsementOrder: await readEndorsementOrder(nhiPaths, tcasPaths)
   };
+}
+
+/**
+ * Captures NHI again the same way with the cover type Buildings & Contents (see {@link selectBuildingsAndContents}),
+ * because its buildings only or contents only quote allowed cover MRP did not: NHI assumes the cover it was not asked
+ * about is allowed until it is priced. The first capture's files are removed and its answer changes left out, so the
+ * second capture replaces it; the second capture's answer changes are kept even when it fails.
+ * @param trigger NHI's cover type and the cover flags that differ.
+ * @param capture The first NHI capture.
+ * @param paths NHI's files.
+ * @returns Where the second capture ended.
+ * @throws The capture-failed error a failed capture gives (see {@link captureFailedError}).
+ */
+async function recheckCoverType(
+  trigger: CoverTypeRecheckTrigger,
+  capture: NhiCapture,
+  paths: FlowOutputPaths
+): Promise<QuoteEndpoint> {
+  const reason = `${nameCoverType(trigger.coverType)} quote allows cover MRP does not (${trigger.fields.join(', ')})`;
+  console.log(`NHI: ${reason}; capturing NHI again with Buildings & Contents.`);
+  await removeFlowOutput(paths);
+  const attempt = startAnswerChangeAttempt(() => capture.recapture(selectBuildingsAndContents('NHI', reason)));
+  try {
+    return await attempt.result;
+  } catch (error) {
+    throw captureFailedError([{ label: 'NHI', reason: error }]);
+  } finally {
+    attempt.keep();
+  }
+}
+
+/**
+ * Builds the error for captures that failed, naming each flow's failure under a shared first line. It is a
+ * {@link ValidationError} (shown in yellow) only when every failed capture stopped on validation; any other failure keeps
+ * it red.
+ */
+function captureFailedError(rejected: { label: string; reason: unknown }[]): Error {
+  const message = `Quote capture failed; comparison skipped.\n${rejected
+    .map(({ label, reason }) => `${label}: ${reason instanceof Error ? reason.message : String(reason)}`)
+    .join('\n')}`;
+  return rejected.every(({ reason }) => reason instanceof ValidationError)
+    ? new ValidationError(message)
+    : new Error(message);
 }
 
 /** The screenshot that shows where a flow ended: its declined screenshot for a decline, otherwise its quote page. */
@@ -513,7 +605,8 @@ async function readQuoteGuid(mrpPath: string): Promise<string> {
 
 /**
  * Captures the NHI quote page, falling back to a replacement quote GUID when the original shows Oops.
- * @returns Where the capture ended, with the replacement quote GUID when one was used.
+ * @returns Where the capture ended, with the replacement quote GUID when one was used, and a way to capture it again
+ * the same way (the quote page, or the unsaved journey when that was used).
  */
 async function captureNhi(
   artemisQuoteGuid: string,
@@ -524,41 +617,61 @@ async function captureNhi(
   paths: FlowOutputPaths,
   options: QuotePageOptions
 ): Promise<NhiCapture> {
-  const capture = (quoteGuid: string) =>
+  const capture = (quoteGuid: string, ...extraSteps: CaptureStep[]) =>
     captureAt('NHI', templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), paths, {
       timeout: options.timeout,
-      beforeCapture: withAnnualPayment('NHI', quoteSummary('NHI'))
+      scale: options.scale,
+      beforeCapture: withAnnualPayment('NHI', inSequence(quoteSummary('NHI'), ...extraSteps))
     });
+  const captured = (quoteGuid: string, endpoint: QuoteEndpoint): NhiCapture => ({
+    endpoint,
+    recapture: (extraStep) => capture(quoteGuid, extraStep)
+  });
   const fallback = options.quoteGuidFallback;
   if (fallback === undefined) {
-    return { endpoint: await capture(artemisQuoteGuid) };
+    return captured(artemisQuoteGuid, await capture(artemisQuoteGuid));
   }
 
   // An attempt that shows Oops is replaced by the unsaved journey below, so only that journey's answer changes count.
-  const captureUnlessOops = (quoteGuid: string) => keepAnswerChangesUnlessOops(() => capture(quoteGuid));
+  const captureUnlessOops = (quoteGuid: string, ...extraSteps: CaptureStep[]) =>
+    keepAnswerChangesUnlessOops(() => capture(quoteGuid, ...extraSteps));
 
   // Replacement quotes exist only in the question set store until the journey's quote button saves them to NHI.
-  const captureUnsaved = (quoteGuid: string) =>
+  const captureUnsaved = (quoteGuid: string, ...extraSteps: CaptureStep[]) =>
     captureAt('NHI', templateUrl(fallback.unsavedQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), paths, {
       timeout: options.timeout,
-      beforeCapture: withAnnualPayment('NHI', unsavedQuote)
+      scale: options.scale,
+      beforeCapture: withAnnualPayment('NHI', inSequence(unsavedQuote, ...extraSteps))
     });
-  if (mappedGuid !== undefined) {
-    console.log(`NHI: using mapped quote GUID ${mappedGuid} for ${artemisQuoteGuid}.`);
+  // A replacement quote opens on its quote page once saved to NHI, and runs its journey while NHI still shows Oops.
+  const captureReplacement = async (quoteGuid: string, ...extraSteps: CaptureStep[]) => {
     try {
-      return { replacementGuid: mappedGuid, endpoint: await captureUnlessOops(mappedGuid) };
+      return await captureUnlessOops(quoteGuid, ...extraSteps);
     } catch (error) {
       if (!(error instanceof OopsError)) {
         throw error;
       }
 
-      console.log(`NHI: mapped quote GUID ${mappedGuid} is not saved to NHI yet; running its journey.`);
-      return { replacementGuid: mappedGuid, endpoint: await captureUnsaved(mappedGuid) };
+      console.log(`NHI: mapped quote GUID ${quoteGuid} is not saved to NHI yet; running its journey.`);
+      return captureUnsaved(quoteGuid, ...extraSteps);
     }
+  };
+
+  // The first capture's quote button has saved a journey's quote to NHI, so capturing again goes through
+  // captureReplacement (an Oops falls back to the journey). It never requests another replacement quote GUID: TCAS was
+  // captured against this one.
+  const capturedReplacement = (quoteGuid: string, endpoint: QuoteEndpoint): NhiCapture => ({
+    replacementGuid: quoteGuid,
+    endpoint,
+    recapture: (extraStep) => captureReplacement(quoteGuid, extraStep)
+  });
+  if (mappedGuid !== undefined) {
+    console.log(`NHI: using mapped quote GUID ${mappedGuid} for ${artemisQuoteGuid}.`);
+    return capturedReplacement(mappedGuid, await captureReplacement(mappedGuid));
   }
 
   try {
-    return { endpoint: await captureUnlessOops(artemisQuoteGuid) };
+    return captured(artemisQuoteGuid, await captureUnlessOops(artemisQuoteGuid));
   } catch (error) {
     if (!(error instanceof OopsError)) {
       throw error;
@@ -569,7 +682,7 @@ async function captureNhi(
     console.log(
       `NHI: mapped ${artemisQuoteGuid} to new quote GUID ${replacementGuid} in ${mappingPath}; running its journey.`
     );
-    return { replacementGuid, endpoint: await captureUnsaved(replacementGuid) };
+    return capturedReplacement(replacementGuid, await captureUnsaved(replacementGuid));
   }
 }
 
@@ -606,7 +719,7 @@ async function captureAt(
   label: string,
   url: string,
   paths: FlowOutputPaths,
-  options: Pick<ScreenshotOptions, 'timeout' | 'beforeCapture'>
+  options: Pick<ScreenshotOptions, 'timeout' | 'scale' | 'beforeCapture'>
 ): Promise<QuoteEndpoint> {
   console.log(`${label}: opening ${url}`);
   try {

@@ -3,7 +3,15 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
-import { compareQuotes, readQuoteChanges } from '../dist/quote-changes.js';
+import {
+  classifyCoverTypeRecheck,
+  compareQuotes,
+  findCoverTypeRecheckTrigger,
+  nameCoverType,
+  readCoverTypeRecheckOutcome,
+  readCoverTypeRecheckTrigger,
+  readQuoteChanges
+} from '../dist/quote-changes.js';
 
 /** A quote with every field the named checks read, as both sides return it when the quotes match. */
 function quote(overrides = {}) {
@@ -118,6 +126,26 @@ describe('compareQuotes', () => {
           field: 'isHighRiskHighValueItemsAllowed, isGeneralValuablesCoveredAllowed'
         }
       ]
+    ],
+    [
+      // Assumption to be verified (docs/open-issues.md): possessions cannot be allowed without contents cover.
+      'leaves out possessions flags that differ only because contents cover differs',
+      {},
+      { contentsInsurance: { contentsIsAllowed: false, isGeneralValuablesCoveredAllowed: false } },
+      [{ summary: 'Contents cover: offered on NHI, not on MRP', field: 'contentsIsAllowed' }]
+    ],
+    [
+      // Assumption to be verified (docs/open-issues.md): possessions cannot be allowed without contents cover.
+      'reads the personal possessions flags as not allowed when neither side allows contents cover',
+      { contentsInsurance: { contentsIsAllowed: false } },
+      {
+        contentsInsurance: {
+          contentsIsAllowed: false,
+          isHighRiskHighValueItemsAllowed: false,
+          isGeneralValuablesCoveredAllowed: false
+        }
+      },
+      []
     ],
     [
       'reports each personal possessions flag when only one differs',
@@ -535,6 +563,187 @@ describe('readQuoteChanges', () => {
 
       // assert
       assert.deepEqual(result, { status: 'not-captured', reason });
+    });
+  }
+
+  test("readCoverTypeRecheckTrigger reads each side's last quote response, as readQuoteChanges does", async (context) => {
+    // arrange
+    const folder = await policyFolder(
+      context,
+      [
+        ['001-GET-quote-summary-g.json', quote({ typeOfCover: 'BC' })],
+        ['006-POST-save-details.json', quote({ typeOfCover: 'C' })]
+      ],
+      [
+        ['001-GET-quote-summary-g.json', quote()],
+        ['006-POST-save-details.json', quote({ buildingsInsurance: { buildingsIsAllowed: false } })]
+      ]
+    );
+
+    // act
+    const trigger = await readCoverTypeRecheckTrigger(folder, endpoints);
+
+    // assert
+    assert.deepEqual(trigger, { coverType: 'C', fields: ['buildingsIsAllowed'] });
+  });
+
+  for (const [name, recorded] of [
+    ['NHI declined', { nhi: 'declined', tcas: 'quote' }],
+    ['MRP declined', { nhi: 'quote', tcas: 'declined' }]
+  ]) {
+    test(`readCoverTypeRecheckTrigger does not re-check when ${name}`, async (context) => {
+      // arrange
+      const folder = await policyFolder(
+        context,
+        [['001-GET-quote-summary-g.json', quote({ typeOfCover: 'C' })]],
+        [['006-POST-save-details.json', quote({ buildingsInsurance: { buildingsIsAllowed: false } })]]
+      );
+
+      // act
+      const trigger = await readCoverTypeRecheckTrigger(folder, recorded);
+
+      // assert
+      assert.equal(trigger, undefined);
+    });
+  }
+
+  for (const [name, mrpFiles, expected] of [
+    ['classifies the last quote responses', [['006-POST-save-details.json', quote()]], 'matched'],
+    ['returns nothing when a side has no quote response', [], undefined]
+  ]) {
+    test(`readCoverTypeRecheckOutcome ${name}`, async (context) => {
+      // arrange
+      const folder = await policyFolder(context, [['001-GET-quote-summary-g.json', quote()]], mrpFiles);
+
+      // act
+      const outcome = await readCoverTypeRecheckOutcome(folder);
+
+      // assert
+      assert.equal(outcome, expected);
+    });
+  }
+});
+
+describe('findCoverTypeRecheckTrigger', () => {
+  const buildingsNotAllowed = { buildingsInsurance: { buildingsIsAllowed: false } };
+  const contentsNotAllowed = { contentsInsurance: { contentsIsAllowed: false } };
+  const highRiskNotAllowed = { contentsInsurance: { isHighRiskHighValueItemsAllowed: false } };
+  for (const [name, nhi, mrp, expected] of [
+    [
+      'triggers for buildings only when contents cover differs',
+      { typeOfCover: 'B' },
+      contentsNotAllowed,
+      { coverType: 'B', fields: ['contentsIsAllowed'] }
+    ],
+    [
+      'triggers for contents only when buildings cover differs',
+      { typeOfCover: 'C' },
+      buildingsNotAllowed,
+      { coverType: 'C', fields: ['buildingsIsAllowed'] }
+    ],
+    [
+      'names both cover flags when both differ',
+      { typeOfCover: 'B' },
+      { ...buildingsNotAllowed, ...contentsNotAllowed },
+      { coverType: 'B', fields: ['buildingsIsAllowed', 'contentsIsAllowed'] }
+    ],
+    ['does not trigger for buildings and contents', { typeOfCover: 'BC' }, buildingsNotAllowed, undefined],
+    ['does not trigger without a cover type', { typeOfCover: null }, buildingsNotAllowed, undefined],
+    ['does not trigger when the cover flags already match', { typeOfCover: 'C' }, {}, undefined],
+    ['does not trigger when only high-risk items cover differs', { typeOfCover: 'C' }, highRiskNotAllowed, undefined],
+    [
+      'does not trigger when cover is allowed on MRP but not on NHI',
+      { typeOfCover: 'C', ...buildingsNotAllowed },
+      {},
+      undefined
+    ]
+  ]) {
+    test(name, () => {
+      // arrange
+      const [a, b] = [quote(nhi), quote(mrp)];
+
+      // act
+      const trigger = findCoverTypeRecheckTrigger(a, b);
+
+      // assert
+      assert.deepEqual(trigger, expected);
+    });
+  }
+});
+
+describe('classifyCoverTypeRecheck', () => {
+  for (const [name, mrp, expected] of [
+    ['matched when every cover flag matches', {}, 'matched'],
+    [
+      'coverMatchedPossessionsDiffer when only high-risk items cover differs',
+      { contentsInsurance: { isHighRiskHighValueItemsAllowed: false } },
+      'coverMatchedPossessionsDiffer'
+    ],
+    [
+      'coverMatchedPossessionsDiffer when only personal possessions cover differs',
+      { contentsInsurance: { isGeneralValuablesCoveredAllowed: false } },
+      'coverMatchedPossessionsDiffer'
+    ],
+    [
+      'stillDiffers when buildings cover differs',
+      { buildingsInsurance: { buildingsIsAllowed: false } },
+      'stillDiffers'
+    ],
+    [
+      'stillDiffers when contents cover differs, even if possessions differ too',
+      { contentsInsurance: { contentsIsAllowed: false, isGeneralValuablesCoveredAllowed: false } },
+      'stillDiffers'
+    ]
+  ]) {
+    test(name, () => {
+      // arrange
+      const [nhi, other] = [quote(), quote(mrp)];
+
+      // act
+      const outcome = classifyCoverTypeRecheck(nhi, other);
+
+      // assert
+      assert.equal(outcome, expected);
+    });
+  }
+
+  test('matched when neither side allows contents cover, whatever the possessions flags say', () => {
+    // arrange
+    // Assumption to be verified (docs/open-issues.md): possessions cannot be allowed without contents cover. NHI said
+    // they were allowed on 106D1920D02642E2A0F55131BB75ED7D-1 once its re-check priced contents as not allowed.
+    const nhi = quote({ contentsInsurance: { contentsIsAllowed: false } });
+    const mrp = quote({
+      contentsInsurance: {
+        contentsIsAllowed: false,
+        isHighRiskHighValueItemsAllowed: false,
+        isGeneralValuablesCoveredAllowed: false
+      }
+    });
+
+    // act
+    const outcome = classifyCoverTypeRecheck(nhi, mrp);
+
+    // assert
+    assert.equal(outcome, 'matched');
+  });
+});
+
+describe('nameCoverType', () => {
+  for (const [code, expected] of [
+    ['BC', 'Buildings & Contents'],
+    ['B', 'Buildings only'],
+    ['C', 'Contents only'],
+    ['X', 'X']
+  ]) {
+    test(`names ${code} as ${expected}`, () => {
+      // arrange
+      const coverType = code;
+
+      // act
+      const name = nameCoverType(coverType);
+
+      // assert
+      assert.equal(name, expected);
     });
   }
 });

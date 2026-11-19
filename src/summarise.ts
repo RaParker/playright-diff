@@ -14,9 +14,15 @@ import {
   type ComparisonKind,
   type QuoteEndpoints
 } from './quote-endpoint.js';
-import { readQuoteChanges, type QuoteChange, type QuoteChangesResult } from './quote-changes.js';
+import {
+  nameCoverType,
+  readQuoteChanges,
+  type CoverTypeRecheckOutcome,
+  type QuoteChange,
+  type QuoteChangesResult
+} from './quote-changes.js';
 import { readQuoteGuidList } from './quote-guid-list.js';
-import { readQuoteResult, type QuoteResult } from './quote-result.js';
+import { readQuoteResult, type CoverTypeRecheck, type QuoteResult } from './quote-result.js';
 import { outputPath, policyFolderPattern } from './output-paths.js';
 
 /** OCR confidence (0-100) below which a region's text change is flagged as probably misread. */
@@ -27,6 +33,24 @@ const commonTextChangeLimit = 10;
 
 /** How many example policies `summarise differences` lists under each change in the quote data. */
 const changeExampleLimit = 3;
+
+/** Each Buildings & Contents re-check outcome as the summary describes it. */
+const coverTypeRecheckDescriptions: Readonly<Record<CoverTypeRecheckOutcome, string>> = {
+  matched: 'Matched MRP: buildings, contents, high-risk items and personal possessions cover',
+  coverMatchedPossessionsDiffer:
+    'Buildings and contents cover matched MRP; high-risk items or personal possessions cover still differ',
+  stillDiffers: 'Buildings or contents cover still differs from MRP'
+};
+
+/** The order the summary lists the re-check outcomes in. */
+const coverTypeRecheckOutcomeOrder: readonly CoverTypeRecheckOutcome[] = [
+  'matched',
+  'coverMatchedPossessionsDiffer',
+  'stillDiffers'
+];
+
+/** How the summary describes a re-check whose run recorded no outcome. */
+const noCoverTypeRecheckOutcome = 'No quote data to compare after the re-check';
 
 /** Flows whose failure page, `failed-<flow>.html` in the policy's folder, is checked for Oops. */
 const oopsFlows = [
@@ -76,6 +100,8 @@ export interface ComparedPolicy {
    * referral, conditional quote or decline.
    */
   kind: ComparisonKind;
+  /** Set when NHI's quote was re-checked with Buildings & Contents (see {@link CoverTypeRecheck}). */
+  coverTypeRecheck?: CoverTypeRecheck;
 }
 
 /** Everything the summarise command found in the output folder. */
@@ -193,7 +219,7 @@ export async function collectQuoteResults(root: string): Promise<QuoteResultsSum
     } else if (report === undefined) {
       summary.unrecorded.push(name);
     } else {
-      summary.compared.push(summariseReport(name, report, result?.endorsementOrder !== undefined, result?.endpoints));
+      summary.compared.push(summariseReport(name, report, result));
     }
   }
 
@@ -465,6 +491,7 @@ function printQuoteResultsSummary(
   console.log(color.Cyan(`Quote results summary (${summary.root})`));
   printDifferenceSections(summary.compared);
   printMatchingEndpoints(summary.compared.filter(isMatchingEndpoint));
+  printCoverTypeRechecks(summary.compared, (name) => name);
   printFailedPolicies(summary.failed);
   printFailureReasons(countFailureReasons(summary.failed));
   if (summary.unrecorded.length > 0) {
@@ -483,7 +510,10 @@ function printQuoteResultsSummary(
  *    {@link changeExampleLimit} example policies and their values.
  * 2. Policies whose screenshots differ but whose data matches (rendering differences).
  * 3. Policies whose data cannot be compared, by reason, to run again.
- * 4. The totals.
+ * 4. Policies whose NHI cover type was re-checked with Buildings & Contents, by outcome (see
+ *    {@link printCoverTypeRechecks}), whatever their screenshots show. They are left out of the sections above, since
+ *    NHI then quoted a different cover type from MRP.
+ * 5. The totals.
  * With `detail`, each policy's own changes and the screenshot and OCR text differences follow the first section.
  */
 function printQuoteChanges(
@@ -493,7 +523,10 @@ function printQuoteChanges(
 ): void {
   const { root, compared } = summary;
   const label = (name: string) => policyLabel(name, root);
-  const differentPolicies = compared.filter(({ kind }) => kind === 'different');
+  const rechecked = compared.filter(({ coverTypeRecheck }) => coverTypeRecheck !== undefined);
+  const differentPolicies = compared.filter(
+    ({ kind, coverTypeRecheck }) => kind === 'different' && coverTypeRecheck === undefined
+  );
   // Only changes that can show on the quote page matter, so a policy whose screenshots match is left out.
   const differentChanges = new Map(
     differentPolicies.flatMap(({ name }) => {
@@ -521,6 +554,7 @@ function printQuoteChanges(
     rendering.map((policy) => `${label(policy.name)}  ${describeChange(policy)}`)
   );
   printNotCaptured(differentChanges);
+  printCoverTypeRechecks(rechecked, label);
 
   const differentText = `${differentPolicies.length} different`;
   const notCaptured = [...differentChanges.values()].filter(({ status }) => status === 'not-captured').length;
@@ -528,7 +562,9 @@ function printQuoteChanges(
   console.log(
     `${differentPolicies.length > 0 ? color.Yellow(differentText) : differentText} of ${compared.length} compared; ${
       changedData.size
-    } with data changes, ${notCaptured} not captured.`
+    } with data changes, ${notCaptured} not captured${
+      rechecked.length > 0 ? `; ${rechecked.length} cover type re-checked, listed apart` : ''
+    }.`
   );
 }
 
@@ -585,6 +621,41 @@ function printMatchingEndpoints(policies: ComparedPolicy[]): void {
   console.log(`\n${color.Cyan(`Matching referrals, conditional quotes and declines (${policies.length})`)}`);
   for (const policy of policies) {
     console.log(`  ${policy.name}  ${color.Yellow(describeEndpoints(policy.endpoints) ?? '')}`);
+  }
+}
+
+/**
+ * Prints the policies whose NHI cover type was re-checked with Buildings & Contents, counted by outcome (those whose
+ * run recorded no outcome last), each with up to {@link changeExampleLimit} example policies and the cover type NHI had
+ * before. Matches are counted in green and the rest in yellow; nothing is printed when no policy was re-checked.
+ * @param policies Compared policies; those not re-checked are skipped.
+ * @param label Names a policy by its folder name.
+ */
+function printCoverTypeRechecks(policies: ComparedPolicy[], label: (name: string) => string): void {
+  const rechecked = policies.flatMap(({ name, coverTypeRecheck }) =>
+    coverTypeRecheck === undefined ? [] : [{ name, ...coverTypeRecheck }]
+  );
+  if (rechecked.length === 0) {
+    return;
+  }
+
+  console.log(`\n${color.Cyan(`Cover type re-checked with Buildings & Contents (${rechecked.length})`)}`);
+  for (const outcome of [...coverTypeRecheckOutcomeOrder, undefined]) {
+    const matching = rechecked.filter((policy) => policy.outcome === outcome);
+    if (matching.length === 0) {
+      continue;
+    }
+
+    const count = `${matching.length}×`;
+    const description = outcome === undefined ? noCoverTypeRecheckOutcome : coverTypeRecheckDescriptions[outcome];
+    console.log(`  ${outcome === 'matched' ? color.Green(count) : color.Yellow(count)} ${description}`);
+    for (const { name, originalCoverType } of matching.slice(0, changeExampleLimit)) {
+      console.log(color.Gray(`        ${label(name)}  was ${nameCoverType(originalCoverType)} on NHI`));
+    }
+
+    if (matching.length > changeExampleLimit) {
+      console.log(color.Gray(`        and ${matching.length - changeExampleLimit} more`));
+    }
   }
 }
 
@@ -776,16 +847,15 @@ function describeLines(lines: string[]): string {
   return lines.length === 0 ? '(nothing)' : lines.join(' / ');
 }
 
-function summariseReport(
-  name: string,
-  report: ComparisonReport,
-  endorsementOrderDiffers: boolean,
-  endpoints: QuoteEndpoints | undefined
-): ComparedPolicy {
+/** @param result The policy's `result.json`, or `undefined` for a run saved before results were. */
+function summariseReport(name: string, report: ComparisonReport, result: QuoteResult | undefined): ComparedPolicy {
   const { before, after } = report.dimensions;
   const sameSize = before.width === after.width && before.height === after.height;
+  const endpoints = result?.endpoints;
+  const coverTypeRecheck = result?.coverTypeRecheck;
   return {
     ...(endpoints === undefined ? {} : { endpoints }),
+    ...(coverTypeRecheck === undefined ? {} : { coverTypeRecheck }),
     kind: classifyComparison(isAgreementMisalignment(report) ? 0 : report.changedPixels, endpoints),
     name,
     changedPixels: report.changedPixels,
@@ -795,7 +865,7 @@ function summariseReport(
       .filter((region) => region.textChanges.length > 0)
       .map(diffRegionLines)
       .filter((difference) => difference.removed.length + difference.added.length > 0),
-    endorsementOrderDiffers
+    endorsementOrderDiffers: result?.endorsementOrder !== undefined
   };
 }
 

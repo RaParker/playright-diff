@@ -1,5 +1,6 @@
 import { rm, stat } from 'node:fs/promises';
 import { color } from './color.js';
+import type { FlowOutputPaths } from './flow-output.js';
 import { isMissing } from './fs-helpers.js';
 import { outputPath } from './output-paths.js';
 
@@ -25,4 +26,19 @@ export async function removeQuoteOutput(basename: string): Promise<boolean> {
   await rm(folder, { recursive: true, force: true });
   console.log(color.Gray(`Removed previous output for ${basename}.`));
   return true;
+}
+
+/**
+ * Deletes what one flow's capture saved (see {@link FlowOutputPaths}): its screenshot, HTML, stopped-capture files and
+ * API responses, so a capture that replaces it leaves nothing of the first behind. Files that do not exist are skipped.
+ * @param paths The flow's files.
+ * @throws When a file or folder exists but cannot be removed.
+ */
+export async function removeFlowOutput(paths: FlowOutputPaths): Promise<void> {
+  const stopped = Object.values(paths.stopped).flatMap(({ screenshot, html }) => [screenshot, html]);
+  await Promise.all(
+    [paths.screenshot, paths.html, paths.standardisedHtml, ...stopped, paths.apiResponses].map((path) =>
+      rm(path, { recursive: true, force: true })
+    )
+  );
 }
