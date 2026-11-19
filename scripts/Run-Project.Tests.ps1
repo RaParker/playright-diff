@@ -129,7 +129,7 @@ Describe 'Run-Project.ps1 validation' {
         $result.Output | Should -BeLike $Message
     }
 
-    It 'shows help and succeeds when called with no arguments' {
+    It 'shows the overview sections in order and succeeds when called with no arguments' {
         # arrange
         $arguments = @()
 
@@ -138,7 +138,25 @@ Describe 'Run-Project.ps1 validation' {
 
         # assert
         $result.ExitCode | Should -Be 0
-        $result.Output | Should -BeLike '*./Run-Project.ps1 - *Usage:*Parameters:*Examples:*'
-        $result.Output | Should -Not -BeLike '*REMARKS*'
+        $result.Output | Should -BeLike '*./Run-Project.ps1 - *1. Set up*2. Compare NHI and TCAS*3. Single runs*4. Development*'
+    }
+
+    It 'lists every parameter and task in the overview' {
+        # arrange
+        $commonParameterNames = [System.Management.Automation.PSCmdlet]::CommonParameters +
+        [System.Management.Automation.PSCmdlet]::OptionalCommonParameters
+        $parameters = (Get-Command $script:runProject).Parameters.Values |
+            Where-Object { $commonParameterNames -notcontains $_.Name }
+
+        $taskNames = $parameters.Where({ $_.Name -eq 'Task' }).Attributes.ValidValues
+
+        # act
+        $result = Invoke-RunProject @()
+
+        # assert
+        $missingParameters = @($parameters.Name | Where-Object { $result.Output -notmatch "-$_\b" })
+        $missingTasks = @($taskNames | Where-Object { $result.Output -notmatch "\b$_\b" })
+        $missingParameters | Should -BeNullOrEmpty
+        $missingTasks | Should -BeNullOrEmpty
     }
 }

@@ -52,7 +52,10 @@ Add `-- --help` to any command for its options (for example `npm run compare -- 
 parameters (for example a 32-character policy ID, a threshold of 0–255, or a `-Before` image
 that exists). It runs from the project root wherever you call it from, so `.env` is always
 found, and it exits with the command's exit code. Add `-WhatIf` to print the command without
-running it; with no arguments it shows its help (`Get-Help ./Run-Project.ps1 -Examples`).
+running it. With no arguments it shows a colour-coded overview of the commands, grouped by when
+you use them: setup, the main quote-page workflow (clear, run, summarise, retry), single runs
+and tools, then development tasks. `Get-Help ./Run-Project.ps1 -Full` gives the full parameter
+reference.
 
 ```powershell
 ./Run-Project.ps1 -Screenshot -Url https://example.com -Width 390 -Height 844

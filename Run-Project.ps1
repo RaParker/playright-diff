@@ -12,7 +12,8 @@ quote-guid-mapping.json and quote-pages-failed.json are always read from there. 
 (<policyDetailsId>-<historyId>) is written to DIFF_OUTPUT_DIR (.env or environment), or the project root when it is
 not set. Relative paths you pass are resolved from your current directory first.
 
-Use -WhatIf to print the command without running it. The script exits with the command's exit code.
+Run it with no arguments for an overview of the commands in the order they're used. Use -WhatIf to print the command
+without running it. The script exits with the command's exit code.
 
 Keep these parameters in step with the options in src/main.ts when the CLI changes.
 
@@ -441,9 +442,202 @@ function Format-CommandLine([string[]]$command) {
             } }) -join ' '
 }
 
+# The no-arguments overview, in the order the commands are used. Each row is a command (depth 0) or one of its options
+# (depth 1), its usage, and what it does; a row with only a description is a note. Get-Help still shows the full
+# per-parameter reference, so keep this short, and add any new command or parameter here as well (a test checks).
+$overviewSections = @(
+    @{
+        Title = '1. Set up (once)'
+        Rows  = @(
+            @{ Usage = '-Task Install'; Description = 'Install the npm packages' }
+
+            @{ Usage = '-Task InstallBrowser'; Description = 'Install Playwright Chromium' }
+
+            @{ Description = 'Then set the .env values (README: Configuration), e.g. QUOTE_GUID_LIST_PATH and DIFF_OUTPUT_DIR.' }
+        )
+    }
+
+    @{
+        Title = '2. Compare NHI and TCAS quote pages (main workflow, in this order)'
+        Rows  = @(
+            @{ Usage = '-ClearOutput'; Description = 'Optional: delete DIFF_OUTPUT_DIR to start afresh' }
+
+            @{ Usage = '-QuotePages'; Description = 'Run the first 250 policies in the GUID list' }
+
+            @{ Depth = 1; Usage = '-MaxCount <n>'; Description = '...or the first n' }
+
+            @{ Depth = 1; Usage = '-Guid <guid>'; Description = '...or just this one' }
+
+            @{ Usage = '-Summarise'; Description = 'Read the results: differences, failures and totals' }
+
+            @{ Depth = 1; Usage = '-Mode <differences|changed-answers>'; Description = 'Show only that part' }
+
+            @{ Usage = '-RetryFailed'; Description = 'Rerun the policies that failed' }
+
+            @{ Usage = '-RetryDifferent'; Description = 'Rerun the policies whose screenshots differed' }
+
+            @{ Description = 'After a retry, run -Summarise again.' }
+
+            @{ Description = 'Options for -QuotePages, -RetryFailed and -RetryDifferent:' }
+
+            @{ Depth = 1; Usage = '-Concurrency <n>'; Description = 'Policies run at once (default: 3)' }
+
+            @{ Depth = 1; Usage = '-NoFetch'; Description = 'Only use MRP files already saved' }
+
+            @{ Depth = 1; Usage = '-NoOcr'; Description = 'Compare pixels only, without reading text' }
+        )
+    }
+
+    @{
+        Title = '3. Single runs and tools (any time)'
+        Rows  = @(
+            @{ Usage = '-QuotePage -PolicyDetailsId <id> -HistoryId <n> [-NoOcr]'; Description = 'Compare one policy' }
+
+            @{ Usage = '-Screenshot -Url <url> [-Output <file>]'; Description = 'Capture one page' }
+
+            @{ Depth = 1; Usage = '[-Width <px>] [-Height <px>] [-Wait <ms>] [-Timeout <ms>]' }
+
+            @{ Usage = '-Compare -Before <file> -After <file>'; Description = 'Compare two images' }
+
+            @{ Depth = 1; Usage = '[-Output <dir>] [-Threshold <0-255>] [-Language <code>] [-NoOcr]' }
+
+            @{ Usage = '-MigrateOutput [-Root <dir>] [-Apply]'; Description = 'Move output from the old folder layout' }
+        )
+    }
+
+    @{
+        Title = '4. Development'
+        Rows  = @(
+            @{ Usage = '-Task Build | Typecheck | Lint | Test | TestCompare | TestQuotePage | Verify' }
+        )
+    }
+
+    @{
+        Title = 'More help'
+        Rows  = @(
+            @{ Usage = '-WhatIf'; Description = 'Add to any command to print it without running it' }
+
+            @{ Usage = 'Get-Help ./Run-Project.ps1 -Parameter <Name>'; Description = 'One parameter in detail' }
+
+            @{ Usage = 'Get-Help ./Run-Project.ps1 -Full'; Description = 'Everything' }
+        )
+    }
+)
+
+# Overview layout: descriptions start in this column, unless the usage is too long to fit before it
+$overviewDescriptionColumn = 48
+$overviewIndentByDepth = @('  ', '      ')
+
+# Overview styles: a muted 24-bit palette. Like the CLI's own colours, they're left out when NO_COLOR is set, and also
+# when output is redirected, since Write-Host passes escape codes in a string through to a file or pipe unchanged.
+$useOverviewColour = [string]::IsNullOrEmpty($env:NO_COLOR) -and ![Console]::IsOutputRedirected -and
+$PSStyle.OutputRendering -ne 'PlainText'
+
+# Overview colours (24-bit RGB), named for roughly how they look
+$ColorAmber = 0xE0AF68
+$ColorPaleLavender = 0xC0CAF5
+$ColorLightSlate = 0xA9B1D6
+$ColorMutedSlate = 0x737AA2
+$ColorDarkSlate = 0x565F89
+$ColorSkyBlue = 0x7DCFFF
+$ColorSoftBlue = 0x7AA2F7
+$ColorSoftGreen = 0x9ECE6A
+
+$overviewStyle = @{
+    Title       = $PSStyle.Bold + $PSStyle.Foreground.FromRgb($ColorPaleLavender)
+    Heading     = $PSStyle.Bold + $PSStyle.Foreground.FromRgb($ColorSoftBlue)
+    Command     = $PSStyle.Bold + $PSStyle.Foreground.FromRgb($ColorSoftGreen)
+    Option      = $PSStyle.Foreground.FromRgb($ColorAmber)
+    Placeholder = $PSStyle.Italic + $PSStyle.Foreground.FromRgb($ColorSkyBlue)
+    Punctuation = $PSStyle.Foreground.FromRgb($ColorDarkSlate)
+    Description = $PSStyle.Foreground.FromRgb($ColorLightSlate)
+    Note        = $PSStyle.Italic + $PSStyle.Foreground.FromRgb($ColorMutedSlate)
+}
+
+<#
+.SYNOPSIS
+Writes the no-arguments overview of the commands, grouped and ordered by when they're used.
+
+.DESCRIPTION
+Section headings are bold blue, commands bold green, their options amber, value placeholders such as <n> italic cyan,
+brackets and separators dim, and notes italic grey.
+#>
+function Write-Overview {
+    $title = (Format-Styled './Run-Project.ps1' $overviewStyle.Command) +
+    (Format-Styled " - runs this project's commands and development tasks." $overviewStyle.Title)
+    Write-Host $title
+    Write-Host
+
+    foreach ($section in $overviewSections) {
+        Write-Host (Format-Styled $section.Title $overviewStyle.Heading)
+        foreach ($row in $section.Rows) {
+            Write-Host (Format-OverviewRow $row)
+        }
+
+        Write-Host
+    }
+}
+
+# Returns one row as styled text: its usage, then its description lined up in a column (on the next line when the
+# usage is too long), or just the note when the row has no usage
+function Format-OverviewRow([hashtable]$row) {
+    $indent = $overviewIndentByDepth[[int]$row.Depth]
+    if (!$row.Usage) {
+        return $indent + (Format-Styled $row.Description $overviewStyle.Note)
+    }
+
+    $usageStyle = if ($row.Depth) {
+        $overviewStyle.Option
+    }
+    else {
+        $overviewStyle.Command
+    }
+
+    $text = $indent + (Format-Usage $row.Usage $usageStyle)
+    if (!$row.Description) {
+        return $text
+    }
+
+    $usedWidth = $indent.Length + $row.Usage.Length
+    if ($usedWidth -ge $overviewDescriptionColumn) {
+        $text += "`n"
+        $usedWidth = 0
+    }
+
+    return $text + (' ' * ($overviewDescriptionColumn - $usedWidth)) + (Format-Styled $row.Description $overviewStyle.Description)
+}
+
+# Styles <placeholders> and the [ ] | punctuation separately from the switches and task names around them
+function Format-Usage([string]$usage, [string]$usageStyle) {
+    $parts = $usage -split '(<[^>]+>|[\[\]|])' | Where-Object { $_ }
+
+    $styledParts = foreach ($part in $parts) {
+        $style = if ($part.StartsWith('<')) {
+            $overviewStyle.Placeholder
+        }
+        elseif ($part -match '^[\[\]|]$') {
+            $overviewStyle.Punctuation
+        }
+        else {
+            $usageStyle
+        }
+
+        Format-Styled $part $style
+    }
+
+    return $styledParts -join ''
+}
+
+function Format-Styled([string]$text, [string]$style) {
+    if (!$useOverviewColour) {
+        return $text
+    }
+
+    return "$style$text$($PSStyle.Reset)"
+}
+
 if ($PSCmdlet.ParameterSetName -eq 'Help') {
-    . (Join-Path $PSScriptRoot 'scripts' 'Get-ScriptHelpText.ps1')
-    Write-Host (Get-ScriptHelpText $PSCommandPath)
+    Write-Overview
     exit 0
 }
 
