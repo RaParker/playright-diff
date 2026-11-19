@@ -1,3 +1,4 @@
+import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { color } from './color.js';
 import { checkImageNames, compare, defaultImageNames, type CompareOptions } from './compare.js';
@@ -9,7 +10,7 @@ import {
   type QuotePageOptions,
   type QuotePagesOptions
 } from './quote-page.js';
-import { failedQuotePagesPath, readFailedQuotePages } from './failed-quote-pages.js';
+import { failedQuotePagesFileName, failedQuotePagesPath, readFailedQuotePages } from './failed-quote-pages.js';
 import { isQuoteGuid, readQuoteGuidList, selectQuoteGuids } from './quote-guid-list.js';
 import {
   fetchedHistoryId,
@@ -20,7 +21,7 @@ import {
 import { screenshot, ValidationError } from './screenshot.js';
 import { parseScreenshotScale } from './screenshot-scale.js';
 import { loadEnvironment } from './environment.js';
-import { outputPath, setOutputRoot } from './output-paths.js';
+import { environmentFolder, outputPath, setOutputRoot } from './output-paths.js';
 import { intervalToMs } from './interval.js';
 import { migrateOutput } from './migrate-output.js';
 import { clearOutput } from './clear-output.js';
@@ -47,8 +48,9 @@ Actions:
 
 Use npm run <action> -- --help for action options.
 Each policy's output (screenshots, API responses, comparison report and result) is kept in
-<policyDetailsId>-<historyId>/ in DIFF_OUTPUT_DIR (.env or environment), or the current directory when it is
-not set.`;
+<policyDetailsId>-<historyId>/ in the output folder: DIFF_OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT> (.env or
+environment), for example D:/temp/output/dev. Without DIFF_OUTPUT_DIR the current directory is used in its place.
+The quote GUID mapping and failed-policies file are kept there too, so clear-output removes them with the results.`;
 
 const screenshotHelp = `Usage: npm run screenshot -- <url> [options]
   -o, --output <path>     PNG or JPEG output (default: screenshots/screenshot.png in DIFF_OUTPUT_DIR)
@@ -80,11 +82,11 @@ Selection:
   (none)            The first 250 GUIDs in the list
   <maxCount>        The first maxCount GUIDs
   <guid>            Just that GUID
-  retry-failed      Every policy that failed or did not finish: those in ${failedQuotePagesPath},
+  retry-failed      Every policy that failed or did not finish: those in ${failedQuotePagesFileName},
                     those in DIFF_OUTPUT_DIR whose result is a failure, and folders with no result
   retry-different   Every policy in DIFF_OUTPUT_DIR whose screenshots or end points differed (the
                     summarise "differences" policies), and both-declined results saved before
-                    declines were compared; leaves ${failedQuotePagesPath} untouched
+                    declines were compared; leaves ${failedQuotePagesFileName} untouched
 
 Retries:
   retry-failed reruns the runs that did not finish a comparison (failed, or stopped part way).
@@ -103,18 +105,22 @@ Options:
 
 Environment (.env or environment):
   QUOTE_GUID_LIST_PATH         The GUID list (required)
-  MRP_AND_QUOTE_OUTPUT_DIR     Where the -mrp.json files are kept (required)
-  MRP_AND_QUOTE_PROJECT_DIR    Where mrp-and-quote's fetch runs (default: the output folder's parent)
-  QUOTE_JOURNEY_ENVIRONMENT    Environment the fetch reads from, as SOURCE_ENVIRONMENT (default: mrp-and-quote's .env)
+  MRP_AND_QUOTE_OUTPUT_DIR     Where the -mrp.json files are kept, in a <environment> subfolder (required)
+  MRP_AND_QUOTE_PROJECT_DIR    Where mrp-and-quote's fetch runs (default: MRP_AND_QUOTE_OUTPUT_DIR's parent)
+  QUOTE_JOURNEY_ENVIRONMENT    Environment (dev, tst or stg): the output and MRP subfolder, and the fetch's
+                               SOURCE_ENVIRONMENT (without it: no subfolders, and mrp-and-quote's .env decides)
   QUOTE_JOURNEY_*, QUOTE_PAGE_TIMEOUT
                                The quote-page settings (see the README)
 
 Notes:
   - Missing -mrp.json files are fetched first with mrp-and-quote's fetch (OUTPUT_DIR set to the
-    output folder); files already saved are always reused.
-  - Failed policies are saved to ${failedQuotePagesPath} by list runs (not one-off runs: a guid or
-    a maxCount of 1) and by retry-failed when its policies share one history ID; retry-different
-    leaves the file untouched.`;
+    environment's MRP folder); files already saved are always reused.
+  - Failed policies are saved to ${failedQuotePagesFileName} in the output folder by list runs (not
+    one-off runs: a guid or a maxCount of 1) and by retry-failed when its policies share one history
+    ID; retry-different leaves the file untouched.
+  - Replacement quote GUIDs are saved to quote-guid-mapping.json in the output folder and reused by
+    later runs. A stale mapping can make every policy fail with NHI Oops: clear-output deletes it
+    (see the README's Troubleshooting).`;
 
 const summariseModeNames = ['differences', 'changed-answers'];
 
@@ -167,22 +173,25 @@ Notes:
   - Entries that are not quote-page output (such as comparisons/run-<timestamp>) are left in place
     and listed. screenshots/ and comparisons/ are removed only when left empty.`;
 
-const clearOutputHelp = `Usage: npm run clear-output
+const clearOutputHelp = `Usage: npm run clear-output [-- --dry-run]
 
-Deletes the output folder (DIFF_OUTPUT_DIR) and everything in it, after printing the folder and how many
-entries it holds.
+Deletes the current environment's output folder (DIFF_OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>) and
+everything in it, after printing the folder and how many entries it holds. That includes the environment's
+quote-guid-mapping.json and quote-pages-failed.json, so the next run requests fresh replacement quote GUIDs.
 
 Options:
+  --dry-run         List the folder that would be deleted, with its entry count, and delete nothing
   -h, --help        Show help
 
 Environment (.env or environment):
-  DIFF_OUTPUT_DIR   Folder to delete (required; the current directory is never used instead)
+  DIFF_OUTPUT_DIR             Base output folder (required; the current directory is never used instead)
+  QUOTE_JOURNEY_ENVIRONMENT   Environment whose subfolder is deleted; without it, all of DIFF_OUTPUT_DIR
 
 Notes:
-  - Nothing is deleted when DIFF_OUTPUT_DIR is a drive root, the user profile, this project, or a
+  - Nothing is deleted when the folder is a drive root, the user profile, this project, or a
     folder containing either; the exit code is then 1.
   - A missing folder is reported and the exit code is 0.
-  - Other folders, such as MRP_AND_QUOTE_OUTPUT_DIR, are never touched.`;
+  - Other environments' folders and MRP_AND_QUOTE_OUTPUT_DIR are never touched.`;
 
 /** What `summarise` can be given after its name: only the differences, or the changed answers. */
 const summariseModes = new Set(summariseModeNames);
@@ -202,7 +211,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  setOutputRoot(optional(await loadEnvironment(), 'DIFF_OUTPUT_DIR'));
+  const environment = await loadEnvironment();
+  setOutputRoot(
+    environmentFolder(
+      optional(environment, 'DIFF_OUTPUT_DIR') ?? '.',
+      optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT')
+    )
+  );
 
   if (action === 'screenshot') {
     await runScreenshot(args);
@@ -371,7 +386,10 @@ async function runQuotePages(args: string[]): Promise<void> {
       ? reportMissingMrpFiles(policyDetailsIds, historyId, options.mrpAndQuoteOutputDir)
       : prefetchMissingMrpFiles(policyDetailsIds, historyId, guidList, {
           outputDir: options.mrpAndQuoteOutputDir,
-          projectDir: optional(environment, 'MRP_AND_QUOTE_PROJECT_DIR'),
+          // Defaults to the base MRP folder's parent, not the environment subfolder's (which is the base folder).
+          projectDir:
+            optional(environment, 'MRP_AND_QUOTE_PROJECT_DIR') ??
+            dirname(resolve(required(environment, 'MRP_AND_QUOTE_OUTPUT_DIR'))),
           sourceEnvironment: optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT')
         });
   const plan =
@@ -434,9 +452,11 @@ async function runSummarise(args: string[]): Promise<void> {
 
   // Unlike quote-pages, the GUID list and MRP folder are optional: without them the GUID list totals are skipped.
   const environment = await loadEnvironment();
+  const mrpAndQuoteOutputDir = optional(environment, 'MRP_AND_QUOTE_OUTPUT_DIR');
   await summariseQuoteResults({
     guidListPath: optional(environment, 'QUOTE_GUID_LIST_PATH'),
-    mrpAndQuoteOutputDir: optional(environment, 'MRP_AND_QUOTE_OUTPUT_DIR'),
+    mrpAndQuoteOutputDir:
+      mrpAndQuoteOutputDir === undefined ? undefined : environmentMrpFolder(environment, mrpAndQuoteOutputDir),
     differentOnly: positionals[0] === 'differences',
     detail: values.detail === true
   });
@@ -475,6 +495,7 @@ async function runClearOutput(args: string[]): Promise<void> {
     args,
     allowPositionals: true,
     options: {
+      'dry-run': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' }
     }
   });
@@ -487,13 +508,21 @@ async function runClearOutput(args: string[]): Promise<void> {
     throw new Error(
       usageError(
         `clear-output takes no arguments (got ${positionals.join(' ')}).`,
-        'Usage: npm run clear-output',
+        'Usage: npm run clear-output [-- --dry-run]',
         'clear-output'
       )
     );
   }
 
-  const outcome = await clearOutput(optional(await loadEnvironment(), 'DIFF_OUTPUT_DIR'));
+  const environment = await loadEnvironment();
+  const diffOutputDir = optional(environment, 'DIFF_OUTPUT_DIR');
+  const outcome = await clearOutput(
+    diffOutputDir === undefined
+      ? undefined
+      : environmentFolder(diffOutputDir, optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT')),
+    {},
+    { dryRun: values['dry-run'] === true }
+  );
   if (outcome === 'refused') {
     process.exitCode = 1;
   }
@@ -548,7 +577,7 @@ async function planListRun(listPath: string, selector: string | undefined): Prom
     nothingToDo: '',
     policies,
     historyIds: [1],
-    failedPath: isOneOffSelector(selector) ? undefined : failedQuotePagesPath,
+    failedPath: isOneOffSelector(selector) ? undefined : failedQuotePagesPath(),
     guidList
   };
 }
@@ -561,11 +590,9 @@ async function planListRun(listPath: string, selector: string | undefined): Prom
  */
 async function planRetryFailed(): Promise<QuotePagesPlan> {
   const root = outputPath();
-  const sources = `${failedQuotePagesPath} and ${root}`;
-  const policies = listPoliciesToRetryFailed(
-    await collectQuoteResults(root),
-    await readFailedQuotePages(failedQuotePagesPath)
-  );
+  const failedPath = failedQuotePagesPath();
+  const sources = `${failedPath} and ${root}`;
+  const policies = listPoliciesToRetryFailed(await collectQuoteResults(root), await readFailedQuotePages(failedPath));
   const historyIds = [...new Set(policies.map(({ historyId }) => historyId))];
   const policiesFrom = `${policies.length} failed or unfinished policies from ${sources}`;
   return {
@@ -574,7 +601,7 @@ async function planRetryFailed(): Promise<QuotePagesPlan> {
     nothingToDo: `No failed quote pages to retry (${sources}).`,
     policies,
     historyIds,
-    failedPath: historyIds.length === 1 ? failedQuotePagesPath : undefined
+    failedPath: historyIds.length === 1 ? failedPath : undefined
   };
 }
 
@@ -639,7 +666,7 @@ async function printQuotePagesPlan(
 
   console.log(
     plan.failedPath === undefined
-      ? `${failedQuotePagesPath} would be left untouched.`
+      ? `${failedQuotePagesPath()} would be left untouched.`
       : `${plan.failedPath} would be replaced with the policies that fail.`
   );
 }
@@ -688,7 +715,7 @@ function parseConcurrency(value: string | undefined): number {
 function quotePageOptions(environment: Record<string, string | undefined>, useOcr: boolean): QuotePageOptions {
   const { imageScale, imageNames } = readComparisonSettings(environment);
   return {
-    mrpAndQuoteOutputDir: required(environment, 'MRP_AND_QUOTE_OUTPUT_DIR'),
+    mrpAndQuoteOutputDir: environmentMrpFolder(environment, required(environment, 'MRP_AND_QUOTE_OUTPUT_DIR')),
     nhiQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE'),
     tcasQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE'),
     useOcr,
@@ -704,6 +731,14 @@ function quotePageOptions(environment: Record<string, string | undefined>, useOc
       tcasReplacementUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE')
     }
   };
+}
+
+/**
+ * @returns The environment's MRP folder, `MRP_AND_QUOTE_OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>`, since the fetch reads
+ * each environment's own policies; the base folder itself when no environment is set.
+ */
+function environmentMrpFolder(environment: Record<string, string | undefined>, mrpAndQuoteOutputDir: string): string {
+  return environmentFolder(mrpAndQuoteOutputDir, optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT'));
 }
 
 /**

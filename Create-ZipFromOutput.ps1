@@ -6,7 +6,8 @@ Zips a policy's output folder (<policy-details-id>-<history-id>) from the output
 
 .DESCRIPTION
 The output folder is DIFF_OUTPUT_DIR, taken from the environment when it is set there, otherwise from this project's
-.env, otherwise this project's folder - the same order the npm commands use. The policy's folder in it is zipped to
+.env, otherwise this project's folder - the same order the npm commands use - followed by the QUOTE_JOURNEY_ENVIRONMENT
+subfolder (found the same way, e.g. dev) when one is set. The policy's folder in it is zipped to
 <policy-details-id>-<history-id>.zip, so the zip extracts to a folder of the same name.
 
 When the zip already exists you are asked whether to replace it, unless -Force is given.
@@ -24,7 +25,7 @@ The folder to write the zip to. Defaults to the output folder, and is created if
 Replace an existing zip without asking.
 
 .PARAMETER EnvFile
-The .env file to read DIFF_OUTPUT_DIR from. Defaults to this project's .env.
+The .env file to read DIFF_OUTPUT_DIR and QUOTE_JOURNEY_ENVIRONMENT from. Defaults to this project's .env.
 
 .PARAMETER Help
 Show this help.
@@ -61,16 +62,28 @@ param(
 )
 
 function Get-OutputFolder([string]$Path) {
-    if ($env:DIFF_OUTPUT_DIR) {
-        return $env:DIFF_OUTPUT_DIR
+    $baseFolder = Get-Setting $Path "DIFF_OUTPUT_DIR"
+    if (!$baseFolder) {
+        $baseFolder = $PSScriptRoot
     }
 
-    $fromEnvFile = Get-EnvFileValue $Path "DIFF_OUTPUT_DIR"
-    if ($fromEnvFile) {
-        return $fromEnvFile
+    # Output is kept per environment (DIFF_OUTPUT_DIR/<environment>), as the npm commands write it
+    $environment = Get-Setting $Path "QUOTE_JOURNEY_ENVIRONMENT"
+    if (!$environment) {
+        return $baseFolder
     }
 
-    return $PSScriptRoot
+    return Join-Path $baseFolder $environment.Trim().ToLowerInvariant()
+}
+
+# Returns the setting from the environment when it is set there, otherwise from the .env file
+function Get-Setting([string]$Path, [string]$Name) {
+    $fromEnvironment = [Environment]::GetEnvironmentVariable($Name)
+    if ($fromEnvironment) {
+        return $fromEnvironment
+    }
+
+    return Get-EnvFileValue $Path $Name
 }
 
 function Get-EnvFileValue([string]$Path, [string]$Name) {

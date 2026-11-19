@@ -35,14 +35,42 @@ BeforeAll {
 Describe 'Create-ZipFromOutput.ps1' {
     BeforeEach {
         $script:savedOutputDir = $env:DIFF_OUTPUT_DIR
+        $script:savedEnvironment = $env:QUOTE_JOURNEY_ENVIRONMENT
         $script:root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
         $script:noEnvFile = Join-Path $script:root 'missing.env'
         New-Item -ItemType Directory -Path $script:root | Out-Null
         $env:DIFF_OUTPUT_DIR = $script:root
+        $env:QUOTE_JOURNEY_ENVIRONMENT = $null
     }
 
     AfterEach {
         $env:DIFF_OUTPUT_DIR = $script:savedOutputDir
+        $env:QUOTE_JOURNEY_ENVIRONMENT = $script:savedEnvironment
+    }
+
+    It 'zips from the QUOTE_JOURNEY_ENVIRONMENT subfolder set in <Name>' -ForEach @(
+        @{ Name = 'the .env file'; FromEnvironment = $false }
+
+        @{ Name = 'the environment'; FromEnvironment = $true }
+    ) {
+        # arrange
+        $environmentFolder = Join-Path $script:root 'tst'
+        New-PolicyFolder $environmentFolder 1 | Out-Null
+        $envFile = Join-Path $script:root '.env'
+        if ($FromEnvironment) {
+            $env:QUOTE_JOURNEY_ENVIRONMENT = 'TST'
+            Set-Content -LiteralPath $envFile -Value 'QUOTE_JOURNEY_ENVIRONMENT=dev'
+        }
+        else {
+            Set-Content -LiteralPath $envFile -Value 'QUOTE_JOURNEY_ENVIRONMENT=tst'
+        }
+
+        # act
+        $result = Invoke-CreateZip @{ PolicyDetailsId = $script:policyId; EnvFile = $envFile }
+
+        # assert
+        $result.ExitCode | Should -Be 0
+        Join-Path $environmentFolder "$script:policyId-1.zip" | Should -Exist
     }
 
     It 'zips history 1 when no HistoryId is given' {

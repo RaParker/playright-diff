@@ -7,13 +7,14 @@ One entry point for the playwright-diff CLI (screenshot, compare, quote-page, qu
 migrate-output, clear-output) and its development tasks. Each command is a switch with its own parameter set, so tab completion
 only offers options that apply, and inputs are validated before Node starts.
 
-CLI commands run src/main.ts through tsx (as the npm scripts do) from the project root, so .env,
-quote-guid-mapping.json and quote-pages-failed.json are always read from there. Each policy's output folder
-(<policyDetailsId>-<historyId>) is written to DIFF_OUTPUT_DIR (.env or environment), or the project root when it is
-not set. Relative paths you pass are resolved from your current directory first.
+CLI commands run src/main.ts through tsx (as the npm scripts do) from the project root, so .env is always read from
+there. Output is kept per environment in DIFF_OUTPUT_DIR/<environment> (for example D:/temp/output/dev): each policy's
+<policyDetailsId>-<historyId> folder, quote-guid-mapping.json and quote-pages-failed.json. MRP files are likewise read
+from MRP_AND_QUOTE_OUTPUT_DIR/<environment>. Relative paths you pass are resolved from your current directory first.
 
 QuotePage, QuotePages, RetryFailed and RetryDifferent run against -Environment (default: dev). The script writes it to
-.env first (QUOTE_JOURNEY_ENVIRONMENT and QUOTE_JOURNEY_HOST), so the setting stays until the next of these commands.
+.env first (QUOTE_JOURNEY_ENVIRONMENT and QUOTE_JOURNEY_HOST), so the setting stays until the next of these commands;
+Summarise and ClearOutput use the environment in .env (ClearOutput also takes -Environment).
 
 Run it with no arguments for an overview of the commands in the order they're used. Use -WhatIf to print the command
 (and any .env change) without running it. The script exits with the command's exit code.
@@ -102,9 +103,11 @@ MigrateOutput only: move the files rather than listing them.
 MigrateOutput only: output folder to migrate (default: DIFF_OUTPUT_DIR, or the project root).
 
 .PARAMETER ClearOutput
-Delete the output folder (DIFF_OUTPUT_DIR) and everything in it, after printing the folder and how many entries
-it holds. Refuses when DIFF_OUTPUT_DIR is not set, or is a drive root, the user profile, this project or a folder
-containing either.
+Delete the environment's output folder (DIFF_OUTPUT_DIR/<environment>) and everything in it, after printing the folder
+and how many entries it holds. That includes its quote-guid-mapping.json, a known cause of every policy failing with
+NHI Oops (README: Troubleshooting), so the next run requests fresh replacement quote GUIDs. Other environments' folders
+are kept. Uses the environment in .env unless -Environment is given. Refuses when DIFF_OUTPUT_DIR is not set, or the
+folder is a drive root, the user profile, this project or a folder containing either.
 
 .PARAMETER NoOcr
 Compare pixels without extracting text.
@@ -118,6 +121,7 @@ Quote pages, RetryFailed and RetryDifferent: number of policies run at once (def
 
 .PARAMETER Environment
 QuotePage, QuotePages, RetryFailed and RetryDifferent: environment to run against, dev, tst or stg (default: dev).
+ClearOutput: environment whose output folder to delete (default: the one already in .env).
 Before the command runs, .env's QUOTE_JOURNEY_ENVIRONMENT is set to it and QUOTE_JOURNEY_HOST to its Quote Journey
 host: quotes-feature-dev, quotes-feature-tst or quotes-stg (.homeprotect.co.uk; feature builds only reach dev and tst).
 The MRP fetch reads from the same environment. .env is only written when it changes.
@@ -167,6 +171,9 @@ Test (all suites), TestCompare, TestQuotePage or Verify (VerifyProject.ps1).
 
 .EXAMPLE
 ./Run-Project.ps1 -ClearOutput
+
+.EXAMPLE
+./Run-Project.ps1 -ClearOutput -Environment tst
 
 .EXAMPLE
 ./Run-Project.ps1 -Task Verify
@@ -304,6 +311,7 @@ param(
     [Parameter(ParameterSetName = 'QuotePagesGuid')]
     [Parameter(ParameterSetName = 'RetryFailed')]
     [Parameter(ParameterSetName = 'RetryDifferent')]
+    [Parameter(ParameterSetName = 'ClearOutput')]
     [ValidateSet('dev', 'tst', 'stg')]
     [string]$Environment = 'dev',
 
@@ -336,8 +344,12 @@ $quoteJourneyHostByEnvironment = @{
     tst = 'quotes-feature-tst.homeprotect.co.uk'
 }
 
-# The commands that open the quote journey, and so take -Environment
+# The commands that open the quote journey, and so always apply -Environment (default dev) to .env
 $environmentParameterSets = @('QuotePage', 'QuotePages', 'QuotePagesCount', 'QuotePagesGuid', 'RetryFailed', 'RetryDifferent')
+
+# -ClearOutput only switches .env when -Environment is given; otherwise it clears the environment already there
+$appliesEnvironment = ($environmentParameterSets -contains $PSCmdlet.ParameterSetName) -or
+($PSCmdlet.ParameterSetName -eq 'ClearOutput' -and $PSBoundParameters.ContainsKey('Environment'))
 
 function Get-ProjectCommand {
     if ($PSCmdlet.ParameterSetName -eq 'Task') {
@@ -410,6 +422,11 @@ function Get-CliArguments {
         }
 
         'ClearOutput' {
+            # With -WhatIf the CLI lists the folder it would delete, rather than the command only being printed
+            if ($WhatIfPreference) {
+                return @('clear-output', '--dry-run')
+            }
+
             return @('clear-output')
         }
     }
@@ -531,7 +548,11 @@ $overviewSections = @(
     @{
         Title = '2. Compare NHI and TCAS quote pages (main workflow, in this order)'
         Rows  = @(
-            @{ Usage = '-ClearOutput'; Description = 'Optional: delete DIFF_OUTPUT_DIR to start afresh' }
+            @{ Usage = '-ClearOutput'; Description = "Optional: delete this environment's output to start afresh" }
+
+            @{ Depth = 1; Usage = '[-Environment <dev|tst|stg>]'; Description = 'Environment to clear (default: the one in .env)' }
+
+            @{ Description = 'Also deletes its quote GUID mapping: clear it when every policy fails with NHI Oops.' }
 
             @{ Usage = '-QuotePages'; Description = 'Run the first 250 policies in the GUID list' }
 
@@ -551,7 +572,7 @@ $overviewSections = @(
 
             @{ Description = 'Options for -QuotePages, -RetryFailed and -RetryDifferent:' }
 
-            @{ Depth = 1; Usage = '-Environment <dev|tst|stg>'; Description = 'Environment to run against (default: dev); saved to .env' }
+            @{ Depth = 1; Usage = '-Environment <dev|tst|stg>'; Description = 'Environment to run against (default: dev); saved to .env, output in DIFF_OUTPUT_DIR/<env>' }
 
             @{ Depth = 1; Usage = '-Concurrency <n>'; Description = 'Policies run at once (default: 3)' }
 
@@ -722,22 +743,31 @@ $script:boundParameterNames = @($PSBoundParameters.Keys | ForEach-Object { $_.To
 # Resolve user paths against the caller's directory before switching to the project root.
 $command = Get-ProjectCommand
 $commandLine = Format-CommandLine $command
-if ($environmentParameterSets -contains $PSCmdlet.ParameterSetName) {
+if ($appliesEnvironment) {
     Set-DotEnvEnvironment
 }
 
-if (-not $PSCmdlet.ShouldProcess($commandLine, 'Run')) {
+# -ClearOutput -WhatIf runs the CLI's dry run, which deletes nothing; every other -WhatIf only prints the command
+$isDryRun = $PSCmdlet.ParameterSetName -eq 'ClearOutput' -and $WhatIfPreference
+if (-not $isDryRun -and -not $PSCmdlet.ShouldProcess($commandLine, 'Run')) {
     exit 0
 }
 
+# -WhatIf leaves .env as it is, so the environment is passed to the command directly (it wins over .env)
+$savedEnvironment = $env:QUOTE_JOURNEY_ENVIRONMENT
 Push-Location $PSScriptRoot
 try {
+    if ($appliesEnvironment) {
+        $env:QUOTE_JOURNEY_ENVIRONMENT = $Environment
+    }
+
     Write-Host $commandLine -ForegroundColor DarkGray
     $global:LASTEXITCODE = 0
     & $command[0] @($command | Select-Object -Skip 1)
     $exitCode = $LASTEXITCODE
 }
 finally {
+    $env:QUOTE_JOURNEY_ENVIRONMENT = $savedEnvironment
     Pop-Location
 }
 

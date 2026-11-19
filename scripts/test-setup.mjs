@@ -7,3 +7,11 @@ delete process.env.NO_COLOR;
 process.env.SCREENSHOT_SCALE = '1';
 process.env.COMPARE_BEFORE_NAME = 'before';
 process.env.COMPARE_AFTER_NAME = 'after';
+
+// Tests that call the modules directly run from the project folder, where output is refused, so their default output
+// (such as the OCR cache) goes to a temporary folder instead. It is kept between runs so the OCR language data is
+// downloaded only once. CLIs that tests spawn are unaffected: they set their own output folder or working directory.
+const { tmpdir } = await import('node:os');
+const { join } = await import('node:path');
+const { setOutputRoot } = await import('../dist/output-paths.js');
+setOutputRoot(join(tmpdir(), 'playwright-diff-test-output'));

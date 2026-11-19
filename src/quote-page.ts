@@ -16,6 +16,7 @@ import { runWithLogPrefix, withPrefixedConsole } from './log-context.js';
 import { writeFailedQuotePages, type FailedQuotePage } from './failed-quote-pages.js';
 import { flowOutputPaths, type FlowOutputPaths } from './flow-output.js';
 import {
+  quoteGuidMappingFileName,
   readQuoteGuidMapping,
   requestQuoteGuid,
   saveQuoteGuidMapping,
@@ -109,7 +110,7 @@ interface CoverTypeRecheckProgress {
 }
 
 export interface QuoteGuidFallbackOptions extends QuoteGuidRequestOptions {
-  /** Mapping JSON file of original to replacement quote GUIDs (default: quote-guid-mapping.json). */
+  /** Mapping JSON file of original to replacement quote GUIDs (default: quote-guid-mapping.json in the output folder). */
   mappingPath?: string;
   /**
    * Journey URL, with `{artemisQuoteGuid}`, for a replacement quote not yet saved to NHI (`nhi=false`). Driving it
@@ -398,7 +399,7 @@ async function captureAndCompare(
   });
   const nhiPaths = flowOutputPaths(outputPath(basename), 'nhi');
   const tcasPaths = flowOutputPaths(outputPath(basename), 'mrp');
-  const mappingPath = resolve(fallback?.mappingPath ?? 'quote-guid-mapping.json');
+  const mappingPath = resolve(fallback?.mappingPath ?? outputPath(quoteGuidMappingFileName));
   const mappedGuid = fallback === undefined ? undefined : (await readQuoteGuidMapping(mappingPath))[artemisQuoteGuid];
   // Inputs are valid, so clear the previous run's results before writing new ones.
   await removeQuoteOutput(basename);

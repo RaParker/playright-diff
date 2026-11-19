@@ -8,6 +8,12 @@ import { parseJson, readOptionalTextFile, replaceFile } from './fs-helpers.js';
  */
 const mappingQueues = new Map<string, Promise<unknown>>();
 
+/**
+ * Name of the mapping file of original to replacement quote GUIDs, kept in the environment's output folder so it is
+ * deleted with that folder's results (see `outputPath`).
+ */
+export const quoteGuidMappingFileName = 'quote-guid-mapping.json';
+
 export interface QuoteGuidRequestOptions {
   quoteGuidUrl: string;
   agentId: string;

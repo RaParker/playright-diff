@@ -78,8 +78,6 @@ Describe 'Run-Project.ps1 command lines' {
 
         @{ Name = 'migrate-output resolves Root and passes Apply'; Arguments = @('-MigrateOutput', '-Root', 'scripts', '-Apply'); Expected = '{cli} migrate-output --root {root}\scripts --apply' }
 
-        @{ Name = 'clear-output deletes the output folder'; Arguments = @('-ClearOutput'); Expected = '{cli} clear-output' }
-
         @{ Name = 'npm task runs its npm script'; Arguments = @('-Task', 'TestQuotePage'); Expected = 'npm run test:quote-page' }
 
         @{ Name = 'Verify task runs VerifyProject.ps1'; Arguments = @('-Task', 'Verify'); Expected = '{root}\VerifyProject.ps1' }
@@ -94,6 +92,47 @@ Describe 'Run-Project.ps1 command lines' {
         $result.ExitCode | Should -Be 0
         # A plain substring check: -BeLike would read the ? and [ in URLs and paths as wildcards.
         $result.Output.Contains("on target `"$expectedCommand`"") | Should -BeTrue -Because $result.Output
+    }
+}
+
+Describe 'Run-Project.ps1 -ClearOutput -WhatIf' {
+    BeforeEach {
+        # The settings are passed in the environment, which wins over the project's .env
+        $script:savedOutputDir = $env:DIFF_OUTPUT_DIR
+        $script:savedEnvironment = $env:QUOTE_JOURNEY_ENVIRONMENT
+        $script:outputRoot = Join-Path $TestDrive ([guid]::NewGuid())
+        foreach ($environment in 'dev', 'stg') {
+            New-Item -ItemType Directory (Join-Path $script:outputRoot $environment 'ABCDEF1234567890ABCDEF1234567890-1') | Out-Null
+        }
+
+        $env:DIFF_OUTPUT_DIR = $script:outputRoot
+        $env:QUOTE_JOURNEY_ENVIRONMENT = 'dev'
+    }
+
+    AfterEach {
+        $env:DIFF_OUTPUT_DIR = $script:savedOutputDir
+        $env:QUOTE_JOURNEY_ENVIRONMENT = $script:savedEnvironment
+    }
+
+    It 'lists the <Expected> folder it would delete, deleting nothing' -ForEach @(
+        @{ Arguments = @('-ClearOutput', '-WhatIf'); Expected = 'dev' }
+
+        @{ Arguments = @('-ClearOutput', '-Environment', 'stg', '-WhatIf'); Expected = 'stg' }
+    ) {
+        # arrange
+        $expectedFolder = Join-Path $script:outputRoot $Expected
+
+        # act
+        $result = Invoke-RunProject $Arguments
+
+        # assert
+        $result.ExitCode | Should -Be 0 -Because $result.Output
+        $result.Output.Contains("$script:cli clear-output --dry-run") | Should -BeTrue -Because $result.Output
+        $result.Output.Contains("Would delete these folders:") | Should -BeTrue -Because $result.Output
+        $result.Output.Contains("  $expectedFolder (1 entry)") | Should -BeTrue -Because $result.Output
+        $result.Output | Should -BeLike '*Dry run: nothing was deleted.*'
+        Join-Path $script:outputRoot 'dev' | Should -Exist
+        Join-Path $script:outputRoot 'stg' | Should -Exist
     }
 }
 
@@ -274,6 +313,21 @@ Describe 'Run-Project.ps1 -Environment' {
         $result.ExitCode | Should -Not -Be 0
         $result.Output | Should -BeLike '*.env has no QUOTE_JOURNEY_HOST line*'
         [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly "QUOTE_JOURNEY_ENVIRONMENT=dev`n"
+    }
+
+    It 'switches .env for -ClearOutput only when -Environment is given' {
+        # arrange
+        Set-TestDotEnv 'dev' 'quotes-feature-dev.homeprotect.co.uk'
+        $before = [System.IO.File]::ReadAllText($script:dotEnvPath)
+
+        # act (-WhatIf runs the dry run, which fails at node in the copy; only the .env handling is checked here)
+        $without = Invoke-CopiedRunProject @('-ClearOutput', '-WhatIf')
+        $with = Invoke-CopiedRunProject @('-ClearOutput', '-Environment', 'stg', '-WhatIf')
+
+        # assert
+        $without.Output | Should -Not -BeLike '*Environment:*'
+        $with.Output | Should -BeLike '*What if:*Set QUOTE_JOURNEY_ENVIRONMENT=stg*'
+        [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly $before
     }
 
     It 'leaves .env alone for commands without -Environment' {

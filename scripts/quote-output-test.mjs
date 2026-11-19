@@ -3,20 +3,22 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, test } from 'node:test';
+import { outputPath, setOutputRoot } from '../dist/output-paths.js';
 import { removeQuoteOutput } from '../dist/quote-output.js';
 
 const policy = 'ABCDEF1234567890ABCDEF1234567890';
 const basename = `${policy}-1`;
-const originalDirectory = process.cwd();
 
 describe('removeQuoteOutput', () => {
   let directory;
+  let originalRoot;
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'quote-output-'));
-    process.chdir(directory);
+    originalRoot = outputPath();
+    setOutputRoot(directory);
   });
   afterEach(async () => {
-    process.chdir(originalDirectory);
+    setOutputRoot(originalRoot);
     await rm(directory, { recursive: true, force: true });
   });
 

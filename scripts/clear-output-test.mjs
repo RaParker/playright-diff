@@ -59,6 +59,17 @@ describe('clearOutput', () => {
     assert.equal(await exists(outputDir), false);
   });
 
+  test('with dryRun, lists the folder and its entry count without deleting it', async () => {
+    // act
+    const { result, output } = await capture(() => clearOutput(outputDir, protectedPaths, { dryRun: true }));
+
+    // assert
+    assert.equal(result, 'listed');
+    assert.match(output, /Would delete these folders:\n {2}.+output \(2 entries\)\nDry run: nothing was deleted\./);
+    assert.doesNotMatch(output, /Deleted /);
+    assert.equal(await exists(outputDir), true);
+  });
+
   test('counts a single entry as one entry', async () => {
     // arrange
     await rm(join(outputDir, 'quote-pages.log'));
@@ -185,12 +196,59 @@ describe('clear-output command', () => {
     await mkdir(join(outputDir, 'a'), { recursive: true });
 
     // act
-    const { code, output } = await run(cwd, { DIFF_OUTPUT_DIR: outputDir });
+    const { code, output } = await run(cwd, { DIFF_OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: '' });
 
     // assert
     assert.equal(code, 0, output);
     assert.match(output, /output \(1 entry\)/);
     assert.equal(await exists(outputDir), false);
+  });
+
+  test("deletes only QUOTE_JOURNEY_ENVIRONMENT's folder, with its quote GUID mapping", async () => {
+    // arrange
+    const outputDir = join(cwd, 'output');
+    await mkdir(join(outputDir, 'dev', 'a'), { recursive: true });
+    await writeFile(join(outputDir, 'dev', 'quote-guid-mapping.json'), '{}');
+    await mkdir(join(outputDir, 'tst', 'b'), { recursive: true });
+
+    // act
+    const { code, output } = await run(cwd, { DIFF_OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: 'DEV' });
+
+    // assert
+    assert.equal(code, 0, output);
+    assert.match(output, /output[\\/]dev \(2 entries\)/);
+    assert.equal(await exists(join(outputDir, 'dev')), false);
+    assert.equal(await exists(join(outputDir, 'tst', 'b')), true);
+  });
+
+  test('--dry-run lists the folder and deletes nothing', async () => {
+    // arrange
+    const outputDir = join(cwd, 'output');
+    await mkdir(join(outputDir, 'stg', 'a'), { recursive: true });
+
+    // act
+    const { code, output } = await run(cwd, { DIFF_OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: 'stg' }, [
+      '--dry-run'
+    ]);
+
+    // assert
+    assert.equal(code, 0, output);
+    assert.match(output, /Would delete these folders:\n {2}.+output[\\/]stg \(1 entry\)/);
+    assert.equal(await exists(join(outputDir, 'stg', 'a')), true);
+  });
+
+  test('rejects an environment that could leave DIFF_OUTPUT_DIR', async () => {
+    // arrange
+    const outputDir = join(cwd, 'output');
+    await mkdir(outputDir, { recursive: true });
+
+    // act
+    const { code, output } = await run(cwd, { DIFF_OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: '..' });
+
+    // assert
+    assert.equal(code, 1, output);
+    assert.match(output, /QUOTE_JOURNEY_ENVIRONMENT must be letters, digits and hyphens/);
+    assert.equal(await exists(outputDir), true);
   });
 
   test('exits with 1 when DIFF_OUTPUT_DIR is not set', async () => {

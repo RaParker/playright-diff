@@ -1,8 +1,14 @@
 import { rm } from 'node:fs/promises';
 import { parseJson, readOptionalTextFile, replaceFile } from './fs-helpers.js';
+import { outputPath } from './output-paths.js';
 
-/** File, in the current working directory, listing the policies that failed in the last quote-pages run. */
-export const failedQuotePagesPath = 'quote-pages-failed.json';
+/** Name of the file listing the policies that failed in the last quote-pages run, kept in the output folder. */
+export const failedQuotePagesFileName = 'quote-pages-failed.json';
+
+/** @returns The failed-policies file in the output folder (`DIFF_OUTPUT_DIR/<environment>`), so each environment has its own. */
+export function failedQuotePagesPath(): string {
+  return outputPath(failedQuotePagesFileName);
+}
 
 /** A policy that failed in a quote-pages run, with the issues reported for it. */
 export interface FailedQuotePage {

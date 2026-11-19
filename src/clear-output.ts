@@ -1,15 +1,18 @@
 import { readdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, parse, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { parse, resolve } from 'node:path';
 import { color } from './color.js';
 import { isMissing, retryWhileBusy } from './fs-helpers.js';
+import { contains, projectRoot } from './output-paths.js';
 
-/** This project's folder (the parent of `src/` or `dist/`), which clear-output never deletes. */
-const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+/** What clear-output did with the output folder: `listed` is a dry run that would have deleted it. */
+export type ClearOutputOutcome = 'deleted' | 'listed' | 'missing' | 'refused';
 
-/** What clear-output did with the output folder. */
-export type ClearOutputOutcome = 'deleted' | 'missing' | 'refused';
+/** How clear-output runs. */
+export interface ClearOutputOptions {
+  /** List the folder that would be deleted, with its entry count, without deleting anything. */
+  dryRun?: boolean;
+}
 
 /** Folders clear-output refuses to delete, or delete anything containing. */
 export interface ClearOutputProtectedPaths {
@@ -20,16 +23,18 @@ export interface ClearOutputProtectedPaths {
 }
 
 /**
- * Deletes the output folder (`DIFF_OUTPUT_DIR`) and everything in it, after printing the folder and how many entries
- * it holds. Nothing is deleted when the setting is blank, the folder is missing, or the folder is a drive root, the
- * user profile, this project, or a folder containing either of the last two.
- * @param outputDir `DIFF_OUTPUT_DIR`, resolved from the current working directory.
+ * Deletes the output folder (`DIFF_OUTPUT_DIR/<environment>`) and everything in it, after printing the folder and how
+ * many entries it holds. Nothing is deleted when the setting is blank, the folder is missing, or the folder is a drive
+ * root, the user profile, this project, or a folder containing either of the last two.
+ * @param outputDir The output folder, resolved from the current working directory.
  * @param protectedPaths Folders to protect instead of the defaults; replaceable in tests.
+ * @param options With `dryRun`, only lists the folder that would be deleted.
  * @returns What was done.
  */
 export async function clearOutput(
   outputDir: string | undefined,
-  protectedPaths: ClearOutputProtectedPaths = {}
+  protectedPaths: ClearOutputProtectedPaths = {},
+  options: ClearOutputOptions = {}
 ): Promise<ClearOutputOutcome> {
   if (outputDir === undefined || outputDir.trim().length === 0) {
     console.log(color.Red('DIFF_OUTPUT_DIR is not set in .env or the environment; nothing was deleted.'));
@@ -55,8 +60,16 @@ export async function clearOutput(
     throw error;
   }
 
+  const listing = `  ${target} (${childCount} ${childCount === 1 ? 'entry' : 'entries'})`;
+  if (options.dryRun === true) {
+    console.log('Would delete these folders:');
+    console.log(listing);
+    console.log(color.Cyan('Dry run: nothing was deleted.'));
+    return 'listed';
+  }
+
   console.log('Deleting these folders:');
-  console.log(`  ${target} (${childCount} ${childCount === 1 ? 'entry' : 'entries'})`);
+  console.log(listing);
   await retryWhileBusy(() => rm(target, { recursive: true, force: true }));
   console.log(color.Green(`Deleted ${target}.`));
   return 'deleted';
@@ -79,11 +92,4 @@ function protectedReason(target: string, protectedPaths: ClearOutputProtectedPat
   }
 
   return undefined;
-}
-
-/** Whether `folder` is `path` or one of its parents, ignoring case as Windows does. */
-function contains(folder: string, path: string): boolean {
-  // relative() gives an absolute path when the two are on different drives.
-  const fromFolder = relative(folder.toLowerCase(), path.toLowerCase());
-  return fromFolder !== '..' && !fromFolder.startsWith(`..${sep}`) && !isAbsolute(fromFolder);
 }

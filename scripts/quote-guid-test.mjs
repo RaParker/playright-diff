@@ -486,6 +486,28 @@ describe('quote-page NHI Oops fallback', () => {
     });
   }
 
+  test('keeps the mapping, output and MRP files in the QUOTE_JOURNEY_ENVIRONMENT subfolders', async () => {
+    await withServer(quoteJourneyHandler(['orig-guid']), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base, {});
+      const mrpFolder = join(directory, 'tst');
+      await mkdir(mrpFolder);
+      await writeFile(join(mrpFolder, `${policyA}-1-mrp.json`), JSON.stringify({ artemisQuoteGuid: 'orig-guid' }));
+      const outputRoot = join(directory, 'output');
+      Object.assign(env, { DIFF_OUTPUT_DIR: outputRoot, QUOTE_JOURNEY_ENVIRONMENT: 'tst' });
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.deepEqual(await readMapping(join(outputRoot, 'tst')), { 'orig-guid': 'new-guid' });
+      assert.ok((await readdir(join(outputRoot, 'tst', `${policyA}-1`))).includes('report.json'));
+      assert.deepEqual(await readdir(outputRoot), ['tst']);
+      assert.ok(!(await readdir(directory)).includes('quote-guid-mapping.json'));
+    });
+  });
+
   test('logs each URL it opens', async () => {
     await withServer(quoteJourneyHandler(['orig-guid']), async (base) => {
       // arrange
@@ -1139,7 +1161,7 @@ describe('quote-pages', () => {
       assert.match(saved.failed[0].issues.join('\n'), /No saved MRP for this quote/);
       assert.match(
         result.plain,
-        /Failed policies saved to quote-pages-failed\.json; retry them with npm run quote-pages -- retry-failed/
+        /Failed policies saved to .*quote-pages-failed\.json; retry them with npm run quote-pages -- retry-failed/
       );
     });
   });
@@ -1165,7 +1187,7 @@ describe('quote-pages', () => {
 
       // assert
       assert.notEqual(result.code, 0);
-      assert.match(result.plain, /Retrying 2 failed or unfinished policies from quote-pages-failed\.json and /);
+      assert.match(result.plain, /Retrying 2 failed or unfinished policies from .*quote-pages-failed\.json and /);
       assert.match(
         result.plain,
         /Quote pages summary\n2 policies: 1 compared \(0 identical, 1 different\), 1 failed\.\n/
@@ -1190,7 +1212,7 @@ describe('quote-pages', () => {
 
     // assert
     assert.equal(result.code, 0, result.output);
-    assert.match(result.plain, /No failed quote pages to retry \(quote-pages-failed\.json and .*quote-guid-\w+\)\./);
+    assert.match(result.plain, /No failed quote pages to retry \(.*quote-pages-failed\.json and .*quote-guid-\w+\)\./);
   });
 
   test('retry-failed also reruns failed and unfinished folders that the failed-policies file does not list', async () => {
@@ -1321,7 +1343,7 @@ ${policyB}
       [
         'retry-failed',
         [
-          /Would retry 2 failed or unfinished policies from quote-pages-failed\.json and /,
+          /Would retry 2 failed or unfinished policies from .*quote-pages-failed\.json and /,
           new RegExp(`\n {2}${policyA}-1 {2}failed: NHI: Website displayed <h2>Oops</h2>; stopping the journey\\.\n`),
           new RegExp(`\n {2}${policyC}-1 {2}in the failed-policies file: earlier\n`),
           new RegExp(`1 policies have no MRP file and would fail \\(--no-fetch\\): ${policyC}`),
