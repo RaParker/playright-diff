@@ -17,6 +17,23 @@ BeforeAll {
             Pop-Location
         }
     }
+
+    # Writes the -Environment tests' .env beside the copied wrapper: the two lines it rewrites, between two it keeps
+    function Set-TestDotEnv([string]$environment, [string]$quoteJourneyHost, [string]$newline = "`n") {
+        $lines = @(
+            'DIFF_OUTPUT_DIR="D:/temp/output"'
+            "QUOTE_JOURNEY_ENVIRONMENT=$environment"
+            "QUOTE_JOURNEY_HOST=$quoteJourneyHost"
+            'QUOTE_JOURNEY_QUOTE_GUID_URL="https://${QUOTE_JOURNEY_HOST}/api/nhi/quote-guid"'
+        )
+        [System.IO.File]::WriteAllText($script:dotEnvPath, ($lines -join $newline) + $newline)
+    }
+
+    # Runs the copied wrapper, which reads and writes its own .env rather than the project's
+    function Invoke-CopiedRunProject([string[]]$arguments) {
+        $output = pwsh -NoProfile -NonInteractive -File $script:copiedScript @arguments 2>&1 | Out-String
+        return [pscustomobject]@{ Output = $output; ExitCode = $LASTEXITCODE }
+    }
 }
 
 Describe 'Run-Project.ps1 command lines' {
@@ -117,6 +134,10 @@ Describe 'Run-Project.ps1 validation' {
         @{ Name = 'ClearOutput with another command option'; Arguments = @('-ClearOutput', '-Root', 'scripts'); Message = '*Parameter set cannot be resolved*' }
 
         @{ Name = 'Mode without Summarise'; Arguments = @('-RetryFailed', '-Mode', 'differences'); Message = '*Parameter set cannot be resolved*' }
+
+        @{ Name = 'an unknown environment'; Arguments = @('-QuotePages', '-Environment', 'liv'); Message = "*parameter 'Environment'*" }
+
+        @{ Name = 'Environment with Summarise'; Arguments = @('-Summarise', '-Environment', 'tst'); Message = '*Parameter set cannot be resolved*' }
     ) {
         # arrange
         $arguments = $Arguments + '-WhatIf'
@@ -158,5 +179,114 @@ Describe 'Run-Project.ps1 validation' {
         $missingTasks = @($taskNames | Where-Object { $result.Output -notmatch "\b$_\b" })
         $missingParameters | Should -BeNullOrEmpty
         $missingTasks | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Run-Project.ps1 -Environment' {
+    BeforeEach {
+        # A copy of the wrapper beside its own .env, so the project's .env is never touched. The copy has no
+        # node_modules, so a run that gets past the .env change fails at node; only -WhatIf runs exit 0.
+        $script:copyRoot = Join-Path $TestDrive ([guid]::NewGuid())
+        New-Item -ItemType Directory $script:copyRoot | Out-Null
+        $script:copiedScript = Join-Path $script:copyRoot 'Run-Project.ps1'
+        Copy-Item $script:runProject $script:copiedScript
+        $script:dotEnvPath = Join-Path $script:copyRoot '.env'
+    }
+
+    It 'switches .env to <Environment>, changing only its two lines' -ForEach @(
+        @{ Environment = 'tst'; Arguments = @('-QuotePages', '-Environment', 'tst'); ExpectedHost = 'quotes-feature-tst.homeprotect.co.uk' }
+
+        @{ Environment = 'stg'; Arguments = @('-RetryFailed', '-Environment', 'stg'); ExpectedHost = 'quotes-stg.homeprotect.co.uk' }
+
+        @{ Environment = 'dev'; Arguments = @('-QuotePage', '-PolicyDetailsId', 'ABCDEF1234567890ABCDEF1234567890', '-HistoryId', '1'); ExpectedHost = 'quotes-feature-dev.homeprotect.co.uk' }
+    ) {
+        # arrange
+        $startEnvironment = if ($Environment -eq 'dev') {
+            'tst'
+        }
+        else {
+            'dev'
+        }
+
+        Set-TestDotEnv $startEnvironment "quotes-feature-$startEnvironment.homeprotect.co.uk"
+
+        # act
+        $result = Invoke-CopiedRunProject $Arguments
+
+        # assert
+        $result.Output | Should -BeLike "*Switched .env to $Environment.*"
+        [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly (
+            "DIFF_OUTPUT_DIR=`"D:/temp/output`"`nQUOTE_JOURNEY_ENVIRONMENT=$Environment`nQUOTE_JOURNEY_HOST=$ExpectedHost`n" +
+            "QUOTE_JOURNEY_QUOTE_GUID_URL=`"https://`${QUOTE_JOURNEY_HOST}/api/nhi/quote-guid`"`n")
+    }
+
+    It 'keeps CRLF line endings when switching' {
+        # arrange
+        Set-TestDotEnv 'dev' 'quotes-feature-dev.homeprotect.co.uk' "`r`n"
+
+        # act
+        Invoke-CopiedRunProject @('-RetryDifferent', '-Environment', 'tst') | Out-Null
+
+        # assert
+        $text = [System.IO.File]::ReadAllText($script:dotEnvPath)
+        $text | Should -BeLike "*`r`nQUOTE_JOURNEY_HOST=quotes-feature-tst.homeprotect.co.uk`r`n*"
+        ($text -replace "`r`n", '') | Should -Not -Match "[`r`n]"
+    }
+
+    It 'leaves .env unwritten when it is already on the environment' {
+        # arrange
+        Set-TestDotEnv 'tst' 'quotes-feature-tst.homeprotect.co.uk'
+        $lastWrite = (Get-Item $script:dotEnvPath).LastWriteTimeUtc.AddDays(-1)
+        (Get-Item $script:dotEnvPath).LastWriteTimeUtc = $lastWrite
+
+        # act
+        $result = Invoke-CopiedRunProject @('-QuotePages', '-Environment', 'tst', '-WhatIf')
+
+        # assert
+        $result.ExitCode | Should -Be 0
+        $result.Output | Should -BeLike '*Environment: tst (quotes-feature-tst.homeprotect.co.uk)*'
+        $result.Output | Should -Not -BeLike '*QUOTE_JOURNEY_ENVIRONMENT=*'
+        (Get-Item $script:dotEnvPath).LastWriteTimeUtc | Should -Be $lastWrite
+    }
+
+    It 'only reports the .env change with -WhatIf, defaulting to dev' {
+        # arrange
+        Set-TestDotEnv 'stg' 'quotes-stg.homeprotect.co.uk'
+        $before = [System.IO.File]::ReadAllText($script:dotEnvPath)
+
+        # act
+        $result = Invoke-CopiedRunProject @('-QuotePages', '-WhatIf')
+
+        # assert
+        $result.ExitCode | Should -Be 0
+        $result.Output | Should -BeLike '*What if:*Set QUOTE_JOURNEY_ENVIRONMENT=dev and QUOTE_JOURNEY_HOST=quotes-feature-dev.homeprotect.co.uk*'
+        [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly $before
+    }
+
+    It 'fails without running the command when .env has no QUOTE_JOURNEY_HOST line' {
+        # arrange
+        [System.IO.File]::WriteAllText($script:dotEnvPath, "QUOTE_JOURNEY_ENVIRONMENT=dev`n")
+
+        # act
+        $result = Invoke-CopiedRunProject @('-QuotePages', '-Environment', 'tst', '-WhatIf')
+
+        # assert
+        $result.ExitCode | Should -Not -Be 0
+        $result.Output | Should -BeLike '*.env has no QUOTE_JOURNEY_HOST line*'
+        [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly "QUOTE_JOURNEY_ENVIRONMENT=dev`n"
+    }
+
+    It 'leaves .env alone for commands without -Environment' {
+        # arrange
+        Set-TestDotEnv 'tst' 'quotes-feature-tst.homeprotect.co.uk'
+        $before = [System.IO.File]::ReadAllText($script:dotEnvPath)
+
+        # act
+        $result = Invoke-CopiedRunProject @('-Summarise', '-WhatIf')
+
+        # assert
+        $result.ExitCode | Should -Be 0
+        $result.Output | Should -Not -BeLike '*Environment:*'
+        [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly $before
     }
 }

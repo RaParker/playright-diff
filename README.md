@@ -63,6 +63,7 @@ reference.
 ./Run-Project.ps1 -QuotePage -PolicyDetailsId ABCDEF1234567890ABCDEF1234567890 -HistoryId 42
 ./Run-Project.ps1 -QuotePages                                    # first 250 entries
 ./Run-Project.ps1 -QuotePages -MaxCount 10
+./Run-Project.ps1 -QuotePages -MaxCount 10 -Environment tst      # dev (default), tst or stg
 ./Run-Project.ps1 -QuotePages -Guid 6819e30c2058490b8d1d9e25d267b002
 ./Run-Project.ps1 -RetryFailed
 ./Run-Project.ps1 -RetryDifferent
@@ -73,6 +74,20 @@ reference.
 ./Run-Project.ps1 -Task Verify   # Install, InstallBrowser, Build, Typecheck, Lint, Test,
                                  # TestCompare, TestQuotePage, Verify
 ```
+
+`-QuotePage`, `-QuotePages`, `-RetryFailed` and `-RetryDifferent` take `-Environment dev|tst|stg`
+(default `dev`). Before the command runs, the wrapper writes it to `.env` as
+`QUOTE_JOURNEY_ENVIRONMENT`, and its Quote Journey host as `QUOTE_JOURNEY_HOST`:
+
+- **dev**: `quotes-feature-dev.homeprotect.co.uk`
+- **tst**: `quotes-feature-tst.homeprotect.co.uk`
+- **stg**: `quotes-stg.homeprotect.co.uk` (feature builds only reach dev and tst, so stg runs `main`)
+
+`.env` is only written when one of them changes, so the setting stays for `npm run` commands
+too, and the committed `.env` shows as changed in `git status` until you switch back to `dev`.
+The quote page URLs use the host, and the MRP fetch reads from the same environment (see
+[Configuration](#configuration)). Output, `quote-guid-mapping.json` and saved `-mrp.json` files
+are not kept apart by environment, so clear or move them when you switch.
 
 When you add or change a CLI option in `src/main.ts`, update the matching parameter in
 `Run-Project.ps1` and its tests in `scripts/Run-Project.Tests.ps1`.
@@ -669,7 +684,8 @@ which extracts to a folder of the same name:
 Every command reads `.env` in the current working directory. `quote-page`, `quote-pages` and
 `summarise` take their settings from it, and every command takes `DIFF_OUTPUT_DIR` from it. The
 committed `.env` targets the feature-dev environment and writes output to
-`D:/temp/playright-diff-output`.
+`D:/temp/playright-diff-output`. `Run-Project.ps1 -Environment` switches it to another
+environment (see [PowerShell wrapper](#powershell-wrapper)).
 
 | Variable                                      | Used by                      | Purpose                                                                                                   |
 | --------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -679,6 +695,8 @@ committed `.env` targets the feature-dev environment and writes output to
 | `QUOTE_PAGE_TIMEOUT`                          | both                         | Optional step timeout per capture, e.g. `45s` or `1m` (default `30s`)                                     |
 | `SCREENSHOT_SCALE`                            | all captures and comparisons | Optional screenshot scale: `1.0` is 100%, `1.5` is 150% (`0.5` to `4`; default `1.0`)                     |
 | `COMPARE_BEFORE_NAME`, `COMPARE_AFTER_NAME`   | `compare`, both              | Optional names the region crops end with, `region-N-<name>.png` (default `before` and `after`)            |
+| `QUOTE_JOURNEY_ENVIRONMENT`                   | `quote-pages`                | Optional environment the MRP fetch reads from (`dev`, `tst`, `stg`), as its `SOURCE_ENVIRONMENT`          |
+| `QUOTE_JOURNEY_HOST`                          | both                         | Quote Journey host the URL templates below refer to as `${QUOTE_JOURNEY_HOST}`                            |
 | `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE`   | both                         | NHI quote URL, with `{artemisQuoteGuid}`                                                                  |
 | `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE`      | both                         | Unsaved replacement journey URL (`nhi=false`)                                                             |
 | `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE`  | both                         | TCAS quote URL, with `{policyDetailsId}` and `{historyId}`                                                |
@@ -690,7 +708,8 @@ committed `.env` targets the feature-dev environment and writes output to
 | `QUOTE_GUID_LIST_PATH`                        | `quote-pages`                | GUID list file, one policy ID per line (also used by `retry-failed`)                                      |
 
 All variables listed for a command are required, except `DIFF_OUTPUT_DIR`, `MRP_AND_QUOTE_PROJECT_DIR` (default: the
-output folder's parent), `QUOTE_PAGE_TIMEOUT`, `SCREENSHOT_SCALE`, `COMPARE_BEFORE_NAME` and
+output folder's parent), `QUOTE_JOURNEY_ENVIRONMENT` (default: mrp-and-quote's own `SOURCE_ENVIRONMENT`),
+`QUOTE_JOURNEY_HOST` (only needed while the templates refer to it), `QUOTE_PAGE_TIMEOUT`, `SCREENSHOT_SCALE`, `COMPARE_BEFORE_NAME` and
 `COMPARE_AFTER_NAME`. Policy folders, `screenshots/` and
 `comparisons/` paths in this README (including defaults and the OCR cache) are inside
 `DIFF_OUTPUT_DIR` when it is set; paths
@@ -1130,9 +1149,9 @@ yet), the unsaved journey runs again with no further request. Delete the entry (
 file) to request a fresh GUID.
 
 ```dotenv
-QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE="https://quotes-feature-dev.homeprotect.co.uk/#guid={artemisQuoteGuid},nhi=false"
-QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE="https://quotes-feature-dev.homeprotect.co.uk/quotesummary#guid={artemisQuoteGuid}&source=tcas&callmediauser=${USERNAME}&bid=1066"
-QUOTE_JOURNEY_QUOTE_GUID_URL="https://quotes-feature-dev.homeprotect.co.uk/api/nhi/quote-guid"
+QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE="https://${QUOTE_JOURNEY_HOST}/#guid={artemisQuoteGuid},nhi=false"
+QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE="https://${QUOTE_JOURNEY_HOST}/quotesummary#guid={artemisQuoteGuid}&source=tcas&callmediauser=${USERNAME}&bid=1066"
+QUOTE_JOURNEY_QUOTE_GUID_URL="https://${QUOTE_JOURNEY_HOST}/api/nhi/quote-guid"
 QUOTE_JOURNEY_AGENT_ID="${USERNAME}"
 QUOTE_JOURNEY_BRANCH_CODE=1066
 QUOTE_JOURNEY_CALL_MEDIA_USER="${USERNAME}"

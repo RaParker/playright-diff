@@ -41,7 +41,12 @@ function recordingRunner() {
   const calls = [];
   return {
     calls,
-    runner: async (projectDir, outputDir, policyDetailsIds) => calls.push({ projectDir, outputDir, policyDetailsIds })
+    runner: async (projectDir, outputDir, policyDetailsIds, sourceEnvironment) =>
+      calls.push(
+        sourceEnvironment === undefined
+          ? { projectDir, outputDir, policyDetailsIds }
+          : { projectDir, outputDir, policyDetailsIds, sourceEnvironment }
+      )
   };
 }
 
@@ -179,6 +184,18 @@ describe('prefetchMissingMrpFiles', () => {
     // assert
     assert.deepEqual(calls, [{ projectDir, outputDir, policyDetailsIds: [policyA] }]);
   });
+
+  test('passes the runner the source environment', async () => {
+    // arrange
+    const { projectDir, outputDir } = await createOutputDir([]);
+    const { calls, runner } = recordingRunner();
+
+    // act
+    await prefetchMissingMrpFiles([policyA], 1, guidList, { outputDir, sourceEnvironment: 'tst' }, runner);
+
+    // assert
+    assert.deepEqual(calls, [{ projectDir, outputDir, policyDetailsIds: [policyA], sourceEnvironment: 'tst' }]);
+  });
 });
 
 describe('mrpFetchEnvironment', () => {
@@ -192,6 +209,33 @@ describe('mrpFetchEnvironment', () => {
     // assert
     assert.deepEqual(fetchEnvironment, { PATH: 'path', OUTPUT_DIR: resolve('relative-output') });
     assert.equal(environment.OUTPUT_DIR, 'from-mrp-and-quote-env');
+  });
+
+  test('sets SOURCE_ENVIRONMENT in upper case when a source environment is given', () => {
+    // arrange
+    const environment = { PATH: 'path', SOURCE_ENVIRONMENT: 'TST' };
+
+    // act
+    const fetchEnvironment = mrpFetchEnvironment('relative-output', environment, 'stg');
+
+    // assert
+    assert.deepEqual(fetchEnvironment, {
+      PATH: 'path',
+      SOURCE_ENVIRONMENT: 'STG',
+      OUTPUT_DIR: resolve('relative-output')
+    });
+    assert.equal(environment.SOURCE_ENVIRONMENT, 'TST');
+  });
+
+  test('leaves SOURCE_ENVIRONMENT alone when no source environment is given', () => {
+    // arrange
+    const environment = { SOURCE_ENVIRONMENT: 'TST' };
+
+    // act
+    const fetchEnvironment = mrpFetchEnvironment('relative-output', environment);
+
+    // assert
+    assert.equal(fetchEnvironment.SOURCE_ENVIRONMENT, 'TST');
   });
 });
 

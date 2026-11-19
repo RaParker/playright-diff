@@ -12,8 +12,11 @@ quote-guid-mapping.json and quote-pages-failed.json are always read from there. 
 (<policyDetailsId>-<historyId>) is written to DIFF_OUTPUT_DIR (.env or environment), or the project root when it is
 not set. Relative paths you pass are resolved from your current directory first.
 
+QuotePage, QuotePages, RetryFailed and RetryDifferent run against -Environment (default: dev). The script writes it to
+.env first (QUOTE_JOURNEY_ENVIRONMENT and QUOTE_JOURNEY_HOST), so the setting stays until the next of these commands.
+
 Run it with no arguments for an overview of the commands in the order they're used. Use -WhatIf to print the command
-without running it. The script exits with the command's exit code.
+(and any .env change) without running it. The script exits with the command's exit code.
 
 Keep these parameters in step with the options in src/main.ts when the CLI changes.
 
@@ -113,6 +116,12 @@ fetch for missing ones (those policies fail). Without it, only missing MRP files
 .PARAMETER Concurrency
 Quote pages, RetryFailed and RetryDifferent: number of policies run at once (default: 3; 1 runs them in turn).
 
+.PARAMETER Environment
+QuotePage, QuotePages, RetryFailed and RetryDifferent: environment to run against, dev, tst or stg (default: dev).
+Before the command runs, .env's QUOTE_JOURNEY_ENVIRONMENT is set to it and QUOTE_JOURNEY_HOST to its Quote Journey
+host: quotes-feature-dev, quotes-feature-tst or quotes-stg (.homeprotect.co.uk; feature builds only reach dev and tst).
+The MRP fetch reads from the same environment. .env is only written when it changes.
+
 .PARAMETER Task
 Development task: Install (npm install), InstallBrowser (Playwright Chromium), Build, Typecheck, Lint,
 Test (all suites), TestCompare, TestQuotePage or Verify (VerifyProject.ps1).
@@ -131,6 +140,9 @@ Test (all suites), TestCompare, TestQuotePage or Verify (VerifyProject.ps1).
 
 .EXAMPLE
 ./Run-Project.ps1 -QuotePages -Guid 6819e30c2058490b8d1d9e25d267b002
+
+.EXAMPLE
+./Run-Project.ps1 -QuotePages -MaxCount 10 -Environment tst
 
 .EXAMPLE
 ./Run-Project.ps1 -QuotePages -MaxCount 1300 -Concurrency 5
@@ -286,6 +298,15 @@ param(
     [Parameter(ParameterSetName = 'RetryDifferent')]
     [switch]$NoFetch,
 
+    [Parameter(ParameterSetName = 'QuotePage')]
+    [Parameter(ParameterSetName = 'QuotePages')]
+    [Parameter(ParameterSetName = 'QuotePagesCount')]
+    [Parameter(ParameterSetName = 'QuotePagesGuid')]
+    [Parameter(ParameterSetName = 'RetryFailed')]
+    [Parameter(ParameterSetName = 'RetryDifferent')]
+    [ValidateSet('dev', 'tst', 'stg')]
+    [string]$Environment = 'dev',
+
     [Parameter(Mandatory, ParameterSetName = 'Task')]
     [ValidateSet('Install', 'InstallBrowser', 'Build', 'Typecheck', 'Lint', 'Test', 'TestCompare', 'TestQuotePage', 'Verify')]
     [string]$Task
@@ -307,6 +328,16 @@ $npmScriptByTask = @{
 $projectScriptByTask = @{
     Verify = 'VerifyProject.ps1'
 }
+
+# Quote Journey host of each -Environment. Feature builds only deploy to dev and tst, so stg runs main.
+$quoteJourneyHostByEnvironment = @{
+    dev = 'quotes-feature-dev.homeprotect.co.uk'
+    stg = 'quotes-stg.homeprotect.co.uk'
+    tst = 'quotes-feature-tst.homeprotect.co.uk'
+}
+
+# The commands that open the quote journey, and so take -Environment
+$environmentParameterSets = @('QuotePage', 'QuotePages', 'QuotePagesCount', 'QuotePagesGuid', 'RetryFailed', 'RetryDifferent')
 
 function Get-ProjectCommand {
     if ($PSCmdlet.ParameterSetName -eq 'Task') {
@@ -433,6 +464,46 @@ function Resolve-UserPath([string]$path) {
     return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path)
 }
 
+<#
+.SYNOPSIS
+Points .env at -Environment: sets QUOTE_JOURNEY_ENVIRONMENT to it and QUOTE_JOURNEY_HOST to its Quote Journey host.
+
+.DESCRIPTION
+Only those two lines change, keeping the file's line endings, and the file is only written when one of them differs.
+Honours -WhatIf and -Confirm. Throws when .env has no line for either setting, since the URL templates would then
+keep pointing at another environment.
+#>
+function Set-DotEnvEnvironment {
+    $dotEnvPath = Join-Path $PSScriptRoot '.env'
+    $quoteJourneyHost = $quoteJourneyHostByEnvironment[$Environment]
+    $original = [System.IO.File]::ReadAllText($dotEnvPath)
+
+    $updated = Set-DotEnvValue $original 'QUOTE_JOURNEY_ENVIRONMENT' $Environment
+    $updated = Set-DotEnvValue $updated 'QUOTE_JOURNEY_HOST' $quoteJourneyHost
+
+    Write-Host "Environment: $Environment ($quoteJourneyHost)" -ForegroundColor DarkGray
+    if ($updated -ceq $original) {
+        return
+    }
+
+    $action = "Set QUOTE_JOURNEY_ENVIRONMENT=$Environment and QUOTE_JOURNEY_HOST=$quoteJourneyHost"
+    if ($PSCmdlet.ShouldProcess($dotEnvPath, $action)) {
+        [System.IO.File]::WriteAllText($dotEnvPath, $updated)
+        Write-Host "Switched .env to $Environment." -ForegroundColor Yellow
+    }
+}
+
+# Returns the .env text with the name=... line set to value; [^\r\n] keeps a CRLF line's \r in place
+function Set-DotEnvValue([string]$text, [string]$name, [string]$value) {
+    $pattern = "(?m)^$([regex]::Escape($name))=[^\r\n]*"
+    if ($text -notmatch $pattern) {
+        throw ".env has no $name line, so -Environment cannot be applied. Add $name=... (see the README's Configuration)."
+    }
+
+    # $$ keeps a $ in the value literal in the replacement
+    return [regex]::Replace($text, $pattern, "$name=$($value.Replace('$', '$$'))")
+}
+
 function Format-CommandLine([string[]]$command) {
     return ($command | ForEach-Object { if ($_ -match '\s') {
                 "`"$_`""
@@ -480,6 +551,8 @@ $overviewSections = @(
 
             @{ Description = 'Options for -QuotePages, -RetryFailed and -RetryDifferent:' }
 
+            @{ Depth = 1; Usage = '-Environment <dev|tst|stg>'; Description = 'Environment to run against (default: dev); saved to .env' }
+
             @{ Depth = 1; Usage = '-Concurrency <n>'; Description = 'Policies run at once (default: 3)' }
 
             @{ Depth = 1; Usage = '-NoFetch'; Description = 'Only use MRP files already saved' }
@@ -491,7 +564,9 @@ $overviewSections = @(
     @{
         Title = '3. Single runs and tools (any time)'
         Rows  = @(
-            @{ Usage = '-QuotePage -PolicyDetailsId <id> -HistoryId <n> [-NoOcr]'; Description = 'Compare one policy' }
+            @{ Usage = '-QuotePage -PolicyDetailsId <id> -HistoryId <n>'; Description = 'Compare one policy' }
+
+            @{ Depth = 1; Usage = '[-Environment <dev|tst|stg>] [-NoOcr]' }
 
             @{ Usage = '-Screenshot -Url <url> [-Output <file>]'; Description = 'Capture one page' }
 
@@ -647,6 +722,10 @@ $script:boundParameterNames = @($PSBoundParameters.Keys | ForEach-Object { $_.To
 # Resolve user paths against the caller's directory before switching to the project root.
 $command = Get-ProjectCommand
 $commandLine = Format-CommandLine $command
+if ($environmentParameterSets -contains $PSCmdlet.ParameterSetName) {
+    Set-DotEnvEnvironment
+}
+
 if (-not $PSCmdlet.ShouldProcess($commandLine, 'Run')) {
     exit 0
 }

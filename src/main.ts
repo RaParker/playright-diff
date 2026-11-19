@@ -105,6 +105,7 @@ Environment (.env or environment):
   QUOTE_GUID_LIST_PATH         The GUID list (required)
   MRP_AND_QUOTE_OUTPUT_DIR     Where the -mrp.json files are kept (required)
   MRP_AND_QUOTE_PROJECT_DIR    Where mrp-and-quote's fetch runs (default: the output folder's parent)
+  QUOTE_JOURNEY_ENVIRONMENT    Environment the fetch reads from, as SOURCE_ENVIRONMENT (default: mrp-and-quote's .env)
   QUOTE_JOURNEY_*, QUOTE_PAGE_TIMEOUT
                                The quote-page settings (see the README)
 
@@ -370,7 +371,8 @@ async function runQuotePages(args: string[]): Promise<void> {
       ? reportMissingMrpFiles(policyDetailsIds, historyId, options.mrpAndQuoteOutputDir)
       : prefetchMissingMrpFiles(policyDetailsIds, historyId, guidList, {
           outputDir: options.mrpAndQuoteOutputDir,
-          projectDir: optional(environment, 'MRP_AND_QUOTE_PROJECT_DIR')
+          projectDir: optional(environment, 'MRP_AND_QUOTE_PROJECT_DIR'),
+          sourceEnvironment: optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT')
         });
   const plan =
     positionals[0] === 'retry-failed'
