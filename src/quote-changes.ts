@@ -20,6 +20,22 @@ export interface QuoteChange {
   field?: string;
 }
 
+/**
+ * How NHI's quote compares with MRP's once NHI's cover type was re-checked with Buildings & Contents: `matched` when
+ * buildings, contents, high-risk items and personal possessions cover all match, `coverMatchedPossessionsDiffer` when
+ * buildings and contents match but high-risk items or personal possessions still differ, and `stillDiffers` when
+ * buildings or contents still differ.
+ */
+export type CoverTypeRecheckOutcome = 'matched' | 'coverMatchedPossessionsDiffer' | 'stillDiffers';
+
+/** Why NHI's quote is re-checked with Buildings & Contents (see {@link findCoverTypeRecheckTrigger}). */
+export interface CoverTypeRecheckTrigger {
+  /** NHI's cover type: `B` (buildings only) or `C` (contents only). */
+  coverType: string;
+  /** The cover flags offered on NHI and not on MRP, by their own names, for example `buildingsIsAllowed`. */
+  fields: string[];
+}
+
 /** What a policy's saved responses say about how its NHI and MRP quotes differ. */
 export type QuoteChangesResult =
   | { status: 'compared'; changes: QuoteChange[] }
@@ -49,6 +65,25 @@ const possessionsChecks: readonly { path: string; label: string }[] = [
   { path: 'contentsInsurance.isHighRiskHighValueItemsAllowed', label: 'High-risk items cover' },
   { path: generalValuablesAllowedPath, label: 'Personal possessions cover' }
 ];
+
+/** Whether contents cover is allowed; personal possessions cannot be allowed without it. */
+const contentsAllowedPath = 'contentsInsurance.contentsIsAllowed';
+
+/** Where `quoteResult` holds the quote's cover type: `BC`, `B` (buildings only) or `C` (contents only). */
+const coverTypePath = 'typeOfCover';
+
+/**
+ * Cover types that price only one cover. For these NHI assumes the other cover is allowed until it is asked and priced,
+ * where MRP works it out regardless.
+ */
+const singleCoverTypes: ReadonlySet<string> = new Set(['B', 'C']);
+
+/** Each cover type as the journey's cover type question names it. */
+const coverTypeNames: Readonly<Record<string, string>> = {
+  BC: 'Buildings & Contents',
+  B: 'Buildings only',
+  C: 'Contents only'
+};
 
 /** The total of the listed items included in the quote, which the listed-item checks may already explain. */
 const highRiskTotalPath = 'contentsInsurance.highRiskHighValueItemsTotal';
@@ -180,6 +215,96 @@ export function compareQuotes(nhi: QuoteResultData, mrp: QuoteResultData, endpoi
 }
 
 /**
+ * Reads a policy's saved NHI and MRP quotes, the same ones {@link readQuoteChanges} compares, and tells whether NHI's
+ * quote needs re-checking with Buildings & Contents (see {@link findCoverTypeRecheckTrigger}).
+ * @param folder The policy's `<policyDetailsId>-<historyId>` output folder.
+ * @param endpoints Where each flow ended; a flow that declined has no priced quote to check.
+ * @returns Why NHI needs re-checking, or `undefined` when it does not or a quote response is missing.
+ * @throws When a saved response cannot be read or parsed.
+ */
+export async function readCoverTypeRecheckTrigger(
+  folder: string,
+  endpoints: QuoteEndpoints
+): Promise<CoverTypeRecheckTrigger | undefined> {
+  if (endpoints.nhi === 'declined' || endpoints.tcas === 'declined') {
+    return undefined;
+  }
+
+  const quotes = await readFlowQuoteResults(folder);
+  return quotes === undefined ? undefined : findCoverTypeRecheckTrigger(quotes.nhi, quotes.mrp);
+}
+
+/**
+ * Reads a policy's saved NHI and MRP quotes once NHI was re-checked with Buildings & Contents, and classifies them
+ * (see {@link classifyCoverTypeRecheck}).
+ * @param folder The policy's `<policyDetailsId>-<historyId>` output folder.
+ * @returns The outcome, or `undefined` when either flow has no quote response (for example NHI declined).
+ * @throws When a saved response cannot be read or parsed.
+ */
+export async function readCoverTypeRecheckOutcome(folder: string): Promise<CoverTypeRecheckOutcome | undefined> {
+  const quotes = await readFlowQuoteResults(folder);
+  return quotes === undefined ? undefined : classifyCoverTypeRecheck(quotes.nhi, quotes.mrp);
+}
+
+/**
+ * Tells whether NHI's quote needs re-checking with Buildings & Contents: its cover type is buildings only or contents
+ * only (see {@link singleCoverTypes}), and buildings or contents cover is allowed on NHI but not on MRP. NHI assumes the
+ * cover it was not asked about is allowed, so answering Buildings & Contents makes it work out the real result. High-risk
+ * items and personal possessions cover do not count, nor does cover allowed on MRP only.
+ * @param nhi NHI's `quoteResult`.
+ * @param mrp MRP's `quoteResult`.
+ * @returns NHI's cover type and the flags that differ, or `undefined` when no re-check is needed.
+ */
+export function findCoverTypeRecheckTrigger(
+  nhi: QuoteResultData,
+  mrp: QuoteResultData
+): CoverTypeRecheckTrigger | undefined {
+  const coverType = readPath(nhi, coverTypePath);
+  if (typeof coverType !== 'string' || !singleCoverTypes.has(coverType)) {
+    return undefined;
+  }
+
+  const paths = coverChecks
+    .map(({ path }) => path)
+    .filter((path) => readPath(nhi, path) === true && readPath(mrp, path) === false);
+  return paths.length === 0 ? undefined : { coverType, fields: paths.map((path) => nameFields([path])) };
+}
+
+/**
+ * Classifies NHI's quote against MRP's after the Buildings & Contents re-check (see {@link CoverTypeRecheckOutcome}).
+ * Flags compare as {@link compareQuotes} compares them: they differ only when both are set and are not the same.
+ * @param nhi NHI's `quoteResult`.
+ * @param mrp MRP's `quoteResult`.
+ * @returns The outcome.
+ */
+export function classifyCoverTypeRecheck(nhi: QuoteResultData, mrp: QuoteResultData): CoverTypeRecheckOutcome {
+  if (coverChecks.some(({ path }) => flagDiffers(nhi, mrp, path))) {
+    return 'stillDiffers';
+  }
+
+  return possessionsChecks.some(({ path }) => flagDiffers(nhi, mrp, path))
+    ? 'coverMatchedPossessionsDiffer'
+    : 'matched';
+}
+
+/**
+ * Names a cover type as the journey's cover type question does.
+ * @param coverType `BC`, `B` or `C`, as `quoteResult.typeOfCover` holds it.
+ * @returns For example `Buildings only`, or the code itself when it is not a known cover type.
+ */
+export function nameCoverType(coverType: string): string {
+  return coverTypeNames[coverType] ?? coverType;
+}
+
+/** Reads both flows' quotes (see {@link readFlowQuoteResult}); `undefined` when either has none. */
+async function readFlowQuoteResults(
+  folder: string
+): Promise<{ nhi: QuoteResultData; mrp: QuoteResultData } | undefined> {
+  const [nhi, mrp] = await Promise.all([readFlowQuoteResult(folder, 'nhi'), readFlowQuoteResult(folder, 'mrp')]);
+  return nhi === undefined || mrp === undefined ? undefined : { nhi, mrp };
+}
+
+/**
  * Reads a flow's quote (see {@link readLatestQuoteResult}) from its API responses folder, or from the folder results
  * saved before the current names used, when it has none.
  * @returns The `quoteResult`, or `undefined` when neither folder holds a quote response.
@@ -227,7 +352,13 @@ function compareEndpoints(endpoints: QuoteEndpoints | undefined): QuoteChange[] 
 
 function compareCover(nhi: QuoteResultData, mrp: QuoteResultData, handled: Set<string>): QuoteChange[] {
   const changes = coverChecks.flatMap(({ path, label }) => compareOffered(nhi, mrp, path, label, 'offered', handled));
-  const [highRisk, possessions] = possessionsChecks.map(({ path }) => [readPath(nhi, path), readPath(mrp, path)]);
+  // Possessions follow from contents cover (see readFlag), so a contents difference is reported on its own.
+  if (flagDiffers(nhi, mrp, contentsAllowedPath)) {
+    possessionsChecks.forEach(({ path }) => handled.add(path));
+    return changes;
+  }
+
+  const [highRisk, possessions] = possessionsChecks.map(({ path }) => [readFlag(nhi, path), readFlag(mrp, path)]);
   const together =
     highRisk !== undefined &&
     possessions !== undefined &&
@@ -401,13 +532,13 @@ function isUnsetOnNhiOnly(
   );
 }
 
-/** Reports a yes/no cover flag that differs, worded with `verb` (`offered`, `allowed`). */
-/** Whether a yes/no flag is set on both sides and differs. */
+/** Whether a yes/no flag is set on both sides and differs (read with {@link readFlag}). */
 function flagDiffers(nhi: QuoteResultData, mrp: QuoteResultData, path: string): boolean {
-  const [a, b] = [readPath(nhi, path), readPath(mrp, path)];
+  const [a, b] = [readFlag(nhi, path), readFlag(mrp, path)];
   return typeof a === 'boolean' && typeof b === 'boolean' && a !== b;
 }
 
+/** Reports a yes/no cover flag that differs (read with {@link readFlag}), worded with `verb` (`offered`, `allowed`). */
 function compareOffered(
   nhi: QuoteResultData,
   mrp: QuoteResultData,
@@ -417,7 +548,7 @@ function compareOffered(
   handled: Set<string>
 ): QuoteChange[] {
   handled.add(path);
-  const [a, b] = [readPath(nhi, path), readPath(mrp, path)];
+  const [a, b] = [readFlag(nhi, path), readFlag(mrp, path)];
   return typeof a === 'boolean' && typeof b === 'boolean' && a !== b
     ? [{ summary: `${label}: ${offeredOn(a, verb)}`, field: nameFields([path]) }]
     : [];
@@ -498,6 +629,17 @@ function collectLeaves(quote: QuoteResultData): Map<string, string> {
         .join(', ')
     ])
   );
+}
+
+/**
+ * Reads a cover flag. ASSUMPTION, TO BE VERIFIED: personal possessions (high-risk items and general valuables) cannot be
+ * allowed without contents cover, so both possessions flags read as `false` whenever `contentsIsAllowed` is `false`,
+ * whatever the quote says. NHI can still say they are allowed after a Buildings & Contents re-check prices contents as
+ * not allowed (policy 106D1920D02642E2A0F55131BB75ED7D-1); see "Assumptions to verify" in docs/open-issues.md.
+ */
+function readFlag(quote: QuoteResultData, path: string): unknown {
+  const isPossessions = possessionsChecks.some((check) => check.path === path);
+  return isPossessions && readPath(quote, contentsAllowedPath) === false ? false : readPath(quote, path);
 }
 
 /** Reads a dotted path, such as `buildingsInsurance.buildingsIsAllowed`. */

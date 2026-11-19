@@ -106,6 +106,8 @@ npm run screenshot -- https://example.com --width 390 --height 844 --wait 2000
 How it works: waits for page load, scrolls through the document to trigger lazy loading,
 returns to the top, waits `--wait` ms, then captures the whole document using
 [Playwright's `fullPage` option](https://playwright.dev/docs/screenshots#full-page-screenshots).
+The image is `SCREENSHOT_SCALE` times the page's size (see [Configuration](#configuration)):
+at `1.5`, a 1440-pixel-wide viewport gives a 2160-pixel-wide image with the same layout.
 
 Limitations:
 
@@ -132,12 +134,12 @@ changed, then a grey count such as `115 changed regions, 12 with text changes.` 
 differ only visually appear in the report, not the console. Tesseract's own diagnostics (for
 example `Estimating resolution as …`) are suppressed. It writes:
 
-| File                                        | Contents                                                 |
-| ------------------------------------------- | -------------------------------------------------------- |
-| `diff.png`                                  | Changed pixels highlighted in magenta                    |
-| `region-N-before.png`, `region-N-after.png` | Crops of each changed region, with context               |
-| `report.md`                                 | Readable visual and text comparison, with OCR confidence |
-| `report.json`                               | Structured results: coordinates, text, word changes      |
+| File                                        | Contents                                                                                                                                  |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `diff.png`                                  | Changed pixels highlighted in magenta                                                                                                     |
+| `region-N-before.png`, `region-N-after.png` | Crops of each changed region, with context (named by `COMPARE_BEFORE_NAME` and `COMPARE_AFTER_NAME`; see [Configuration](#configuration)) |
+| `report.md`                                 | Readable visual and text comparison, with OCR confidence                                                                                  |
+| `report.json`                               | Structured results: coordinates, text, word changes                                                                                       |
 
 Good to know:
 
@@ -145,12 +147,20 @@ Good to know:
   pixels are rejected.
 - Images are compared at their original coordinates (dimensions are reported separately),
   so layout shifts can produce many differences.
-- Regions group adjacent changed 32-pixel tiles plus 40 pixels of context. Nearby changes
-  may share a region, and crop edges can truncate long text.
+- Regions group adjacent changed 32-pixel tiles plus 40 pixels of context, both multiplied by
+  `SCREENSHOT_SCALE` so a region covers the same part of the page at every scale. Nearby
+  changes may share a region, and crop edges can truncate long text.
 - OCR runs locally — images are never uploaded. Language data downloads on first use and
   is cached in `.ocr-cache` in the output folder.
 - OCR can misread small or stylised text. Check the crops and confidence before treating a
   reported text change as definitive.
+- Changes made only of symbols, such as `©` read as `@`, a stray `—` or `|`, or an empty
+  checkbox read as `[1]`, are OCR noise and don't count as text changes; the region is still
+  reported, with its text unchanged. Any change with a letter or digit, such as a price, counts.
+  A `|` standing alone is compared as `I`, since OCR reads the `I` of "I agree" as `|` on some
+  captures and not others.
+- White text on dark buttons is often not read at all, so a changed button label shows as a
+  visual difference only. Check the crops.
 
 ### quote-page
 
@@ -179,7 +189,7 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   ├── screenshot-failed-nhi.png, failed-nhi.html      when a flow failed (likewise -mrp)
   ├── screenshot-declined-nhi.png, declined-nhi.html  when a flow declined (likewise -mrp)
   ├── api-nhi/, api-mrp/             API responses (see below)
-  ├── diff.png, region-N-before.png, region-N-after.png
+  ├── diff.png, region-N-nhi.png, region-N-mrp.png  (names from COMPARE_*_NAME)
   ├── report.md, report.json         the comparison
   ├── result.json                    how the run ended (see below)
   └── answer-changes.json            answers a flow changed (see below)
@@ -200,7 +210,9 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   `endpoints` (`nhi` and `tcas`, each `quote`, `referred`, `conditional` or `declined`; see
   [Quote end points](#quote-end-points)). When the two quote pages listed the endorsements in different
   orders, it also has `endorsementOrder` (`nhi` and `tcas`, each the titles in the order shown;
-  see Standardised page below). A run that stops before capturing (for example with no saved MRP)
+  see Standardised page below). When NHI was captured again with Buildings & Contents, it also
+  has `coverTypeRecheck` (`originalCoverType` and, when known, `outcome`; see
+  [Cover type re-check](#cover-type-re-check)), on a failed run too. A run that stops before capturing (for example with no saved MRP)
   writes only this file and leaves the previous screenshots alone. If the file cannot be
   written, a yellow `Could not save the result of …` warning is shown and the run still passes
   or fails on its own result.
@@ -242,8 +254,8 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   moved. If the orders differed, `result.json` records both (`endorsementOrder`) and
   [summarise](#summarise) counts the policy. The step lives in `src/standardise-page.ts`.
 
-See [How quote-page works](#how-quote-page-works) for the journey, error handling and the
-NHI Oops fallback.
+See [How quote-page works](#how-quote-page-works) for the journey, error handling, the
+[cover type re-check](#cover-type-re-check) and the NHI Oops fallback.
 
 ### quote-pages
 
@@ -426,6 +438,11 @@ In order, it prints:
 - **Matching referrals, conditional quotes and declines:** compared policies whose flows both
   ended on the same referral, conditional quote or decline with matching images, such as
   `NHI and TCAS both referred` (see [Quote end points](#quote-end-points)).
+- **Cover type re-checked with Buildings & Contents:** compared policies whose NHI quote was
+  captured again with Buildings & Contents (see [Cover type re-check](#cover-type-re-check)),
+  counted by outcome (matches in green, the rest in yellow, and those with no recorded outcome
+  last), each with up to three example policies and the cover type NHI had before, such as
+  `was Contents only on NHI`.
 - **Failed policies:** each failed policy with its issues, coloured as in
   [quote-pages](#quote-pages).
 - **Failures by reason:** each issue with the number of policies reporting it; URLs, file paths
@@ -506,9 +523,30 @@ Totals
 - **Data not captured:** policies whose screenshots differ but whose results have no recorded
   end points (from versions before they were recorded) or no saved response, counted by reason,
   never compared or guessed at. Run them again to compare them.
+- **Cover type re-checked with Buildings & Contents:** the policies whose NHI quote was
+  [re-checked](#cover-type-re-check), whatever their screenshots show, as in the full summary.
+  They are left out of the sections above, since NHI then quoted a different cover type from
+  MRP:
+
+  ```text
+  Cover type re-checked with Buildings & Contents (4)
+    2× Matched MRP: buildings, contents, high-risk items and personal possessions cover
+          …/22222222222222222222222222222222-1  was Contents only on NHI
+          …/55555555555555555555555555555555-1  was Buildings only on NHI
+    1× Buildings or contents cover still differs from MRP
+          …/33333333333333333333333333333333-1  was Buildings only on NHI
+    1× No quote data to compare after the re-check
+          …/44444444444444444444444444444444-1  was Contents only on NHI
+  ```
+
+  The middle outcome reads `Buildings and contents cover matched MRP; high-risk items or
+personal possessions cover still differ`.
+
 - **Totals:** how many compared policies' screenshots differ (the policies
-  [`retry-different`](#quote-pages) reruns), how many of those have data changes, and how many
-  could not be compared.
+  [`retry-different`](#quote-pages) reruns; re-checked ones are not counted here, though
+  `retry-different` still reruns them), how many of those have
+  data changes, how many could not be compared, and how many were re-checked, such as
+  `; 4 cover type re-checked, listed apart`.
 
 Policies whose screenshots match are never listed, even when their data differs (for example a
 referral, which shows no cover rows), with or without `--detail`.
@@ -630,24 +668,27 @@ Every command reads `.env` in the current working directory. `quote-page`, `quot
 committed `.env` targets the feature-dev environment and writes output to
 `D:/temp/playright-diff-output`.
 
-| Variable                                      | Used by       | Purpose                                                                                                   |
-| --------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- |
-| `DIFF_OUTPUT_DIR`                             | all commands  | Optional folder holding each policy's `<ID>-<historyId>/` folder (default: the current working directory) |
-| `MRP_AND_QUOTE_OUTPUT_DIR`                    | both          | Folder containing `<ID>-<historyId>-mrp.json` files                                                       |
-| `MRP_AND_QUOTE_PROJECT_DIR`                   | `quote-pages` | Optional mrp-and-quote project folder the MRP fetch runs in                                               |
-| `QUOTE_PAGE_TIMEOUT`                          | both          | Optional step timeout per capture, e.g. `45s` or `1m` (default `30s`)                                     |
-| `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE`   | both          | NHI quote URL, with `{artemisQuoteGuid}`                                                                  |
-| `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE`      | both          | Unsaved replacement journey URL (`nhi=false`)                                                             |
-| `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE`  | both          | TCAS quote URL, with `{policyDetailsId}` and `{historyId}`                                                |
-| `QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE` | both          | TCAS quote summary URL for a replacement GUID, with `{artemisQuoteGuid}`                                  |
-| `QUOTE_JOURNEY_QUOTE_GUID_URL`                | both          | [NHI Oops fallback](#nhi-oops-fallback) endpoint                                                          |
-| `QUOTE_JOURNEY_AGENT_ID`                      | both          | Fallback request `agentId`                                                                                |
-| `QUOTE_JOURNEY_BRANCH_CODE`                   | both          | Fallback request `branchCode`                                                                             |
-| `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both          | Fallback request `callMediaUser`                                                                          |
-| `QUOTE_GUID_LIST_PATH`                        | `quote-pages` | GUID list file, one policy ID per line (also used by `retry-failed`)                                      |
+| Variable                                      | Used by                      | Purpose                                                                                                   |
+| --------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `DIFF_OUTPUT_DIR`                             | all commands                 | Optional folder holding each policy's `<ID>-<historyId>/` folder (default: the current working directory) |
+| `MRP_AND_QUOTE_OUTPUT_DIR`                    | both                         | Folder containing `<ID>-<historyId>-mrp.json` files                                                       |
+| `MRP_AND_QUOTE_PROJECT_DIR`                   | `quote-pages`                | Optional mrp-and-quote project folder the MRP fetch runs in                                               |
+| `QUOTE_PAGE_TIMEOUT`                          | both                         | Optional step timeout per capture, e.g. `45s` or `1m` (default `30s`)                                     |
+| `SCREENSHOT_SCALE`                            | all captures and comparisons | Optional screenshot scale: `1.0` is 100%, `1.5` is 150% (`0.5` to `4`; default `1.0`)                     |
+| `COMPARE_BEFORE_NAME`, `COMPARE_AFTER_NAME`   | `compare`, both              | Optional names the region crops end with, `region-N-<name>.png` (default `before` and `after`)            |
+| `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE`   | both                         | NHI quote URL, with `{artemisQuoteGuid}`                                                                  |
+| `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE`      | both                         | Unsaved replacement journey URL (`nhi=false`)                                                             |
+| `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE`  | both                         | TCAS quote URL, with `{policyDetailsId}` and `{historyId}`                                                |
+| `QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE` | both                         | TCAS quote summary URL for a replacement GUID, with `{artemisQuoteGuid}`                                  |
+| `QUOTE_JOURNEY_QUOTE_GUID_URL`                | both                         | [NHI Oops fallback](#nhi-oops-fallback) endpoint                                                          |
+| `QUOTE_JOURNEY_AGENT_ID`                      | both                         | Fallback request `agentId`                                                                                |
+| `QUOTE_JOURNEY_BRANCH_CODE`                   | both                         | Fallback request `branchCode`                                                                             |
+| `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both                         | Fallback request `callMediaUser`                                                                          |
+| `QUOTE_GUID_LIST_PATH`                        | `quote-pages`                | GUID list file, one policy ID per line (also used by `retry-failed`)                                      |
 
 All variables listed for a command are required, except `DIFF_OUTPUT_DIR`, `MRP_AND_QUOTE_PROJECT_DIR` (default: the
-output folder's parent) and `QUOTE_PAGE_TIMEOUT`. Policy folders, `screenshots/` and
+output folder's parent), `QUOTE_PAGE_TIMEOUT`, `SCREENSHOT_SCALE`, `COMPARE_BEFORE_NAME` and
+`COMPARE_AFTER_NAME`. Policy folders, `screenshots/` and
 `comparisons/` paths in this README (including defaults and the OCR cache) are inside
 `DIFF_OUTPUT_DIR` when it is set; paths
 you pass yourself, such as `--output`, are not. `quote-guid-mapping.json` and
@@ -656,7 +697,12 @@ optional `s`, `m`, `h` or `d` suffix (milliseconds without one), from 1 ms to 8 
 how `intervalToMs` in `@avantia/client-and-server-utilities` reads it (`src/interval.ts` is this
 project's own copy). It is how long each page load, click and wait for the next page may take;
 quote loading screens get twice as long, and a wait that is still on a loading screen when it
-runs out is tried once more, so a slow quote can take up to three times as long in all. Set
+runs out is tried once more, so a slow quote can take up to three times as long in all.
+`SCREENSHOT_SCALE` draws the page at a higher resolution without changing its layout, so text has
+more pixels and OCR misreads it less. Images have the scale squared times as many pixels, so
+captures, comparisons and OCR take longer. Comparisons reject images over 40 million pixels: at
+`1.5` a 1440-pixel viewport allows pages up to about 12,300 pixels tall, and at `2` only about
+6,900. Set `1.0` to go back to 100%. Set
 `NO_COLOR` to any value to print the logs without colours, for example when saving them to a
 file. `summarise` also reads `QUOTE_GUID_LIST_PATH` and
 `MRP_AND_QUOTE_OUTPUT_DIR`, but both are optional there (see [summarise](#summarise)).
@@ -754,6 +800,65 @@ page:
   `NHI: clicking Return to quote on Cover details.`), which goes straight to the quote page. An
   error shown again, or left on screen until the timeout, is reported as for example
   `NHI cover details errors: …`.
+
+### Cover type re-check
+
+For a buildings only or contents only quote, NHI assumes the cover it was not asked about is
+allowed until it is asked and priced, whereas MRP works it out regardless. Such policies would
+otherwise show differences such as `Buildings cover: offered on NHI, not on MRP` that come from
+this NHI behaviour. Answering **Buildings & Contents** makes NHI work out the real result.
+
+Once both flows reach an end point other than a decline, quote-page reads each side's quote as
+[summarise differences](#summarise) does (the `quoteResult` of the last quote summary or
+`save-details` response in `api-nhi/` and `api-mrp/`). NHI is captured again when:
+
+- NHI's cover type (`quoteResult.typeOfCover`) is `B` (buildings only) or `C` (contents only),
+  and
+- `buildingsIsAllowed` or `contentsIsAllowed` is true on NHI and false on MRP.
+
+High-risk items and personal possessions cover do not count, nor does cover allowed on MRP only.
+Every other policy, including one already Buildings & Contents on both sides, runs as before.
+
+The second NHI capture opens the same quote page. When the first capture used a replacement
+quote GUID (see [NHI Oops fallback](#nhi-oops-fallback)), the first capture's quote button has
+saved it to NHI, so the second opens its quote page too and, if NHI still shows Oops, reruns its
+[unsaved journey](#nhi-oops-fallback). It never requests another replacement quote GUID, as TCAS
+was captured against this one. Once the quote appears, it opens
+**Cover details** from the timeline. It reads the cover type image radio list's ticked option
+(`label.hp-checked`); Buildings only or Contents only is changed to Buildings & Contents (logged
+in grey as `NHI: selecting cover type Buildings & Contents on Cover details.`) and recorded in
+[`answer-changes.json`](#answer-changes-file), with the reason, such as
+`Contents only quote allows cover MRP does not (buildingsIsAllowed)`, as its `error`. It then
+clicks **Return to quote** and follows on to the quote as in
+[Quote summary and assumptions](#quote-summary-and-assumptions), fixing any required questions
+the new cover type shows through the [journey error auto-fixes](#journey-error-auto-fixes).
+
+The second capture replaces the first: NHI's screenshot, HTML and `api-nhi/` responses are
+deleted first, the first capture's NHI answer changes are left out, and the comparison runs
+against the second capture. `result.json` records `coverTypeRecheck` with the
+`originalCoverType` (`B` or `C`) and, once both quotes can be read again, the `outcome`:
+
+- `matched`: buildings, contents, high-risk items and personal possessions cover
+  (`buildingsIsAllowed`, `contentsIsAllowed`, `isHighRiskHighValueItemsAllowed`,
+  `isGeneralValuablesCoveredAllowed`) all match MRP.
+- `coverMatchedPossessionsDiffer`: buildings and contents match MRP, but high-risk items or
+  personal possessions cover still differ (a separate difference).
+- `stillDiffers`: buildings or contents cover still differs from MRP.
+
+**Assumption, to be verified:** high-risk items and personal possessions cannot be allowed
+without contents cover. So wherever a side's `contentsIsAllowed` is `false`, its
+`isHighRiskHighValueItemsAllowed` and `isGeneralValuablesCoveredAllowed` are read as `false`
+whatever the quote says, both for these outcomes and in
+[summarise differences](#summarise), and `summarise differences` reports a contents cover
+difference on its own, without the possessions differences that follow from it. NHI can still
+say they are allowed after the re-check prices
+contents as not allowed (`106D1920D02642E2A0F55131BB75ED7D-1`). See
+[Assumptions to verify](docs/open-issues.md#assumptions-to-verify).
+
+If the second capture fails, the run fails as usual and `outcome` is left out. A referral or
+decline is recorded as its [end point](#quote-end-points) and compared as usual; `outcome` is
+then left out only when a side has no quote response to read. [summarise](#summarise) lists
+these policies in their own section.
 
 ### Journey error auto-fixes
 
@@ -854,7 +959,9 @@ made. A question changed more than once (such as each claim) has one entry each 
 with no changes are left out. When nothing was changed the file is not written, and any file
 an earlier run left is removed. Only the captures whose screenshots are used count: when NHI
 shows Oops and a replacement quote is captured instead, the changes made by the Oops attempt
-and by the original TCAS capture are left out.
+and by the original TCAS capture are left out. Likewise, when NHI is captured again with
+Buildings & Contents (see [Cover type re-check](#cover-type-re-check)), only the second NHI
+capture's changes are kept, including its `cover type` change on Cover details.
 
 ```json
 {

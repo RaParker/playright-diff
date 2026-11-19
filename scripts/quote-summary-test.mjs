@@ -4,12 +4,14 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { quoteSummary, requote } from '../dist/quote-summary.js';
+import { collectAnswerChanges } from '../dist/answer-changes.js';
+import { quoteSummary, requote, selectBuildingsAndContents } from '../dist/quote-summary.js';
 import { screenshot, ValidationError } from '../dist/screenshot.js';
 import { assertGreyLogsInOrder } from './log-assertions.mjs';
 import {
   assumptionsPageHtml,
   conditionalQuotePageHtml,
+  coverTypeQuotePageHtml,
   estimatedQuotePageHtml,
   nhiPagesHtml,
   otherAmountScript,
@@ -314,6 +316,81 @@ for (const [name, html, expectedError] of [
         await assert.rejects(capture, expectedError);
         assertGreyLogsInOrder(log, ['TCAS: opening Contact details to re-quote.']);
       }
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+    }
+  });
+}
+
+const coverTypeReason = 'Contents only quote allows cover MRP does not (buildingsIsAllowed)';
+for (const [name, selected, expectedChanges, expectedLog] of [
+  [
+    'changes Buildings only to Buildings & Contents and records the change',
+    'Buildings only',
+    {
+      nhi: {
+        'Cover details': [
+          { question: 'cover type', before: 'Buildings only', after: 'Buildings & Contents', error: coverTypeReason }
+        ]
+      }
+    },
+    'NHI: selecting cover type Buildings & Contents on Cover details.'
+  ],
+  [
+    'changes Contents only to Buildings & Contents and records the change',
+    'Contents only',
+    {
+      nhi: {
+        'Cover details': [
+          { question: 'cover type', before: 'Contents only', after: 'Buildings & Contents', error: coverTypeReason }
+        ]
+      }
+    },
+    'NHI: selecting cover type Buildings & Contents on Cover details.'
+  ],
+  [
+    'leaves Buildings & Contents as it is and records nothing',
+    'Buildings & Contents',
+    {},
+    'NHI: cover type is Buildings & Contents; leaving it as it is.'
+  ]
+]) {
+  test(`NHI selectBuildingsAndContents ${name}`, async (context) => {
+    // arrange
+    const log = context.mock.method(console, 'log');
+    const server = createServer((_request, response) => {
+      response.setHeader('Content-Type', 'text/html; charset=utf-8');
+      response.end(coverTypeQuotePageHtml(selected));
+    });
+    await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+    const directory = await mkdtemp(join(tmpdir(), 'quote-summary-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const changes = {};
+    let quotedCoverType;
+    try {
+      // act
+      await collectAnswerChanges(changes, () =>
+        screenshot(`http://127.0.0.1:${server.address().port}`, {
+          output: join(directory, 'quote.png'),
+          wait: 0,
+          timeout: 2000,
+          beforeCapture: async (page) => {
+            await selectBuildingsAndContents('NHI', coverTypeReason)(page);
+            quotedCoverType = await page.locator('#cover-type').textContent();
+          }
+        })
+      );
+
+      // assert
+      assert.deepEqual(await readdir(directory), ['quote.png']);
+      assert.equal(quotedCoverType, 'Buildings & Contents');
+      assert.deepEqual(changes, expectedChanges);
+      assertGreyLogsInOrder(log, [
+        'NHI: opening Cover details to re-check the cover type.',
+        expectedLog,
+        'NHI: clicking Return to quote on Cover details.'
+      ]);
     } finally {
       server.closeAllConnections();
       await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));

@@ -175,6 +175,24 @@ describe('quote result file', () => {
     assert.deepEqual(await readQuoteResult(join(root, `${textPolicy}-1`)), result);
   });
 
+  for (const [name, coverTypeRecheck] of [
+    ['a cover type re-check with its outcome', { originalCoverType: 'C', outcome: 'coverMatchedPossessionsDiffer' }],
+    ['a cover type re-check without an outcome', { originalCoverType: 'B' }]
+  ]) {
+    test(`reads back ${name}`, async (context) => {
+      // arrange
+      const root = await mkdtemp(join(tmpdir(), 'quote-result-'));
+      context.after(() => rm(root, { recursive: true, force: true }));
+      const result = { ...failedResult(textPolicy, []), outcome: 'compared', coverTypeRecheck };
+
+      // act
+      await writeQuoteResult(result, root);
+
+      // assert
+      assert.deepEqual(await readQuoteResult(join(root, `${textPolicy}-1`)), result);
+    });
+  }
+
   test('reads a folder without a result as undefined', async (context) => {
     // arrange
     const root = await mkdtemp(join(tmpdir(), 'quote-result-'));
@@ -211,7 +229,12 @@ describe('quote result file', () => {
     ['non-string issues', { ...failedResult(failedPolicy, []), issues: [1] }],
     ['a missing finishedAt', { ...failedResult(failedPolicy, []), finishedAt: undefined }],
     ['an endorsement order without TCAS', { ...failedResult(failedPolicy, []), endorsementOrder: { nhi: ['Bike'] } }],
-    ['non-string endorsement titles', { ...failedResult(failedPolicy, []), endorsementOrder: { nhi: [1], tcas: [] } }]
+    ['non-string endorsement titles', { ...failedResult(failedPolicy, []), endorsementOrder: { nhi: [1], tcas: [] } }],
+    ['a cover type re-check without its cover type', { ...failedResult(failedPolicy, []), coverTypeRecheck: {} }],
+    [
+      'an unknown cover type re-check outcome',
+      { ...failedResult(failedPolicy, []), coverTypeRecheck: { originalCoverType: 'B', outcome: 'maybe' } }
+    ]
   ]) {
     test(`rejects ${name}`, async (context) => {
       // arrange
@@ -846,11 +869,19 @@ describe('summarise differences from the quote data', () => {
     ...overrides
   });
 
-  /** Writes a compared policy with recorded end points, its comparison report and both flows' quote responses. */
-  async function comparedPolicy(root, policy, changedPixels, nhiQuote, mrpQuote) {
+  /**
+   * Writes a compared policy with recorded end points (and its cover type re-check, when given), its comparison report
+   * and both flows' quote responses.
+   */
+  async function comparedPolicy(root, policy, changedPixels, nhiQuote, mrpQuote, coverTypeRecheck) {
     await writeReport(root, `${policy}-1`, { changedPixels });
     await writeQuoteResult(
-      { ...failedResult(policy, []), outcome: 'compared', endpoints: { nhi: 'quote', tcas: 'quote' } },
+      {
+        ...failedResult(policy, []),
+        outcome: 'compared',
+        endpoints: { nhi: 'quote', tcas: 'quote' },
+        ...(coverTypeRecheck === undefined ? {} : { coverTypeRecheck })
+      },
       root
     );
     for (const [side, file, quoteResult] of [
@@ -927,6 +958,70 @@ describe('summarise differences from the quote data', () => {
       /Changes by policy \(1\)\n\S+B{32}-1\n {2}Annual premium differs \S*\(yearlyAmount\)\S* {2}£231\.33 on NHI, £240\.10 on MRP\n/
     );
     assert.match(output, /1 with data changes, 0 not captured\.\n/);
+  });
+
+  /** {@link changesFixture} plus four policies whose NHI cover type was re-checked, each with a premium difference. */
+  async function recheckFixture(context) {
+    const root = await changesFixture(context);
+    const higherPremium = quote({ quoteAmounts: { yearlyAmount: 512.4 } });
+    for (const [policy, coverTypeRecheck] of [
+      ['22222222222222222222222222222222', { originalCoverType: 'C', outcome: 'matched' }],
+      ['33333333333333333333333333333333', { originalCoverType: 'B', outcome: 'stillDiffers' }],
+      ['44444444444444444444444444444444', { originalCoverType: 'C' }],
+      ['55555555555555555555555555555555', { originalCoverType: 'B', outcome: 'matched' }]
+    ]) {
+      await comparedPolicy(root, policy, 50, higherPremium, quote(), coverTypeRecheck);
+    }
+
+    return root;
+  }
+
+  test('lists the cover type re-checks apart by outcome, leaving their data out of the changes', async (context) => {
+    // arrange
+    const root = await recheckFixture(context);
+
+    // act
+    const { code, output } = await runCli(root, ['summarise', 'differences']);
+
+    // assert
+    assert.equal(code, 0, output);
+    assert.match(
+      output,
+      new RegExp(
+        [
+          'Cover type re-checked with Buildings & Contents \\(4\\)',
+          '  2× Matched MRP: buildings, contents, high-risk items and personal possessions cover',
+          ' {8}\\S+2{32}-1  was Contents only on NHI',
+          ' {8}\\S+5{32}-1  was Buildings only on NHI',
+          '  1× Buildings or contents cover still differs from MRP',
+          ' {8}\\S+3{32}-1  was Buildings only on NHI',
+          '  1× No quote data to compare after the re-check',
+          ' {8}\\S+4{32}-1  was Contents only on NHI',
+          ''
+        ].join('\n')
+      )
+    );
+    assert.match(output, /Changes in the quote data \(2 policies with differing screenshots and saved data\)\n/);
+    assert.doesNotMatch(output, /£512\.40/);
+    assert.match(
+      output,
+      /Totals\n2 different of 7 compared; 1 with data changes, 0 not captured; 4 cover type re-checked, listed apart\.\n/
+    );
+  });
+
+  test('the full summary lists the cover type re-checks by folder name', async (context) => {
+    // arrange
+    const root = await recheckFixture(context);
+
+    // act
+    const { code, output } = await runCli(root, ['summarise']);
+
+    // assert
+    assert.equal(code, 0, output);
+    assert.match(
+      output,
+      /Cover type re-checked with Buildings & Contents \(4\)\n {2}2× Matched MRP: [^\n]+\n {8}2{32}-1 {2}was Contents only on NHI\n/
+    );
   });
 });
 

@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { defaultQuoteGuidCount, readQuoteGuidList, selectQuoteGuids } from '../dist/quote-guid-list.js';
 import { readQuoteGuidMapping, requestQuoteGuid, saveQuoteGuidMapping } from '../dist/quote-guid.js';
 import {
+  coverTypeQuotePageHtml,
   declinedPageHtml,
   quotePageHtml,
   quoteSummaryHtml,
@@ -825,6 +826,146 @@ describe('quote-page referrals and conditional quotes', () => {
   });
 });
 
+/** A quote's cover type and the cover flags the Buildings & Contents re-check reads. */
+function coverQuote(typeOfCover, buildingsIsAllowed, isHighRiskHighValueItemsAllowed = true) {
+  return {
+    typeOfCover,
+    buildingsInsurance: { buildingsIsAllowed },
+    contentsInsurance: {
+      contentsIsAllowed: true,
+      isHighRiskHighValueItemsAllowed,
+      isGeneralValuablesCoveredAllowed: true
+    }
+  };
+}
+
+/**
+ * Serves an NHI quote page with Contents only ticked (see `coverTypeQuotePageHtml`) whose quote summary returns `nhi`
+ * and whose Return to quote returns `nhiRechecked`, and a TCAS journey that posts save-details, which returns `mrp`.
+ */
+function coverTypeHandler({ nhi, nhiRechecked, mrp }) {
+  return (request, response) => {
+    if (request.url.startsWith('/api/quote-summary/')) {
+      jsonHandler(200, { quoteResult: nhi })(request, response);
+      return;
+    }
+
+    if (request.url === '/api/save-details') {
+      let body = '';
+      request.on('data', (chunk) => (body += chunk));
+      request.on('end', () => {
+        const fromNhi = 'coverType' in JSON.parse(body.length > 0 ? body : '{}');
+        jsonHandler(200, { quoteResult: fromNhi ? nhiRechecked : mrp })(request, response);
+      });
+      return;
+    }
+
+    response.setHeader('Content-Type', 'text/html');
+    const savesDetails = `<script>fetch('/api/save-details', { method: 'POST', body: '{}' });</script>`;
+    if (request.url.startsWith('/tcas/') || request.url.startsWith('/tcas-replacement/')) {
+      response.end(`${request.url.startsWith('/tcas/') ? tcasJourneyHtml : tcasReplacementQuoteHtml}${savesDetails}`);
+      return;
+    }
+
+    response.end(coverTypeQuotePageHtml('Contents only', { callsApi: true }));
+  };
+}
+
+/** Reads what a policy A run saved about NHI's cover type re-check. */
+async function readCoverTypeRecheck(directory) {
+  const folder = join(directory, `${policyA}-1`);
+  const { outcome, coverTypeRecheck } = JSON.parse(await readFile(join(folder, 'result.json'), 'utf8'));
+  const changes = await readFile(join(folder, 'answer-changes.json'), 'utf8').then(
+    (content) => JSON.parse(content).changes,
+    () => ({})
+  );
+  return { outcome, coverTypeRecheck, changes, nhiResponses: (await readdir(join(folder, 'api-nhi'))).sort() };
+}
+
+describe('quote-page cover type re-check', () => {
+  const reason = 'Contents only quote allows cover MRP does not (buildingsIsAllowed)';
+  const recheckedChanges = {
+    nhi: {
+      'Cover details': [
+        { question: 'cover type', before: 'Contents only', after: 'Buildings & Contents', error: reason }
+      ]
+    }
+  };
+  for (const [name, quotes, expected] of [
+    [
+      'captures NHI again with Buildings & Contents and records a match',
+      { nhi: coverQuote('C', true), nhiRechecked: coverQuote('BC', false), mrp: coverQuote('C', false) },
+      { nhiCaptures: 2, coverTypeRecheck: { originalCoverType: 'C', outcome: 'matched' }, changes: recheckedChanges }
+    ],
+    [
+      'records cover that matched once re-checked while high-risk items cover still differs',
+      { nhi: coverQuote('C', true), nhiRechecked: coverQuote('BC', false, false), mrp: coverQuote('C', false) },
+      {
+        nhiCaptures: 2,
+        coverTypeRecheck: { originalCoverType: 'C', outcome: 'coverMatchedPossessionsDiffer' },
+        changes: recheckedChanges
+      }
+    ],
+    [
+      'captures NHI once when its cover flags match MRP',
+      { nhi: coverQuote('C', true), nhiRechecked: coverQuote('BC', false), mrp: coverQuote('C', true) },
+      { nhiCaptures: 1, coverTypeRecheck: undefined, changes: {} }
+    ]
+  ]) {
+    test(name, async () => {
+      await withServer(coverTypeHandler(quotes), async (base, requests) => {
+        // arrange
+        const { directory, env } = await fixture(base);
+
+        // act
+        const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+        // assert
+        assert.equal(result.code, 0, result.output);
+        assert.equal(requests.filter((path) => path === '/nhi/orig-guid').length, expected.nhiCaptures, result.output);
+        const saved = await readCoverTypeRecheck(directory);
+        assert.equal(saved.outcome, 'compared');
+        assert.deepEqual(saved.coverTypeRecheck, expected.coverTypeRecheck);
+        assert.deepEqual(saved.changes, expected.changes);
+        // A re-check replaces the first capture's responses rather than adding to them.
+        assert.deepEqual(
+          saved.nhiResponses,
+          expected.nhiCaptures === 1
+            ? ['001-GET-quote-summary-orig-guid.json']
+            : ['001-GET-quote-summary-orig-guid.json', '002-POST-save-details.json']
+        );
+        assert.equal(
+          result.plain.includes(`NHI: ${reason}; capturing NHI again with Buildings & Contents.`),
+          expected.nhiCaptures === 2,
+          result.output
+        );
+      });
+    });
+  }
+
+  test('captures a mapped replacement quote again on its quote page, never requesting another GUID', async () => {
+    const quotes = { nhi: coverQuote('C', true), nhiRechecked: coverQuote('BC', false), mrp: coverQuote('C', false) };
+    await withServer(coverTypeHandler(quotes), async (base, requests) => {
+      // arrange
+      const { directory, env } = await fixture(base);
+      await writeFile(join(directory, 'quote-guid-mapping.json'), JSON.stringify({ 'orig-guid': 'mapped-guid' }));
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.equal(requests.filter((path) => path === '/nhi/mapped-guid').length, 2, result.output);
+      assert.ok(!requests.some((path) => path.startsWith('/api/nhi/quote-guid')), result.output);
+      assert.ok(!requests.some((path) => path.startsWith('/unsaved/')), result.output);
+      assert.deepEqual((await readCoverTypeRecheck(directory)).coverTypeRecheck, {
+        originalCoverType: 'C',
+        outcome: 'matched'
+      });
+    });
+  });
+});
+
 describe('QUOTE_PAGE_TIMEOUT', () => {
   test('sets the step timeout of the NHI and TCAS captures', async () => {
     const stuckPage = (_request, response) => {
@@ -858,6 +999,70 @@ describe('QUOTE_PAGE_TIMEOUT', () => {
       // assert
       assert.notEqual(result.code, 0);
       assert.match(result.output, /QUOTE_PAGE_TIMEOUT: The 'interval' /);
+    });
+  }
+});
+
+describe('SCREENSHOT_SCALE and COMPARE_*_NAME', () => {
+  test('captures and compares both flows at the screenshot scale', async () => {
+    await withServer(quoteJourneyHandler([]), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base);
+      env.SCREENSHOT_SCALE = '1.5';
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      const folder = join(directory, `${policyA}-1`);
+      for (const flow of ['nhi', 'mrp']) {
+        const png = await readFile(join(folder, `screenshot-quote-page-${flow}.png`));
+        assert.equal(png.readUInt32BE(16), 2160);
+      }
+
+      const report = JSON.parse(await readFile(join(folder, 'report.json'), 'utf8'));
+      assert.equal(report.imageScale, 1.5);
+    });
+  });
+
+  test('names the region crops from the settings', async () => {
+    await withServer(quoteKindHandler(['/tcas/'], 'conditional'), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base);
+      Object.assign(env, { COMPARE_BEFORE_NAME: 'nhi', COMPARE_AFTER_NAME: 'mrp' });
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      const report = JSON.parse(await readFile(join(directory, `${policyA}-1`, 'report.json'), 'utf8'));
+      assert.ok(report.regions.length > 0, result.output);
+      assert.deepEqual(
+        [report.regions[0].before.image, report.regions[0].after.image],
+        ['region-1-nhi.png', 'region-1-mrp.png']
+      );
+    });
+  });
+
+  for (const [name, setting, message] of [
+    ['a percentage scale', { SCREENSHOT_SCALE: '150%' }, /SCREENSHOT_SCALE must be a decimal number/],
+    ['matching crop names', { COMPARE_BEFORE_NAME: 'nhi', COMPARE_AFTER_NAME: 'nhi' }, /must differ, not both "nhi"/]
+  ]) {
+    test(`rejects ${name}`, async () => {
+      await withServer(quoteJourneyHandler([]), async (base) => {
+        // arrange
+        const { directory, env } = await fixture(base);
+        Object.assign(env, setting);
+
+        // act
+        const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+        // assert
+        assert.notEqual(result.code, 0);
+        assert.match(result.output, message);
+      });
     });
   }
 });

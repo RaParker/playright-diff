@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 import { color } from './color.js';
-import { compare } from './compare.js';
+import { checkImageNames, compare, defaultImageNames, type CompareOptions } from './compare.js';
 import { maxConcurrency } from './concurrency.js';
 import {
   defaultQuotePagesConcurrency,
@@ -18,6 +18,7 @@ import {
   reportMissingMrpFiles
 } from './mrp-fetch.js';
 import { screenshot, ValidationError } from './screenshot.js';
+import { parseScreenshotScale } from './screenshot-scale.js';
 import { loadEnvironment } from './environment.js';
 import { outputPath, setOutputRoot } from './output-paths.js';
 import { intervalToMs } from './interval.js';
@@ -267,6 +268,7 @@ async function runScreenshot(args: string[]): Promise<void> {
     output: values.output,
     width: values.width === undefined ? undefined : Number(values.width),
     height: values.height === undefined ? undefined : Number(values.height),
+    scale: readScreenshotScale(await loadEnvironment()),
     wait: values.wait === undefined ? undefined : Number(values.wait),
     timeout: values.timeout === undefined ? undefined : Number(values.timeout)
   });
@@ -298,7 +300,8 @@ async function runCompare(args: string[]): Promise<void> {
     output: values.output,
     threshold: values.threshold === undefined ? undefined : Number(values.threshold),
     language: values.language,
-    useOcr: values['no-ocr'] !== true
+    useOcr: values['no-ocr'] !== true,
+    ...readComparisonSettings(await loadEnvironment())
   });
 }
 
@@ -681,12 +684,15 @@ function parseConcurrency(value: string | undefined): number {
 }
 
 function quotePageOptions(environment: Record<string, string | undefined>, useOcr: boolean): QuotePageOptions {
+  const { imageScale, imageNames } = readComparisonSettings(environment);
   return {
     mrpAndQuoteOutputDir: required(environment, 'MRP_AND_QUOTE_OUTPUT_DIR'),
     nhiQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE'),
     tcasQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE'),
     useOcr,
     timeout: parseQuotePageTimeout(optional(environment, 'QUOTE_PAGE_TIMEOUT')),
+    scale: imageScale,
+    imageNames,
     quoteGuidFallback: {
       quoteGuidUrl: required(environment, 'QUOTE_JOURNEY_QUOTE_GUID_URL'),
       agentId: required(environment, 'QUOTE_JOURNEY_AGENT_ID'),
@@ -713,6 +719,32 @@ function parseQuotePageTimeout(value: string | undefined): number | undefined {
   } catch (error) {
     throw new Error(`QUOTE_PAGE_TIMEOUT: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
+}
+
+/**
+ * @returns The `SCREENSHOT_SCALE` setting (see {@link parseScreenshotScale}): 1.0 (100%) when not set.
+ * @throws When it is not a decimal number from 0.5 to 4.
+ */
+function readScreenshotScale(environment: Record<string, string | undefined>): number {
+  return parseScreenshotScale(optional(environment, 'SCREENSHOT_SCALE'));
+}
+
+/**
+ * @returns The comparison's settings: the image scale (see {@link readScreenshotScale}) and the region crop names from
+ * `COMPARE_BEFORE_NAME` and `COMPARE_AFTER_NAME` (default `before` and `after`).
+ * @throws When the scale is invalid, or the names are not letters, digits and hyphens or are the same, before anything
+ * is captured.
+ */
+function readComparisonSettings(
+  environment: Record<string, string | undefined>
+): Required<Pick<CompareOptions, 'imageScale' | 'imageNames'>> {
+  return {
+    imageScale: readScreenshotScale(environment),
+    imageNames: checkImageNames({
+      before: optional(environment, 'COMPARE_BEFORE_NAME')?.trim() ?? defaultImageNames.before,
+      after: optional(environment, 'COMPARE_AFTER_NAME')?.trim() ?? defaultImageNames.after
+    })
+  };
 }
 
 function isProgrammingError(error: unknown): error is Error {

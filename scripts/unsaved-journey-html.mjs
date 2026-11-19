@@ -82,6 +82,52 @@ export const tcasReplacementHtml = nhiPagesHtml(summaryPageHtml, {
   'return-to-quote': timelineHtml + monthlyQuotePageHtml
 });
 
+/** The cover type question's options, as the Cover details image radio list captions them. */
+export const coverTypeOptions = ['Buildings & Contents', 'Buildings only', 'Contents only'];
+
+/**
+ * Builds an NHI quote page with the journey timeline, whose Cover details entry opens that section with the cover type
+ * image radio list (see {@link questionField}) showing `selected` ticked. Its Return to quote shows the quote again, with
+ * the cover type then ticked in `p#cover-type`; opening Cover details again shows the section as it was left.
+ * @param {string} selected Cover type ticked at first.
+ * @param {object} [options]
+ * @param {boolean} [options.callsApi] Whether the page calls the site's API as NHI's does: `GET /api/quote-summary/<last
+ * path segment>` when it loads, and `POST /api/save-details` with `{ "coverType": <ticked option> }` on Return to quote,
+ * showing the quote once that responds (default false).
+ * @returns {string} Page HTML.
+ */
+export function coverTypeQuotePageHtml(selected, { callsApi = false } = {}) {
+  const images = questionField
+    .images(coverTypeOptions)
+    .replace(`<label><input name="${selected}"`, `<label class="hp-checked"><input name="${selected}"`);
+  const coverDetails = `${timelineHtml}<h1>Cover details</h1><div class="av-field-section">${images}</div><button
+    type="button" class="btn btn-primary hp-submit-form">Return to quote</button>`;
+  return `${timelineHtml}${quotePageHtml}<script>
+    ${questionScript}
+    const callsApi = ${JSON.stringify(callsApi)};
+    let coverDetails = ${JSON.stringify(coverDetails)};
+    if (callsApi) fetch('/api/quote-summary/' + location.pathname.split('/').pop());
+    document.addEventListener('click', async (event) => {
+      if (event.target.closest('#timeline-cover') !== null) {
+        setTimeout(() => { document.body.innerHTML = coverDetails; }, 100);
+      } else if (event.target.closest('.hp-submit-form') !== null) {
+        const chosen = document.querySelector('label.hp-checked')?.textContent.trim() ?? 'none';
+        coverDetails = document.body.innerHTML;
+        if (callsApi) {
+          await fetch('/api/save-details', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ coverType: chosen })
+          });
+        }
+        setTimeout(() => {
+          document.body.innerHTML = ${JSON.stringify(timelineHtml + quotePageHtml)} + '<p id="cover-type">' + chosen + '</p>';
+        }, 100);
+      }
+    });
+  </script>`;
+}
+
 /**
  * Builds the Property circumstances rebuilding cost question (markup trimmed from the live page): the cost field is
  * only shown once "Choose another amount" is selected. Needs {@link otherAmountScript} on the page.

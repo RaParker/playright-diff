@@ -441,6 +441,15 @@ export async function errorSummaryError(page: Page, message: string, cause?: unk
   return onValidationPage ? new ValidationError(message, { cause }) : new Error(message, { cause });
 }
 
+/**
+ * Builds a pattern matching an element's whole text, for locator `hasText` filters.
+ * @param text Text to match exactly, apart from surrounding whitespace.
+ * @returns The pattern.
+ */
+export function exactText(text: string): RegExp {
+  return new RegExp(`^\\s*${escapeRegExp(text)}\\s*$`);
+}
+
 async function showSection(page: Page, section: string, label: string): Promise<void> {
   const heading = page.locator('h1').filter({ hasText: new RegExp(`^\\s*${section}\\s*$`) });
   if (!(await heading.isVisible())) {
@@ -715,10 +724,6 @@ function monthName(date: Date): string {
 
 function dropdownToggle(name: string): string {
   return `div.dropdown[name="${name}"] > button.dropdown-toggle`;
-}
-
-function exactText(text: string): RegExp {
-  return new RegExp(`^\\s*${escapeRegExp(text)}\\s*$`);
 }
 
 function escapeRegExp(text: string): string {

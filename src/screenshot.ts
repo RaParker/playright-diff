@@ -4,6 +4,7 @@ import { chromium, errors, type Page } from 'playwright';
 import { recordApiResponses, type ApiResponseRecorder } from './api-responses.js';
 import { color } from './color.js';
 import { outputPath } from './output-paths.js';
+import { checkScreenshotScale, defaultScreenshotScale } from './screenshot-scale.js';
 
 export interface ScreenshotOptions {
   output?: string;
@@ -11,6 +12,11 @@ export interface ScreenshotOptions {
   height?: number;
   wait?: number;
   timeout?: number;
+  /**
+   * Device pixels per CSS pixel (default 1.0, i.e. 100%; the CLI reads it from `SCREENSHOT_SCALE`). The layout is the same at
+   * every scale, but the image is this many times wider and taller, so text is sharper.
+   */
+  scale?: number;
   beforeCapture?: (page: Page) => Promise<void>;
   /**
    * CSS selectors of elements painted over in the saved screenshot and the declined screenshot (not in failure
@@ -168,12 +174,12 @@ export function stoppedScreenshotPath(output: string, stop: CaptureStop): string
 }
 
 export async function screenshot(urlArgument: string, options: ScreenshotOptions = {}): Promise<void> {
-  const { url, width, height, wait, timeout, output, extension } = validateOptions(urlArgument, options);
+  const { url, width, height, scale, wait, timeout, output, extension } = validateOptions(urlArgument, options);
   const browser = await chromium.launch();
   let page: Page | undefined;
   let apiResponses: ApiResponseRecorder | undefined;
   try {
-    page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+    page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
     if (options.apiResponsesFolder !== undefined) {
       apiResponses = await recordApiResponses(page, url.origin, options.apiResponsesFolder);
     }
@@ -414,6 +420,7 @@ function validateOptions(urlArgument: string, options: ScreenshotOptions) {
 
   const width = integer(options.width ?? 1440, 'width', 1);
   const height = integer(options.height ?? 900, 'height', 1);
+  const scale = checkScreenshotScale(options.scale ?? defaultScreenshotScale, 'scale');
   const wait = integer(options.wait ?? 1000, 'wait', 0);
   const timeout = integer(options.timeout ?? 30000, 'timeout', 1);
   const output = options.output === undefined ? outputPath('screenshots', 'screenshot.png') : resolve(options.output);
@@ -422,7 +429,7 @@ function validateOptions(urlArgument: string, options: ScreenshotOptions) {
     throw new Error('Output must have a .png, .jpg, or .jpeg extension.');
   }
 
-  return { url, width, height, wait, timeout, output, extension };
+  return { url, width, height, scale, wait, timeout, output, extension };
 }
 
 async function scrollPage(page: Page): Promise<void> {

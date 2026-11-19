@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseJson, readOptionalTextFile, replaceFile } from './fs-helpers.js';
 import { outputPath } from './output-paths.js';
+import type { CoverTypeRecheckOutcome } from './quote-changes.js';
 import { isQuoteEndpoints, type QuoteEndpoints } from './quote-endpoint.js';
 
 /** File name of the result each quote-page run writes into its `<policyDetailsId>-<historyId>` output folder. */
@@ -17,6 +18,28 @@ export type QuoteOutcome = 'compared' | 'declined' | 'failed';
 export interface EndorsementOrder {
   nhi: string[];
   tcas: string[];
+}
+
+/** Outcomes a {@link CoverTypeRecheck} can record, for checking saved results. */
+const coverTypeRecheckOutcomes: readonly CoverTypeRecheckOutcome[] = [
+  'matched',
+  'coverMatchedPossessionsDiffer',
+  'stillDiffers'
+];
+
+/**
+ * Set when NHI's quote was captured again with Buildings & Contents because its buildings only or contents only quote
+ * allowed buildings or contents cover that MRP did not (see `findCoverTypeRecheckTrigger`). The second capture replaced
+ * the first one.
+ */
+export interface CoverTypeRecheck {
+  /** NHI's cover type before the re-check: `B` (buildings only) or `C` (contents only). */
+  originalCoverType: string;
+  /**
+   * How NHI's quote compared with MRP's after the re-check (see `CoverTypeRecheckOutcome`); left out when the run failed
+   * after the re-check started, or a flow had no quote response to compare (for example NHI then declined).
+   */
+  outcome?: CoverTypeRecheckOutcome;
 }
 
 /** The saved result of one quote-page run, read back by the summarise command. */
@@ -35,6 +58,8 @@ export interface QuoteResult {
   endorsementOrder?: EndorsementOrder;
   /** Where each flow's journey ended; set when compared, except by versions before end points were recorded. */
   endpoints?: QuoteEndpoints;
+  /** Set when NHI's quote was re-checked with Buildings & Contents (see {@link CoverTypeRecheck}). */
+  coverTypeRecheck?: CoverTypeRecheck;
   /** ISO 8601 time the run started; failure pages older than this are from an earlier run. */
   startedAt: string;
   /** ISO 8601 time the run finished. */
@@ -97,7 +122,18 @@ function isQuoteResult(value: unknown): value is QuoteResult {
     'finishedAt' in value &&
     typeof value.finishedAt === 'string' &&
     (!('endorsementOrder' in value) || isEndorsementOrder(value.endorsementOrder)) &&
-    (!('endpoints' in value) || isQuoteEndpoints(value.endpoints))
+    (!('endpoints' in value) || isQuoteEndpoints(value.endpoints)) &&
+    (!('coverTypeRecheck' in value) || isCoverTypeRecheck(value.coverTypeRecheck))
+  );
+}
+
+function isCoverTypeRecheck(value: unknown): value is CoverTypeRecheck {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'originalCoverType' in value &&
+    typeof value.originalCoverType === 'string' &&
+    (!('outcome' in value) || coverTypeRecheckOutcomes.includes(value.outcome as CoverTypeRecheckOutcome))
   );
 }
 

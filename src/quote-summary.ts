@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
+import { recordAnswerChange } from './answer-changes.js';
 import { color } from './color.js';
-import { errorSummaryError, fixJourneyError } from './journey-fixes.js';
+import { errorSummaryError, exactText, fixJourneyError } from './journey-fixes.js';
 import { quoteHeadingPattern } from './quote-endpoint.js';
 import { extendWhileLoading } from './screenshot.js';
 import { readErrorSummary } from './tcas-quote.js';
@@ -37,6 +38,12 @@ const returnToQuote: QuoteStep = {
 const maxClicks = 5;
 /** Journey section {@link requote} opens from the quote page's timeline: the last one, so it needs no answers. */
 const requoteSection = 'Contact details';
+/** Journey section holding the cover type question, opened by {@link selectBuildingsAndContents}. */
+const coverDetailsSection = 'Cover details';
+/** The cover type image radio list's options, as their captions read. */
+const coverTypeOptions = { both: 'Buildings & Contents', single: ['Buildings only', 'Contents only'] };
+/** Question name the cover type change is recorded under (see {@link recordAnswerChange}). */
+const coverTypeQuestion = 'cover type';
 
 /**
  * Builds a capture step that moves a quote summary on to its quote page. The quote summary already shows a price and
@@ -66,13 +73,56 @@ export function quoteSummary(label: string): (page: Page) => Promise<void> {
 export function requote(label: string): (page: Page) => Promise<void> {
   return async (page) => {
     console.log(color.Gray(`${label}: opening ${requoteSection} to re-quote.`));
-    await page.locator(`div.av-timeline-all-sections > ul > li[title="${requoteSection}"]`).click();
-    await extendWhileLoading(page, () =>
-      page.waitForFunction((heading) => document.querySelector('h1')?.textContent?.trim() === heading, requoteSection)
-    );
-    const step = { ...returnToQuote, name: requoteSection.toLowerCase() };
-    await clickStep(page, label, step, requoteSection);
-    await followToQuote(page, label, step);
+    await openTimelineSection(page, requoteSection);
+    await returnToQuoteFrom(page, label, requoteSection);
+  };
+}
+
+/**
+ * Builds a capture step that re-quotes a quote page with the cover type Buildings & Contents: it opens
+ * {@link coverDetailsSection} from the timeline and reads the cover type image radio list's ticked option. Buildings only
+ * or Contents only is changed to Buildings & Contents and recorded as an answer change (see {@link recordAnswerChange});
+ * Buildings & Contents (or no ticked option) is left as it is and records nothing. Either way it then clicks Return to
+ * quote and follows {@link quoteSummary} to the quote, fixing any journey errors the change leads to.
+ * @param label Flow name (e.g. `NHI`) that prefixes logs and errors.
+ * @param reason Why the cover type is changed, recorded as the change's error.
+ * @returns A `beforeCapture` step for a page already showing the quote.
+ * The step throws as {@link quoteSummary} does, or when the section or the cover type question does not appear before
+ * the timeout.
+ */
+export function selectBuildingsAndContents(label: string, reason: string): (page: Page) => Promise<void> {
+  return async (page) => {
+    console.log(color.Gray(`${label}: opening ${coverDetailsSection} to re-check the cover type.`));
+    await openTimelineSection(page, coverDetailsSection);
+    const question = page
+      .locator('div.hp-float')
+      .filter({ has: page.locator('label', { hasText: exactText(coverTypeOptions.both) }) });
+    await question.first().waitFor({ state: 'visible' });
+    const ticked = await question
+      .first()
+      .locator('label.hp-checked')
+      .evaluateAll((elements) => elements.map((element) => element.textContent?.trim() ?? ''));
+    const before = ticked[0] ?? null;
+    if (before !== null && coverTypeOptions.single.includes(before)) {
+      console.log(
+        color.Gray(`${label}: selecting ${coverTypeQuestion} ${coverTypeOptions.both} on ${coverDetailsSection}.`)
+      );
+      await question
+        .first()
+        .locator('label')
+        .filter({ hasText: exactText(coverTypeOptions.both) })
+        .click();
+      recordAnswerChange(label, coverDetailsSection, {
+        question: coverTypeQuestion,
+        before,
+        after: coverTypeOptions.both,
+        error: reason
+      });
+    } else {
+      console.log(color.Gray(`${label}: ${coverTypeQuestion} is ${before ?? 'not selected'}; leaving it as it is.`));
+    }
+
+    await returnToQuoteFrom(page, label, coverDetailsSection);
   };
 }
 
@@ -111,6 +161,21 @@ async function followToQuote(page: Page, label: string, clicked: QuoteStep | und
     await clickStep(page, label, step, shownOn);
     clicked = step;
   }
+}
+
+/** Opens a journey section from the quote page's timeline and waits for its heading. */
+async function openTimelineSection(page: Page, section: string): Promise<void> {
+  await page.locator(`div.av-timeline-all-sections > ul > li[title="${section}"]`).click();
+  await extendWhileLoading(page, () =>
+    page.waitForFunction((heading) => document.querySelector('h1')?.textContent?.trim() === heading, section)
+  );
+}
+
+/** Clicks Return to quote on a journey section, then follows the pages on to the quote (see {@link followToQuote}). */
+async function returnToQuoteFrom(page: Page, label: string, section: string): Promise<void> {
+  const step = { ...returnToQuote, name: section.toLowerCase() };
+  await clickStep(page, label, step, section);
+  await followToQuote(page, label, step);
 }
 
 /**
