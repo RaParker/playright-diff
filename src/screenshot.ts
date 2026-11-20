@@ -120,6 +120,15 @@ export class UnexpectedPageError extends Error {
   }
 }
 
+/**
+ * VWO's (the site's A/B testing tool) anti-flicker styles, which hide the whole page (`body{opacity:0}`) until VWO
+ * has chosen a variant: `_vis_opt_path_hides`, and `_vis_opt_path_hides_split` for a split-URL test, which can stay
+ * until a redirect that never comes, leaving a blank screenshot.
+ */
+const pageHidingStyleSelector = 'style[id^="_vis_opt_path_hides"]';
+/** How long VWO is given to show the page itself before its hiding style is removed. */
+const pageHidingWaitMs = 3000;
+
 /** Quote loading screens may take longer than other steps, so they get this many times the step timeout. */
 const loadingTimeoutMultiplier = 2;
 /** Longest wait for each page's quote loading screen to clear. */
@@ -274,6 +283,7 @@ async function capturePage(
   await waitForQuoteLoading(page);
   await scrollPage(page);
   await page.waitForTimeout(wait);
+  await showHiddenPage(page);
   await mkdir(dirname(output), { recursive: true });
   await waitForQuoteLoading(page);
   await checkForStops(page);
@@ -297,6 +307,31 @@ async function capturePage(
   if (html !== undefined) {
     await writeFile(html.output, originalHtml ?? '');
     await writeFile(html.standardisedOutput, standardisedHtml ?? '');
+  }
+}
+
+/**
+ * Waits for VWO to remove its anti-flicker style (see {@link pageHidingStyleSelector}), and removes it if VWO has not
+ * within {@link pageHidingWaitMs}, logging which, so the screenshot shows the page rather than a blank one.
+ */
+async function showHiddenPage(page: Page): Promise<void> {
+  const hiding = page.locator(pageHidingStyleSelector);
+  try {
+    await hiding.first().waitFor({ state: 'detached', timeout: pageHidingWaitMs });
+  } catch (error) {
+    if (!(error instanceof errors.TimeoutError)) {
+      throw error;
+    }
+
+    const ids = await hiding.evaluateAll((styles) =>
+      styles.map((style) => {
+        style.remove();
+        return style.id;
+      })
+    );
+    console.log(
+      color.Yellow(`The page was still hidden by VWO (${ids.join(', ')}); removed it before the screenshot.`)
+    );
   }
 }
 
