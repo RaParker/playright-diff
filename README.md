@@ -913,14 +913,18 @@ errors stop the journey as usual.
 
 The NHI quote URL and the [replacement TCAS](#tcas-for-a-replacement-guid) URL open a quote
 summary, which can show these pages before its quote page, in either order, and either can
-be missing. Before capturing, the action clicks through whichever appears (each click is
+be missing. The assumptions page comes in two layouts, and both are handled. Before
+capturing, the action clicks through whichever appears (each click is
 logged in grey) until the welcome quote heading appears, so the screenshot shows the quote
 page:
 
-| Page                                                                        | Button clicked                                                |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Quote summary ("Welcome …, thank you for choosing Homeprotect", with price) | **Continue with quote** (`#hp-summary-continue-button`)       |
-| Assumptions ("Are you happy with these assumptions?")                       | **Yes, take me to my quote** (`#hp-assumptions-quote-button`) |
+- **Quote summary** ("Welcome …, thank you for choosing Homeprotect", with price): clicks
+  **Continue with quote** (`#hp-summary-continue-button`).
+- **Assumptions** ("Are you happy with these assumptions?"): clicks **Yes, take me to my
+  quote** (`#hp-assumptions-quote-button`).
+- **Assumptions with a checkbox** ("Before you continue"): ticks **All assumptions and answers
+  above are correct** if it is not ticked, then clicks **Continue** (in
+  `#hp-assumptions-button-group`).
 
 - A page already showing the quote is captured as it is. **No, I need to make changes** is
   never clicked.

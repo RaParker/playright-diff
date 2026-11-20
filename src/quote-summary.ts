@@ -18,12 +18,27 @@ interface QuoteStep {
   selector: string;
   /** Button text, for logs. */
   button: string;
+  /** Checkbox ticked (by clicking its label) before the button is clicked, when it is not already ticked. */
+  confirm?: { selector: string; label: string };
 }
 
-/** Pages a quote summary can show before the quote, in any order; each is clicked through when it appears. */
+/**
+ * Pages a quote summary can show before the quote, in any order; each is clicked through when it appears. The
+ * assumptions page has two layouts, both still served: one with Yes, take me to my quote, and one where the customer
+ * ticks that the assumptions are correct and clicks Continue.
+ */
 const quoteSteps: QuoteStep[] = [
   { name: 'quote summary', selector: 'button#hp-summary-continue-button', button: 'Continue with quote' },
-  { name: 'assumptions', selector: 'button#hp-assumptions-quote-button', button: 'Yes, take me to my quote' }
+  { name: 'assumptions', selector: 'button#hp-assumptions-quote-button', button: 'Yes, take me to my quote' },
+  {
+    name: 'assumptions',
+    selector: '#hp-assumptions-button-group button.hp-submit-form',
+    button: 'Continue',
+    confirm: {
+      selector: '#hp-assumptions-button-group input[name="areAssumptionsAcknowledged"]',
+      label: 'All assumptions and answers above are correct'
+    }
+  }
 ];
 /**
  * Clicked on the section the journey returns to when it rejects test data (such as a cover start date out of range),
@@ -140,7 +155,7 @@ async function followToQuote(page: Page, label: string, clicked: QuoteStep | und
       return;
     }
 
-    let step = quoteSteps.find(({ name }) => name === outcome);
+    let step = quoteSteps.find(({ selector }) => selector === outcome);
     // Logs name a journey section as its heading reads, like the journey fix logs; errors keep the lower case name.
     let shownOn = step?.name ?? '';
     if (step === undefined) {
@@ -179,11 +194,15 @@ async function returnToQuoteFrom(page: Page, label: string, section: string): Pr
 }
 
 /**
- * Logs and clicks a step's button, first marking error summaries already shown so only a new one counts. The button is
- * matched by its text as well as its selector, since a journey section can show several submit buttons (Contact details
- * has both Get your quote and Return to quote).
+ * Logs and clicks a step's button, first ticking its confirmation checkbox if it has one, and marking error summaries
+ * already shown so only a new one counts. The button is matched by its text as well as its selector, since a journey
+ * section can show several submit buttons (Contact details has both Get your quote and Return to quote).
  */
 async function clickStep(page: Page, label: string, step: QuoteStep, shownOn: string): Promise<void> {
+  if (step.confirm !== undefined) {
+    await tickConfirmation(page, label, step.confirm);
+  }
+
   console.log(color.Gray(`${label}: clicking ${step.button} on ${shownOn}.`));
   await page.evaluate(
     ({ errorSelector, seenErrorAttribute }) =>
@@ -191,6 +210,28 @@ async function clickStep(page: Page, label: string, step: QuoteStep, shownOn: st
     { errorSelector, seenErrorAttribute }
   );
   await page.locator(step.selector).filter({ hasText: step.button }).click();
+}
+
+/**
+ * Ticks a confirmation checkbox unless it is already ticked, by clicking its label: the site styles the label as the
+ * checkbox, so the input itself may not be clickable.
+ */
+async function tickConfirmation(
+  page: Page,
+  label: string,
+  confirm: { selector: string; label: string }
+): Promise<void> {
+  const checkbox = page.locator(confirm.selector).first();
+  if (await checkbox.isChecked()) {
+    return;
+  }
+
+  console.log(color.Gray(`${label}: ticking ${confirm.label}.`));
+  const id = await checkbox.getAttribute('id');
+  await page
+    .locator(`label[for="${id ?? ''}"]`)
+    .filter({ hasText: exactText(confirm.label) })
+    .click();
 }
 
 /**
@@ -215,7 +256,7 @@ async function waitForClickResult(page: Page, label: string, clicked: QuoteStep 
  * click) an error summary not shown before the click.
  * @param page Page to watch.
  * @param clickedSelector Button just clicked, which is ignored so a page that has not moved on yet is not re-clicked.
- * @returns `'quote'`, `'error'`, or the name of the step whose button is shown.
+ * @returns `'quote'`, `'error'`, or the selector of the step whose button is shown (steps can share a name).
  */
 async function waitForPage(page: Page, clickedSelector: string | undefined): Promise<string> {
   const handle = await extendWhileLoading(page, () =>
@@ -242,7 +283,7 @@ async function waitForPage(page: Page, clickedSelector: string | undefined): Pro
           const button = document.querySelector(selector);
           return selector !== clickedSelector && button !== null && button.getClientRects().length > 0;
         });
-        return shown?.name ?? false;
+        return shown?.selector ?? false;
       },
       { clickedSelector, quoteHeadingPattern, quoteSteps, errorSelector, seenErrorAttribute }
     )

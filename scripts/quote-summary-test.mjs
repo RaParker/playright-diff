@@ -11,6 +11,7 @@ import { assertGreyLogsInOrder } from './log-assertions.mjs';
 import {
   assumptionsPageHtml,
   conditionalQuotePageHtml,
+  confirmAssumptionsPageHtml,
   coverTypeQuotePageHtml,
   estimatedQuotePageHtml,
   nhiPagesHtml,
@@ -106,6 +107,31 @@ function journeyErrorHtml({ error = 'cover start', returnTo = 'Cover details', a
   </script>`;
 }
 
+/**
+ * Builds the assumptions page layout with a checkbox (see confirmAssumptionsPageHtml), whose Continue button shows the
+ * quote once the box is ticked, or an error summary if it is not.
+ * @param {object} [options]
+ * @param {string} [options.start] Markup shown first (default the assumptions page); its own script can lead to the page.
+ * @param {boolean} [options.ticked] Whether the box starts ticked.
+ * @param {boolean} [options.continueError] Whether Continue shows an error summary even when the box is ticked.
+ * @returns {string} Page HTML.
+ */
+function confirmAssumptionsHtml({ start = confirmAssumptionsPageHtml, ticked = false, continueError = false } = {}) {
+  return `${ticked ? start.replace('type="checkbox"', 'type="checkbox" checked') : start}<script>
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('#hp-assumptions-button-group .hp-submit-form') === null) return;
+      const ticked = document.querySelector('input[name="areAssumptionsAcknowledged"]').checked;
+      setTimeout(() => {
+        if (ticked && !${continueError}) {
+          document.body.innerHTML = ${JSON.stringify(quotePageHtml)};
+        } else {
+          document.body.insertAdjacentHTML('beforeend', ${JSON.stringify(errorSummaryHtml)});
+        }
+      }, 100);
+    });
+  </script>`;
+}
+
 for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
   ['clicks through the summary and assumptions pages and captures the quote', quoteSummaryHtml, undefined],
   [
@@ -117,6 +143,36 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
     'clicks Yes, take me to my quote when the assumptions page is shown first',
     nhiPagesHtml(assumptionsPageHtml, { [assumptionsButton]: quotePageHtml }),
     undefined
+  ],
+  [
+    'ticks the assumptions box and clicks Continue when the assumptions page asks for confirmation',
+    confirmAssumptionsHtml(),
+    undefined,
+    'NHI',
+    ['NHI: ticking All assumptions and answers above are correct.', 'NHI: clicking Continue on assumptions.']
+  ],
+  [
+    'clicks Continue without unticking an assumptions box already ticked',
+    confirmAssumptionsHtml({ ticked: true }),
+    undefined,
+    'NHI',
+    ['NHI: clicking Continue on assumptions.']
+  ],
+  [
+    'clicks through the summary and the assumptions page with a checkbox',
+    confirmAssumptionsHtml({ start: nhiPagesHtml(summaryPageHtml, { [summaryButton]: confirmAssumptionsPageHtml }) }),
+    undefined,
+    'NHI',
+    [
+      'NHI: clicking Continue with quote on quote summary.',
+      'NHI: ticking All assumptions and answers above are correct.',
+      'NHI: clicking Continue on assumptions.'
+    ]
+  ],
+  [
+    'reports the error summary shown after Continue on the assumptions page with a checkbox',
+    confirmAssumptionsHtml({ continueError: true }),
+    /NHI assumptions errors: Quote unavailable/
   ],
   ['captures a page already showing the quote without clicking', quotePageHtml, undefined],
   ['captures a page showing a conditional quote', conditionalQuotePageHtml, undefined],

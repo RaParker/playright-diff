@@ -5,8 +5,11 @@ import { ValidationError } from './screenshot.js';
 
 /** Section timeline shown on every journey section. */
 const journeyTimelineSelector = 'div.av-timeline-all-sections';
-/** Yes, take me to my quote, shown on the assumptions page. */
-const assumptionsButtonSelector = 'button#hp-assumptions-quote-button';
+/**
+ * The assumptions page's buttons, in either of its layouts: Yes, take me to my quote, or the button group holding the
+ * assumptions checkbox and Continue.
+ */
+const assumptionsButtonSelector = 'button#hp-assumptions-quote-button, #hp-assumptions-button-group';
 
 /** Email address entered when the journey rejects the test data's email. */
 export const replacementEmail = 'nobody.special@nhitest.com';

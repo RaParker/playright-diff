@@ -37,6 +37,18 @@ export const assumptionsPageHtml = `<h1>Assumptions</h1><div class="hp-button-gr
   id="hp-assumptions-quote-button" type="button" class="hp-continue btn btn-primary">Yes, take me to my quote</button></div>`;
 
 /**
+ * NHI assumptions page markup in its other layout (trimmed from the live page), without behaviour: the customer ticks
+ * that the assumptions are correct, then clicks Continue. As on the live page, the label is clicked rather than the input.
+ */
+export const confirmAssumptionsPageHtml = `<h1>Before you continue</h1><div id="hp-assumptions-button-group" class="av-card">
+  <div class="form-check hp-checkbox-list"><input id="Q7c3fe1ec-9248-40a0-a037-ab43cb73d524~Ktrue"
+  name="areAssumptionsAcknowledged" type="checkbox" style="display: none"><label class="form-check-label"
+  for="Q7c3fe1ec-9248-40a0-a037-ab43cb73d524~Ktrue" tabindex="0">
+  <span class="hp-single-line-alignment">All assumptions and answers above are correct</span></label></div><div class="av-field-section"><button
+  id="Q8aed6428-16e9-4033-822a-e834fe6a8a8a" name="8aed6428-16e9-4033-822a-e834fe6a8a8a" type="button"
+  class="animated btn btn-primary hp-next-section hp-submit-form hp-validate-fields"><div>Continue</div></button></div></div>`;
+
+/**
  * Builds NHI pages that move on when their buttons are clicked.
  * @param {string} start Markup shown first.
  * @param {Record<string, string>} routes Markup shown 100 ms after clicking the button with each id.
