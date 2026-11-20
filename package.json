@@ -15,6 +15,7 @@
     "quote-pages": "tsx src/main.ts quote-pages",
     "summarise": "tsx src/main.ts summarise",
     "summarize": "tsx src/main.ts summarize",
+    "serve": "tsx src/main.ts serve",
     "migrate-output": "tsx src/main.ts migrate-output",
     "clear-output": "tsx src/main.ts clear-output",
     "test:quote-page": "npm run build && node --import ./scripts/test-setup.mjs --test \"scripts/!(smoke|quote-page|compare)-test.mjs\" && node --import ./scripts/test-setup.mjs scripts/quote-page-test.mjs",

@@ -36,6 +36,8 @@ import { migrateOutput } from './migrate-output.js';
 import { printRunSettings } from './run-settings.js';
 import { clearOutput } from './clear-output.js';
 import { summariseChangedAnswers } from './changed-answers.js';
+import { openBrowser } from './open-browser.js';
+import { startViewerServer } from './viewer-server.js';
 import {
   collectQuoteResults,
   listPoliciesToRecompare,
@@ -54,6 +56,7 @@ Actions:
   summarise         Summarise every quote-page result (alias: summarize)
   migrate-output    Move output from the old layout into one folder per policy
   clear-output      Delete the output folder (OUTPUT_DIR) and everything in it
+  serve             Open the output viewer: compare each policy's NHI and MRP screenshots
   show-config       Print the settings a quote-page run would use, and where each came from
   help              Show this help
 
@@ -138,6 +141,23 @@ Notes:
   - Replacement quote GUIDs are saved to quote-guid-mapping.json in the output folder and reused by
     later runs. A stale mapping can make every policy fail with NHI Oops: clear-output deletes it
     (see the README's Troubleshooting).`;
+
+/** Port the output viewer listens on when `--port` is not given. */
+const defaultServePort = 4173;
+
+const serveUsage = 'Usage: npm run serve -- [--port <port>] [--no-open]';
+
+const serveHelp = `${serveUsage}
+
+Starts the output viewer on http://127.0.0.1:<port>/ and opens it in the default browser. It lists
+the policies in the output folder (OUTPUT_DIR/<environment>, or OUTPUT_DIR/<run name> with
+QUOTE_JOURNEY_RUN_NAME) as summarise counts them, and shows each policy's NHI and MRP screenshots side
+by side. It only reads the output folder, and is reachable from this computer only. Ctrl+C stops it.
+
+Options:
+  --port <port>     Port to listen on, 0 for any free port (default: ${defaultServePort})
+  --no-open         Print the URL without opening a browser
+  -h, --help        Show help`;
 
 const summariseModeNames = ['differences', 'changed-answers'];
 
@@ -277,6 +297,11 @@ async function main(): Promise<void> {
 
   if (action === 'clear-output') {
     await runClearOutput(args);
+    return;
+  }
+
+  if (action === 'serve') {
+    await runServe(args, environment);
     return;
   }
 
@@ -496,6 +521,74 @@ async function runSummarise(args: string[]): Promise<void> {
     differentOnly: positionals[0] === 'differences',
     detail: values.detail === true
   });
+}
+
+/**
+ * Starts the output viewer on the output folder and keeps it running until Ctrl+C.
+ * @param args Command-line arguments after `serve`.
+ * @param environment The loaded settings, for the run's environment and name.
+ */
+async function runServe(args: string[], environment: Record<string, string | undefined>): Promise<void> {
+  const { values, positionals } = parseServeArgs(args);
+  if (values.help === true) {
+    console.log(serveHelp);
+    return;
+  }
+
+  if (positionals.length > 0) {
+    throw new Error(usageError(`serve takes no arguments (got ${positionals.join(' ')}).`, serveUsage, 'serve'));
+  }
+
+  const port = parseServePort(values.port);
+  const root = outputPath();
+  const runName = optional(environment, 'QUOTE_JOURNEY_RUN_NAME');
+  const environmentName = optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT');
+  const server = await startViewerServer({
+    root,
+    port,
+    run: {
+      ...(runName === undefined ? {} : { runName }),
+      ...(environmentName === undefined ? {} : { environment: environmentName })
+    }
+  });
+  console.log(`Viewer: ${server.url} (output: ${root}). Ctrl+C to stop.`);
+  if (values['no-open'] !== true) {
+    openBrowser(server.url);
+  }
+
+  process.once('SIGINT', () => {
+    void server.close().then(() => process.exit(0));
+  });
+}
+
+/** Parses serve's arguments, reporting a bad option (such as `--port -1`) as a usage error rather than a stack trace. */
+function parseServeArgs(args: string[]) {
+  try {
+    return parseArgs({
+      args,
+      allowPositionals: true,
+      options: { port: { type: 'string' }, 'no-open': { type: 'boolean' }, help: { type: 'boolean', short: 'h' } }
+    });
+  } catch (error) {
+    const port = args[args.indexOf('--port') + 1];
+    const problem =
+      port?.startsWith('-') === true ? '--port must be a whole number from 0 to 65535.' : describeError(error);
+    throw new Error(usageError(problem, serveUsage, 'serve'), { cause: error });
+  }
+}
+
+/** Reads `--port`: a whole number from 0 (any free port) to 65535, or {@link defaultServePort} when not given. */
+function parseServePort(value: string | undefined): number {
+  if (value === undefined) {
+    return defaultServePort;
+  }
+
+  const port = Number(value);
+  if (!/^\d+$/.test(value) || port > 65535) {
+    throw new Error(usageError('--port must be a whole number from 0 to 65535.', serveUsage, 'serve'));
+  }
+
+  return port;
 }
 
 async function runMigrateOutput(args: string[]): Promise<void> {
