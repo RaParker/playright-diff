@@ -22,8 +22,15 @@ import { screenshot, ValidationError } from './screenshot.js';
 import { parseScreenshotScale } from './screenshot-scale.js';
 import { loadEnvironment } from './environment.js';
 import { isMissing } from './fs-helpers.js';
-import { environmentFolder, mrpAndQuotePath, outputPath, setEnvironmentRoot, setOutputRoot } from './output-paths.js';
-import { checkRunEnvironment, runFolder } from './run-name.js';
+import {
+  environmentFolder,
+  mrpAndQuotePath,
+  outputPath,
+  setEnvironmentRoot,
+  setOutputFolderError,
+  setOutputRoot
+} from './output-paths.js';
+import { checkFeatureHost, checkRunEnvironment, readRunEnvironment, runFolder } from './run-name.js';
 import { intervalToMs } from './interval.js';
 import { migrateOutput } from './migrate-output.js';
 import { printRunSettings } from './run-settings.js';
@@ -113,7 +120,8 @@ Environment (.env or environment):
   OUTPUT_DIR                   Base output folder, outside this project (without it, the current
                                directory, which must then be outside the project); the -mrp.json files
                                are kept in its <environment>/mrp-and-quote subfolder
-  MRP_AND_QUOTE_PROJECT_DIR    Where mrp-and-quote's fetch runs (without it, missing MRP files are not fetched)
+  MRP_AND_QUOTE_PROJECT_DIR    Where mrp-and-quote's fetch runs (needed only when MRP files are missing; without
+                               it such a run stops with an error, unless --no-fetch)
   QUOTE_JOURNEY_ENVIRONMENT    Environment (dev, tst or stg): the output subfolder, and the fetch's
                                SOURCE_ENVIRONMENT (without it: no subfolder, and mrp-and-quote's .env decides)
   QUOTE_JOURNEY_RUN_NAME       Optional name of a separate run: its results go to OUTPUT_DIR/<run name>
@@ -234,11 +242,8 @@ async function main(): Promise<void> {
   }
 
   const environment = await loadEnvironment();
-  warnAboutRetiredSettings(environment);
-  const outputDir = optional(environment, 'OUTPUT_DIR') ?? '.';
-  const environmentName = optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT');
-  setOutputRoot(runFolder(outputDir, environmentName, optional(environment, 'QUOTE_JOURNEY_RUN_NAME')));
-  setEnvironmentRoot(environmentFolder(outputDir, environmentName));
+  checkRetiredSettings(environment);
+  await resolveOutputFolders(environment);
 
   if (action === 'screenshot') {
     await runScreenshot(args);
@@ -774,6 +779,7 @@ function parseConcurrency(value: string | undefined): number {
 }
 
 function quotePageOptions(environment: Record<string, string | undefined>, useOcr: boolean): QuotePageOptions {
+  checkFeatureHost(optional(environment, 'QUOTE_JOURNEY_HOST'), optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT'));
   const { imageScale, imageNames } = readComparisonSettings(environment);
   return {
     mrpAndQuoteOutputDir: mrpAndQuotePath(),
@@ -808,16 +814,41 @@ async function checkNamedRun(environment: Record<string, string | undefined>, re
 }
 
 /**
- * Warns about settings this tool no longer reads, so an old `.env` does not silently send output or MRP files
- * elsewhere: `DIFF_OUTPUT_DIR` is now `OUTPUT_DIR`, and the MRP files moved from `MRP_AND_QUOTE_OUTPUT_DIR` into the
- * output folder.
+ * Sets the output folder (`OUTPUT_DIR/<run name or environment>`) and the environment's folder that holds the MRP files.
+ * A named run's MRP files are those of the environment its run file records, even when `.env` has since moved to
+ * another, so its summary checks the right ones. When the settings are not valid (such as a bad run name), the error is
+ * kept until a command uses the output folder, so commands that do not (screenshot with `-o`, show-config) still run.
+ * @param environment The loaded settings.
  */
-function warnAboutRetiredSettings(environment: Record<string, string | undefined>): void {
-  // Only the names are checked: reading a .env value expands its ${NAME} references, which can throw, and a setting
-  // nothing reads any more must not stop every command.
+async function resolveOutputFolders(environment: Record<string, string | undefined>): Promise<void> {
+  const outputDir = optional(environment, 'OUTPUT_DIR') ?? '.';
+  const environmentName = optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT');
+  const runName = optional(environment, 'QUOTE_JOURNEY_RUN_NAME');
+  try {
+    const folder = runFolder(outputDir, environmentName, runName);
+    const recorded = runName === undefined ? undefined : await readRunEnvironment(folder);
+    setOutputRoot(folder);
+    setEnvironmentRoot(environmentFolder(outputDir, recorded ?? environmentName));
+  } catch (error) {
+    setOutputFolderError(error);
+  }
+}
+
+/**
+ * Checks for settings this tool no longer reads, so an old `.env` does not silently send output or MRP files
+ * elsewhere. `DIFF_OUTPUT_DIR` (now `OUTPUT_DIR`) stops every command: without `OUTPUT_DIR` in `.env`, an `OUTPUT_DIR`
+ * left in the shell for mrp-and-quote would be used, and clear-output would delete mrp-and-quote's folder. The MRP
+ * files' move from `MRP_AND_QUOTE_OUTPUT_DIR` into the output folder only warns, as nothing is written there.
+ * @throws When `DIFF_OUTPUT_DIR` is still set.
+ */
+function checkRetiredSettings(environment: Record<string, string | undefined>): void {
+  // Only the names are checked: reading a .env value expands its ${NAME} references, which can throw.
   const names = new Set(Object.keys(environment));
   if (names.has('DIFF_OUTPUT_DIR')) {
-    console.log(color.Yellow('DIFF_OUTPUT_DIR is no longer read: rename it to OUTPUT_DIR in .env.'));
+    throw new Error(
+      'DIFF_OUTPUT_DIR was renamed OUTPUT_DIR: rename it in .env (and unset any DIFF_OUTPUT_DIR in the shell). ' +
+        'Nothing was run, as an OUTPUT_DIR left in the shell for mrp-and-quote would otherwise be used.'
+    );
   }
 
   if (names.has('MRP_AND_QUOTE_OUTPUT_DIR')) {

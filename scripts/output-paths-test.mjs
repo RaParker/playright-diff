@@ -8,7 +8,9 @@ import {
   environmentFolder,
   outputPath,
   outputPathOutside,
+  mrpAndQuotePath,
   projectRoot,
+  setOutputFolderError,
   setOutputRoot
 } from '../dist/output-paths.js';
 import { writeQuoteResult } from '../dist/quote-result.js';
@@ -73,6 +75,21 @@ describe('outputPath', () => {
     assert.equal(outputPath(), resolve(root));
     const saved = await readFile(join(root, `${result.policyDetailsId}-1`, 'result.json'), 'utf8');
     assert.deepEqual(JSON.parse(saved), result);
+  });
+});
+
+describe('setOutputFolderError', () => {
+  afterEach(() => setOutputRoot(undefined));
+
+  test('throws the recorded error only when an output folder is used, until a folder is set', () => {
+    // arrange
+    setOutputFolderError(new Error('bad run name'));
+
+    // act and assert
+    assert.throws(() => outputPath('ID-1'), /bad run name/);
+    assert.throws(() => mrpAndQuotePath(), /bad run name/);
+    setOutputRoot('D:/temp/diff-output');
+    assert.equal(outputPath('ID-1'), resolve('D:/temp/diff-output/ID-1'));
   });
 });
 

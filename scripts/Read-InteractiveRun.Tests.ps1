@@ -129,6 +129,41 @@ Describe 'Read-InteractiveRun' {
         $commands | Should -Be $Expected
     }
 
+    It 'finds a named run''s run.json under a relative OUTPUT_DIR, resolved beside .env' {
+        # arrange
+        $projectFolder = Join-Path $TestDrive ([guid]::NewGuid())
+        New-Item -ItemType Directory (Join-Path $projectFolder 'out' 'temp2') | Out-Null
+        Set-Content -LiteralPath (Join-Path $projectFolder 'out' 'temp2' 'run.json') -Value '{ "environment": "tst" }'
+        $dotEnvPath = Join-Path $projectFolder '.env'
+        Set-Content -LiteralPath $dotEnvPath -Value @('QUOTE_JOURNEY_ENVIRONMENT=dev', 'OUTPUT_DIR=./out')
+
+        # act (from another folder: task, run name, environment (default), continue, options)
+        Push-Location $TestDrive
+        try {
+            $commands = Invoke-ReadInteractiveRun @('Retry failed', 'temp2', '', '', '', '', '') $dotEnvPath
+        }
+        finally {
+            Pop-Location
+        }
+
+        # assert
+        $commands[0] | Should -Be './Run-Project.ps1 -RetryFailed -Environment tst -RunName temp2'
+    }
+
+    It 'ignores a recorded environment that -Environment does not take' {
+        # arrange
+        $outputDir = Join-Path $TestDrive ([guid]::NewGuid())
+        New-Item -ItemType Directory (Join-Path $outputDir 'temp2') | Out-Null
+        Set-Content -LiteralPath (Join-Path $outputDir 'temp2' 'run.json') -Value '{ "environment": "uat" }'
+        Set-Content -LiteralPath $script:dotEnvPath -Value @('QUOTE_JOURNEY_ENVIRONMENT=dev', "OUTPUT_DIR=`"$outputDir`"")
+
+        # act (task, run name, environment (default), continue, options)
+        $commands = Invoke-ReadInteractiveRun @('Retry failed', 'temp2', '', '', '', '', '')
+
+        # assert
+        $commands[0] | Should -Be './Run-Project.ps1 -RetryFailed -Environment dev -RunName temp2'
+    }
+
     It 'defaults a named run to the environment its run.json records, and refuses another' {
         # arrange
         $outputDir = Join-Path $TestDrive ([guid]::NewGuid())

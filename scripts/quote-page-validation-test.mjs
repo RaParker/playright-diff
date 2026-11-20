@@ -198,6 +198,19 @@ for (const [name, template, expected, setting = 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_UR
   });
 }
 
+test('quote-page refuses a feature host on stg, as feature builds only reach dev and tst', async () => {
+  // arrange
+  const { directory, env } = await fixture();
+  Object.assign(env, { QUOTE_JOURNEY_HOST: 'quotes-feature-stg.homeprotect.co.uk', QUOTE_JOURNEY_ENVIRONMENT: 'stg' });
+
+  // act
+  const result = await run(directory, env);
+
+  // assert
+  assert.notEqual(result.code, 0);
+  assert.match(result.output, /feature builds only reach dev and tst, not stg/);
+});
+
 test('quote-page help works without configuration', async () => {
   // arrange
   const { directory, env } = await fixture();

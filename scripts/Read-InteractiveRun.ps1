@@ -238,6 +238,11 @@ function Get-RecordedRunEnvironment([string]$dotEnvPath, [string]$runName) {
         return $null
     }
 
+    # A relative OUTPUT_DIR is the project's, as the npm commands run from the project folder (beside .env)
+    if (![System.IO.Path]::IsPathRooted($outputDir)) {
+        $outputDir = Join-Path (Split-Path $dotEnvPath -Parent) $outputDir
+    }
+
     $runInfoPath = Join-Path $outputDir $runName 'run.json'
     if (!(Test-Path -LiteralPath $runInfoPath -PathType Leaf)) {
         return $null
@@ -245,7 +250,13 @@ function Get-RecordedRunEnvironment([string]$dotEnvPath, [string]$runName) {
 
     try {
         $runInfo = Get-Content -LiteralPath $runInfoPath -Raw | ConvertFrom-Json
-        return $runInfo.PSObject.Properties['environment']?.Value
+        $recorded = $runInfo.PSObject.Properties['environment']?.Value
+        # An environment -Environment does not take cannot be offered, so it is left to the npm check
+        if ($recorded -in $interactiveEnvironments) {
+            return $recorded
+        }
+
+        return $null
     }
     catch {
         return $null

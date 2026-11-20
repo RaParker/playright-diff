@@ -39,6 +39,10 @@ function Get-RunNameProblem([string]$Name) {
         return 'is longer than 255 bytes'
     }
 
+    if ($Name.ToLowerInvariant() -eq 'mrp-and-quote') {
+        return "is the MRP files' folder name (mrp-and-quote)"
+    }
+
     if ($Name.ToLowerInvariant() -in @('dev', 'stg', 'tst')) {
         return "is an environment name; leave the run name out to use that environment's folder"
     }

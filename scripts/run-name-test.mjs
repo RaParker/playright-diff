@@ -3,7 +3,13 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, test } from 'node:test';
-import { checkRunEnvironment, runFolder, validateRunName } from '../dist/run-name.js';
+import {
+  checkFeatureHost,
+  checkRunEnvironment,
+  readRunEnvironment,
+  runFolder,
+  validateRunName
+} from '../dist/run-name.js';
 
 describe('validateRunName', () => {
   for (const name of ['temp2', 'my run', 'Run_2026-11-20', 'a.b', 'Ünïcödé', 'con2', 'devs', `${'a'.repeat(255)}`]) {
@@ -39,6 +45,11 @@ describe('validateRunName', () => {
       `the environment name ${environment}`,
       environment,
       /is an environment name/
+    ]),
+    ...['mrp-and-quote', 'MRP-and-Quote'].map((folder) => [
+      `the MRP folder name ${folder}`,
+      folder,
+      /is the MRP files' folder name/
     ])
   ]) {
     test(`rejects ${name}`, () => {
@@ -134,5 +145,46 @@ describe('checkRunEnvironment', () => {
 
     // assert
     await assert.doesNotReject(checking);
+  });
+});
+
+describe('readRunEnvironment', () => {
+  test('reads the environment a run file records, or nothing without one', async (context) => {
+    // arrange
+    const folder = await mkdtemp(join(tmpdir(), 'run-name-read-'));
+    context.after(() => rm(folder, { recursive: true, force: true }));
+    const before = await readRunEnvironment(folder);
+    await writeFile(join(folder, 'run.json'), JSON.stringify({ environment: 'tst' }));
+
+    // act
+    const after = await readRunEnvironment(folder);
+
+    // assert
+    assert.equal(before, undefined);
+    assert.equal(after, 'tst');
+  });
+});
+
+describe('checkFeatureHost', () => {
+  for (const [name, host, environment] of [
+    ['a feature host on dev', 'quotes-feature-dev.homeprotect.co.uk', 'dev'],
+    ['a feature host on tst', 'quotes-feature-tst.homeprotect.co.uk', 'TST'],
+    ['a main host on stg', 'quotes-stg.homeprotect.co.uk', 'stg'],
+    ['no host', undefined, 'stg'],
+    ['no environment', 'quotes-feature-stg.homeprotect.co.uk', undefined],
+    ['a host with "feature" inside a word', 'quotes-features.example', 'stg']
+  ]) {
+    test(`accepts ${name}`, () => {
+      // act and assert
+      assert.doesNotThrow(() => checkFeatureHost(host, environment));
+    });
+  }
+
+  test('refuses a feature host on stg, as feature builds only reach dev and tst', () => {
+    // act and assert
+    assert.throws(
+      () => checkFeatureHost('quotes-feature-stg.homeprotect.co.uk', 'stg'),
+      /feature builds only reach dev and tst, not stg/
+    );
   });
 });

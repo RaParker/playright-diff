@@ -155,6 +155,12 @@ if (![int]::TryParse($HistoryId, [ref]$historyIdValue) -or $historyIdValue -lt 0
     exit 1
 }
 
+# As in the npm commands: without OUTPUT_DIR in .env, an OUTPUT_DIR left in the shell for mrp-and-quote would be used
+if ([Environment]::GetEnvironmentVariable('DIFF_OUTPUT_DIR') -or (Get-EnvFileValue $EnvFile 'DIFF_OUTPUT_DIR')) {
+    Write-Host 'DIFF_OUTPUT_DIR was renamed OUTPUT_DIR: rename it in .env (and unset any DIFF_OUTPUT_DIR in the shell).' -ForegroundColor Red
+    exit 1
+}
+
 try {
     $outputFolder = Get-OutputFolder $EnvFile
 }

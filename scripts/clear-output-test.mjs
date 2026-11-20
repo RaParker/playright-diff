@@ -296,7 +296,25 @@ describe('clear-output command', () => {
     assert.equal(await exists(join(project, 'src')), true);
   });
 
-  test('warns about DIFF_OUTPUT_DIR and MRP_AND_QUOTE_OUTPUT_DIR, which are no longer read', async () => {
+  test('stops while DIFF_OUTPUT_DIR is set, so a shell OUTPUT_DIR meant for mrp-and-quote is never cleared', async () => {
+    // arrange: the shell's OUTPUT_DIR is mrp-and-quote's, and .env (absent here) has no OUTPUT_DIR of its own
+    const mrpOutput = join(cwd, 'mrp-and-quote-output');
+    await mkdir(join(mrpOutput, 'a'), { recursive: true });
+
+    // act
+    const { code, output } = await run(cwd, {
+      OUTPUT_DIR: mrpOutput,
+      QUOTE_JOURNEY_ENVIRONMENT: '',
+      DIFF_OUTPUT_DIR: join(cwd, 'old-output')
+    });
+
+    // assert
+    assert.equal(code, 1, output);
+    assert.match(output, /DIFF_OUTPUT_DIR was renamed OUTPUT_DIR: rename it in \.env/);
+    assert.equal(await exists(join(mrpOutput, 'a')), true);
+  });
+
+  test('warns about MRP_AND_QUOTE_OUTPUT_DIR, which is no longer read', async () => {
     // arrange
     const outputDir = join(cwd, 'output');
     await mkdir(join(outputDir, 'a'), { recursive: true });
@@ -304,18 +322,12 @@ describe('clear-output command', () => {
     // act
     const { code, output } = await run(
       cwd,
-      {
-        OUTPUT_DIR: outputDir,
-        QUOTE_JOURNEY_ENVIRONMENT: '',
-        DIFF_OUTPUT_DIR: join(cwd, 'old-output'),
-        MRP_AND_QUOTE_OUTPUT_DIR: join(cwd, 'old-mrp')
-      },
+      { OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: '', MRP_AND_QUOTE_OUTPUT_DIR: join(cwd, 'old-mrp') },
       ['--dry-run']
     );
 
     // assert
     assert.equal(code, 0, output);
-    assert.match(output, /DIFF_OUTPUT_DIR is no longer read: rename it to OUTPUT_DIR in \.env\./);
     assert.match(
       output,
       /MRP_AND_QUOTE_OUTPUT_DIR is no longer read: .+OUTPUT_DIR\/<QUOTE_JOURNEY_ENVIRONMENT>\/mrp-and-quote/

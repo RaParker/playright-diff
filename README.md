@@ -86,7 +86,9 @@ reference.
 to the environment, so the host line decides whether runs use feature builds:
 
 - **Main builds** (committed): `QUOTE_JOURNEY_HOST=quotes-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk`
-- **Feature builds** (dev and tst only): `QUOTE_JOURNEY_HOST=quotes-feature-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk`
+- **Feature builds** (dev and tst only): `QUOTE_JOURNEY_HOST=quotes-feature-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk`.
+  A feature host with any other environment (such as stg) is refused, by the wrapper and by
+  `quote-page` and `quote-pages`, as feature builds are only deployed to dev and tst.
 
 The wrapper stops with an error when the host line does not refer to `${QUOTE_JOURNEY_ENVIRONMENT}`.
 `.env` is only written when the environment changes, so the setting stays for `npm run` commands
@@ -108,9 +110,12 @@ Each environment keeps its own files, so switching never mixes them up:
   `-Summarise`, `-RetryFailed` and `-ClearOutput -RunName <name>` (which keeps the MRP files).
   The name must be a valid folder name on both Windows and Linux (no `< > : " / \ | ? *` or
   control characters, not ending with a space or dot, not a reserved Windows name such as `CON`
-  or `NUL`, at most 255 bytes) and not `dev`, `tst` or `stg`. The run's `run.json` records its
-  environment, and a run against another environment is refused, as its replacement quote GUIDs
-  only exist in the first.
+  or `NUL`, at most 255 bytes), not `dev`, `tst` or `stg`, and not `mrp-and-quote` (the MRP
+  files' folder). The run's `run.json` records its environment: a run against another
+  environment is refused, as its replacement quote GUIDs only exist in the first, and
+  `-Summarise -RunName` checks that environment's MRP files whatever `.env` now says. A run name
+  that is not valid stops only the commands that use the output folder; `-ShowConfig` shows its
+  error.
 
 `-Summarise` and `-ClearOutput` use the environment already in `.env`; `-ClearOutput` also takes
 `-Environment`. Running the tool changes nothing in this project except `.env`: a command that
@@ -138,8 +143,9 @@ corrections yellow:
 
 It then prints the plain commands, such as `./Run-Project.ps1 -QuotePages -MaxCount 20 -RunName
 temp2`, and runs them in turn once you confirm `[Y]`, so you can run the same without
-`-Interactive` next time. A failed clear stops the rest; a failed run still goes on to its
-Summarise. With `-WhatIf` it only prints the commands. It needs a console to answer in, and
+`-Interactive` next time. A failed run (policies that failed) still goes on to its Summarise,
+which lists the failures; a failed clear, or a command that stops with an error (such as a host
+line that does not refer to the environment), stops the rest, showing the error. With `-WhatIf` it only prints the commands. It needs a console to answer in, and
 stops at once when input is redirected or PowerShell runs with `-NonInteractive`. The questions
 are in `scripts/Read-InteractiveRun.ps1`, tested in `scripts/Read-InteractiveRun.Tests.ps1`.
 
@@ -745,7 +751,9 @@ npm run show-config
   `Run-Project.ps1 -Environment` or `-RunName`) set it.
   Sources are grey, unset settings yellow and errors red.
 - **Folders:** after a blank line, under `Resolves to:`, the output folder and MRP folder the
-  settings resolve to, or why the output folder is refused, in red.
+  settings resolve to (a named run's MRP folder follows its recorded environment), or why they
+  cannot be resolved, in red. A run name or environment that is not valid shows its error in red
+  on its own line.
 - **Every run:** `quote-page` and `quote-pages` print the same block at the start, so each log
   records what it used.
 
@@ -784,7 +792,7 @@ environment (see [PowerShell wrapper](#powershell-wrapper)).
 | Variable                                      | Used by                           | Purpose                                                                                              |
 | --------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `OUTPUT_DIR`                                  | all commands                      | Folder outside this project; its `<env>/` subfolder holds all output, MRP files included             |
-| `MRP_AND_QUOTE_PROJECT_DIR`                   | `quote-pages`                     | Optional mrp-and-quote project folder the MRP fetch runs in (without it, nothing is fetched)         |
+| `MRP_AND_QUOTE_PROJECT_DIR`                   | `quote-pages`                     | mrp-and-quote project folder the MRP fetch runs in (needed only when MRP files are missing)          |
 | `QUOTE_PAGE_TIMEOUT`                          | both                              | Optional step timeout per capture, e.g. `45s` or `1m` (default `30s`)                                |
 | `SCREENSHOT_SCALE`                            | all captures and comparisons      | Optional screenshot scale: `1.0` is 100%, `1.5` is 150% (`0.5` to `4`; default `1.0`)                |
 | `COMPARE_BEFORE_NAME`, `COMPARE_AFTER_NAME`   | `compare`, both                   | Optional names the region crops end with, `region-N-<name>.png` (default `before` and `after`)       |
@@ -814,7 +822,9 @@ then used in its place). An output folder inside the project, and any output pat
 is inside it (`--output`, `-o`, `--root`, `-Destination`), is refused, so runs never change
 project files other than `.env`. `DIFF_OUTPUT_DIR` was renamed `OUTPUT_DIR`, and
 `MRP_AND_QUOTE_OUTPUT_DIR` is no longer read (the MRP files moved to
-`OUTPUT_DIR/<env>/mrp-and-quote`); every command warns when either is still set. `QUOTE_PAGE_TIMEOUT` is a whole number with an
+`OUTPUT_DIR/<env>/mrp-and-quote`). Every command stops with an error while `DIFF_OUTPUT_DIR` is
+still set (otherwise an `OUTPUT_DIR` left in the shell for mrp-and-quote could be used, and
+cleared), and warns while `MRP_AND_QUOTE_OUTPUT_DIR` is. `QUOTE_PAGE_TIMEOUT` is a whole number with an
 optional `s`, `m`, `h` or `d` suffix (milliseconds without one), from 1 ms to 8 hours, matching
 how `intervalToMs` in `@avantia/client-and-server-utilities` reads it (`src/interval.ts` is this
 project's own copy). It is how long each page load, click and wait for the next page may take;

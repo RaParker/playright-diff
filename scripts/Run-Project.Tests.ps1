@@ -353,6 +353,20 @@ Describe 'Run-Project.ps1 -Environment' {
         [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly "QUOTE_JOURNEY_ENVIRONMENT=dev`n"
     }
 
+    It 'refuses a feature host for stg, as feature builds only reach dev and tst' {
+        # arrange
+        Set-TestDotEnv 'dev' 'quotes-feature-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk'
+        $before = [System.IO.File]::ReadAllText($script:dotEnvPath)
+
+        # act
+        $result = Invoke-CopiedRunProject @('-QuotePages', '-Environment', 'stg', '-WhatIf')
+
+        # assert
+        $result.ExitCode | Should -Not -Be 0
+        $result.Output | Should -BeLike '*feature builds only reach dev and tst*'
+        [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly $before
+    }
+
     It 'fails without running the command when QUOTE_JOURNEY_HOST does not refer to the environment' {
         # arrange
         Set-TestDotEnv 'dev' 'quotes-dev.homeprotect.co.uk'

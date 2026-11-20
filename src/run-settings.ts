@@ -1,6 +1,7 @@
 import { color } from './color.js';
 import { settingSource } from './environment.js';
-import { mrpAndQuotePath, outputPath } from './output-paths.js';
+import { environmentFolder, mrpAndQuotePath, outputPath } from './output-paths.js';
+import { validateRunName } from './run-name.js';
 
 /** The settings a quote-page run depends on, in alphabetical order, as they are printed. */
 const shownSettings = [
@@ -15,6 +16,12 @@ const shownSettings = [
   'QUOTE_PAGE_TIMEOUT',
   'SCREENSHOT_SCALE'
 ];
+
+/** Settings whose value is checked as it is shown, so a bad one shows its error rather than stopping the command. */
+const settingChecks: Record<string, (value: string) => unknown> = {
+  QUOTE_JOURNEY_ENVIRONMENT: (value) => environmentFolder('.', value),
+  QUOTE_JOURNEY_RUN_NAME: validateRunName
+};
 
 /** Width of the name column, so the values line up. */
 const nameWidth = Math.max(...shownSettings.map((name) => name.length));
@@ -52,8 +59,9 @@ interface RunSettingLines {
 
 /**
  * Describes the settings a run uses: each setting's value and where it came from (`.env` or the environment, such as
- * the shell), then the output and MRP folders they resolve to. Nothing throws: a value that cannot be read, or an
- * output folder that is refused, is described instead, so the description can always be shown.
+ * the shell), then the output and MRP folders they resolve to. Nothing throws: a value that cannot be read or is not
+ * valid (a run name or environment), or a folder that cannot be resolved, is described instead, so the description
+ * can always be shown.
  * @param environment Settings from `loadEnvironment`, after the output folder was set from them.
  * @returns One line per setting or folder, without colour or headings.
  */
@@ -108,14 +116,21 @@ function describeSetting(environment: Record<string, string | undefined>, name: 
     return { name, text: '(not set)', state: 'unset' };
   }
 
-  return { name, text: value, state: 'value', source: settingSource(environment, name) ?? 'environment' };
+  const source = settingSource(environment, name) ?? 'environment';
+  try {
+    settingChecks[name]?.(value);
+  } catch (error) {
+    return { name, text: `${value}: ${errorMessage(error)}`, state: 'error', source };
+  }
+
+  return { name, text: value, state: 'value', source };
 }
 
 function describeFolder(name: string, resolveFolder: () => string): RunSettingLine {
   try {
     return { name, text: resolveFolder(), state: 'value' };
   } catch (error) {
-    return { name, text: `(refused: ${errorMessage(error)})`, state: 'error' };
+    return { name, text: `(cannot be resolved: ${errorMessage(error)})`, state: 'error' };
   }
 }
 

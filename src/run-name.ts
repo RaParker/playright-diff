@@ -1,10 +1,13 @@
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseJson, readOptionalTextFile, replaceFile } from './fs-helpers.js';
-import { environmentFolder } from './output-paths.js';
+import { environmentFolder, mrpAndQuoteFolderName } from './output-paths.js';
 
 /** The environments a run can target; a run name may not be one of them, so its folder is never mistaken for theirs. */
 export const environmentNames: readonly string[] = ['dev', 'stg', 'tst'];
+
+/** The environments feature builds are deployed to; staging and later environments only get main builds. */
+export const featureEnvironmentNames: readonly string[] = ['dev', 'tst'];
 
 /** File in a named run's folder recording the environment the run was made with. */
 export const runInfoFileName = 'run.json';
@@ -27,7 +30,8 @@ const maxNameBytes = 255;
  * @param name The run name, kept as given.
  * @returns The name.
  * @throws When the name is empty, `.` or `..`; contains `< > : " / \ | ? *` or a control character; ends with a space
- * or a dot (which Windows drops); is a reserved Windows device name; is over 255 UTF-8 bytes; or is an environment name.
+ * or a dot (which Windows drops); is a reserved Windows device name; is over 255 UTF-8 bytes; is an environment name;
+ * or is `mrp-and-quote`, the MRP files' folder, which a run named that would share when no environment is set.
  */
 export function validateRunName(name: string): string {
   const problem = runNameProblem(name);
@@ -71,9 +75,7 @@ export async function checkRunEnvironment(
   }
 
   const current = environment.trim().toLowerCase();
-  const path = resolve(folder, runInfoFileName);
-  const content = await readOptionalTextFile(path);
-  const recorded = content === undefined ? undefined : readRecordedEnvironment(parseJson(content, path));
+  const recorded = await readRunEnvironment(folder);
   if (recorded !== undefined && recorded !== current) {
     throw new Error(
       `Run folder ${folder} was made with ${recorded}, not ${current}: its replacement quote GUIDs only exist in ` +
@@ -83,8 +85,43 @@ export async function checkRunEnvironment(
 
   if (recorded === undefined && record) {
     await mkdir(folder, { recursive: true });
-    await replaceFile(path, `${JSON.stringify({ environment: current }, null, 2)}\n`);
+    await replaceFile(resolve(folder, runInfoFileName), `${JSON.stringify({ environment: current }, null, 2)}\n`);
   }
+}
+
+/**
+ * @param folder A named run's output folder.
+ * @returns The environment its run file records, or `undefined` when it has none yet.
+ * @throws When the run file exists but cannot be read or is not JSON.
+ */
+export async function readRunEnvironment(folder: string): Promise<string | undefined> {
+  const path = resolve(folder, runInfoFileName);
+  const content = await readOptionalTextFile(path);
+  return content === undefined ? undefined : readRecordedEnvironment(parseJson(content, path));
+}
+
+/**
+ * Checks the Quote Journey host is not a feature build's outside dev and tst, the only environments feature builds are
+ * deployed to; a `quotes-feature-${QUOTE_JOURNEY_ENVIRONMENT}` host would otherwise become quotes-feature-stg.
+ * @param host `QUOTE_JOURNEY_HOST`, expanded.
+ * @param environment `QUOTE_JOURNEY_ENVIRONMENT`.
+ * @throws When the host is a feature build's (it contains `feature` as a word) and the environment is not dev or tst.
+ */
+export function checkFeatureHost(host: string | undefined, environment: string | undefined): void {
+  const name = environment?.trim().toLowerCase();
+  if (
+    host === undefined ||
+    name === undefined ||
+    !/\bfeature\b/i.test(host) ||
+    featureEnvironmentNames.includes(name)
+  ) {
+    return;
+  }
+
+  throw new Error(
+    `QUOTE_JOURNEY_HOST ${host} is a feature build's, but feature builds only reach ` +
+      `${featureEnvironmentNames.join(' and ')}, not ${name}. Use quotes-\${QUOTE_JOURNEY_ENVIRONMENT} for ${name}.`
+  );
 }
 
 function runNameProblem(name: string): string | undefined {
@@ -110,6 +147,10 @@ function runNameProblem(name: string): string | undefined {
 
   if (Buffer.byteLength(name, 'utf8') > maxNameBytes) {
     return `is longer than ${maxNameBytes} bytes`;
+  }
+
+  if (name.toLowerCase() === mrpAndQuoteFolderName) {
+    return `is the MRP files' folder name (${mrpAndQuoteFolderName})`;
   }
 
   if (environmentNames.includes(name.toLowerCase())) {

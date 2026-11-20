@@ -17,6 +17,12 @@ let outputRoot: string | undefined;
 let environmentRoot: string | undefined;
 
 /**
+ * Why the output folders could not be resolved (such as an invalid run name), thrown only when one is used, so commands
+ * that never use them (screenshot with `-o`, `--help`, show-config) still run.
+ */
+let outputFolderError: unknown;
+
+/**
  * Sets the folder each policy's `<policyDetailsId>-<historyId>` output folder is kept in (`OUTPUT_DIR`), so a
  * run's output can live outside the project. Paths passed on the command line (such as `--output`) are not affected.
  * @param root Output folder, resolved from the current working directory; `undefined` or blank uses the current
@@ -24,6 +30,16 @@ let environmentRoot: string | undefined;
  */
 export function setOutputRoot(root: string | undefined): void {
   outputRoot = root === undefined || root.trim().length === 0 ? undefined : resolve(root);
+  outputFolderError = undefined;
+}
+
+/**
+ * Records why the output folders could not be resolved; {@link outputPath} and {@link mrpAndQuotePath} then throw it,
+ * until {@link setOutputRoot} sets a folder.
+ * @param error The error, such as an invalid `QUOTE_JOURNEY_RUN_NAME`.
+ */
+export function setOutputFolderError(error: unknown): void {
+  outputFolderError = error;
 }
 
 /**
@@ -42,6 +58,7 @@ export function setEnvironmentRoot(root: string | undefined): void {
  * @throws When the folder is this project or inside it.
  */
 export function mrpAndQuotePath(): string {
+  throwOutputFolderError();
   return environmentRoot === undefined
     ? outputPath(mrpAndQuoteFolderName)
     : assertOutsideProject(resolve(environmentRoot, mrpAndQuoteFolderName), 'OUTPUT_DIR');
@@ -61,6 +78,7 @@ export function outputPath(...segments: string[]): string {
 
 /** {@link outputPath} with the protected project folder given, for tests. */
 export function outputPathOutside(project: string, ...segments: string[]): string {
+  throwOutputFolderError();
   const root = resolve(outputRoot ?? '.');
   if (contains(project, root)) {
     throw new Error(
@@ -125,3 +143,10 @@ export function environmentFolder(base: string, environment: string | undefined)
 
 /** A quote-page output folder, `<policyDetailsId>-<historyId>`; others (such as `.ocr-cache`) are ignored. */
 export const policyFolderPattern = /^[0-9a-f]{32}-\d+$/i;
+
+/** Throws the error recorded by {@link setOutputFolderError}, if any. */
+function throwOutputFolderError(): void {
+  if (outputFolderError !== undefined) {
+    throw outputFolderError;
+  }
+}

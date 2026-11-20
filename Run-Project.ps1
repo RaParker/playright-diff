@@ -108,7 +108,8 @@ Delete the environment's output folder (OUTPUT_DIR/<environment>) and everything
 and how many entries it holds. That includes its quote-guid-mapping.json, a known cause of every policy failing with
 NHI Oops (README: Troubleshooting), so the next run requests fresh replacement quote GUIDs. Other environments' folders
 are kept. Uses the environment in .env unless -Environment is given. Refuses when OUTPUT_DIR is not set, or the
-folder is a drive root, the user profile, this project or a folder containing either.
+folder is a drive root, the user profile, this project, a folder inside the project, or a folder containing the profile
+or the project.
 
 .PARAMETER NoOcr
 Compare pixels without extracting text.
@@ -570,7 +571,13 @@ function Get-DotEnvQuoteJourneyHost([string]$text) {
         throw ".env's QUOTE_JOURNEY_HOST ($template) does not refer to `${QUOTE_JOURNEY_ENVIRONMENT}, so -Environment would not change the host. Use e.g. quotes-`${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk."
     }
 
-    return $template.Replace('${QUOTE_JOURNEY_ENVIRONMENT}', $Environment)
+    $quoteJourneyHost = $template.Replace('${QUOTE_JOURNEY_ENVIRONMENT}', $Environment)
+    # Feature builds are only deployed to dev and tst (stg and later run main), so quotes-feature-stg is not a real host
+    if ($quoteJourneyHost -match '\bfeature\b' -and $Environment -notin @('dev', 'tst')) {
+        throw ".env's QUOTE_JOURNEY_HOST ($template) gives $quoteJourneyHost, a feature build's host, but feature builds only reach dev and tst. Use quotes-`${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk for $Environment."
+    }
+
+    return $quoteJourneyHost
 }
 
 # Returns the .env text with the name=... line set to value; [^\r\n] keeps a CRLF line's \r in place
@@ -841,12 +848,22 @@ function Invoke-InteractiveRun {
     return Invoke-InteractiveSteps $steps
 }
 
-# Runs each command in turn. A failed clear stops the rest (the run would mix old and new output); a failed run still
-# goes on to the Summarise after it, which lists the failures.
+# Runs each command in turn. A failed run (policies that failed) still goes on to the Summarise after it, which lists
+# the failures. A failed clear stops the rest, as the run would mix old and new output, and so does a command that
+# throws (such as a .env host that does not refer to the environment), as the setup is wrong rather than the policies;
+# its message is shown without the stack trace.
 function Invoke-InteractiveSteps([object[]]$steps) {
     $firstFailure = 0
     foreach ($step in $steps) {
-        $exitCode = Invoke-RunProjectStep $step
+        try {
+            $exitCode = Invoke-RunProjectStep $step
+        }
+        catch {
+            Write-Host $_.Exception.Message -ForegroundColor Red
+            Write-Host 'The remaining commands were not run.' -ForegroundColor Red
+            return 1
+        }
+
         if ($exitCode -ne 0 -and $firstFailure -eq 0) {
             $firstFailure = $exitCode
         }

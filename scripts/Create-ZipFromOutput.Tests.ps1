@@ -41,18 +41,45 @@ Describe 'Create-ZipFromOutput.ps1' {
         $script:savedOutputDir = $env:OUTPUT_DIR
         $script:savedEnvironment = $env:QUOTE_JOURNEY_ENVIRONMENT
         $script:savedRunName = $env:QUOTE_JOURNEY_RUN_NAME
+        $script:savedDiffOutputDir = $env:DIFF_OUTPUT_DIR
         $script:root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
         $script:noEnvFile = Join-Path $script:root 'missing.env'
         New-Item -ItemType Directory -Path $script:root | Out-Null
         $env:OUTPUT_DIR = $script:root
         $env:QUOTE_JOURNEY_ENVIRONMENT = $null
         $env:QUOTE_JOURNEY_RUN_NAME = $null
+        $env:DIFF_OUTPUT_DIR = $null
     }
 
     AfterEach {
         $env:OUTPUT_DIR = $script:savedOutputDir
         $env:QUOTE_JOURNEY_ENVIRONMENT = $script:savedEnvironment
         $env:QUOTE_JOURNEY_RUN_NAME = $script:savedRunName
+        $env:DIFF_OUTPUT_DIR = $script:savedDiffOutputDir
+    }
+
+    It 'stops while DIFF_OUTPUT_DIR is set in <Name>, so a shell OUTPUT_DIR meant for mrp-and-quote is never used' -ForEach @(
+        @{ Name = 'the environment'; InEnvFile = $false }
+
+        @{ Name = 'the .env file'; InEnvFile = $true }
+    ) {
+        # arrange
+        New-PolicyFolder $script:root 1 | Out-Null
+        $envFile = Join-Path $script:root '.env'
+        if ($InEnvFile) {
+            Set-Content -LiteralPath $envFile -Value 'DIFF_OUTPUT_DIR=D:/old-output'
+        }
+        else {
+            $env:DIFF_OUTPUT_DIR = 'D:/old-output'
+        }
+
+        # act
+        $result = Invoke-CreateZip @{ PolicyDetailsId = $script:policyId; EnvFile = $envFile }
+
+        # assert
+        $result.ExitCode | Should -Be 1
+        $result.Output | Should -BeLike '*DIFF_OUTPUT_DIR was renamed OUTPUT_DIR*'
+        Join-Path $script:root "$script:policyId-1.zip" | Should -Not -Exist
     }
 
     It 'zips from the named run folder given by <Name>' -ForEach @(
@@ -91,6 +118,8 @@ Describe 'Create-ZipFromOutput.ps1' {
         @{ RunName = 'NUL.txt'; Message = 'is a name Windows reserves for a device' }
 
         @{ RunName = 'Tst'; Message = 'is an environment name' }
+
+        @{ RunName = 'MRP-and-quote'; Message = "is the MRP files' folder name" }
     ) {
         # act
         $result = Invoke-CreateZip @{ PolicyDetailsId = $script:policyId; RunName = $RunName; EnvFile = $script:noEnvFile }
