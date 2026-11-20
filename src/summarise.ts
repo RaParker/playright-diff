@@ -104,6 +104,12 @@ export interface ComparedPolicy {
   coverTypeRecheck?: CoverTypeRecheck;
 }
 
+/** How the summary counts one policy folder (see {@link summarisePolicyFolder}). */
+export type PolicyFolderSummary =
+  | { status: 'compared'; result: QuoteResult | undefined; policy: ComparedPolicy }
+  | { status: 'failed' | 'declined'; result: QuoteResult }
+  | { status: 'unrecorded'; result: QuoteResult | undefined };
+
 /** Everything the summarise command found in the output folder. */
 export interface QuoteResultsSummary {
   root: string;
@@ -209,24 +215,58 @@ export async function collectQuoteResults(root: string): Promise<QuoteResultsSum
   };
   const names = (await readDirectoryNames(summary.root)).filter((name) => policyFolderPattern.test(name));
   // Read in parallel (there can be over a thousand folders), then sort in folder order.
-  const folders = await Promise.all(names.map((name) => readPolicyFolder(summary.root, name)));
-  for (const { name, result, report } of folders) {
-    if (result !== undefined) {
-      summary.runStarts.set(name, result.startedAt);
+  const folders = await Promise.all(names.map((name) => summarisePolicyFolder(summary.root, name)));
+  names.forEach((name, index) => {
+    const folder = folders[index];
+    if (folder?.result !== undefined) {
+      summary.runStarts.set(name, folder.result.startedAt);
     }
 
-    if (result?.outcome === 'failed') {
-      summary.failed.push({ ...result, name });
-    } else if (result?.outcome === 'declined') {
+    if (folder?.status === 'failed') {
+      summary.failed.push({ ...folder.result, name });
+    } else if (folder?.status === 'declined') {
       summary.declined.push(name);
-    } else if (report === undefined) {
-      summary.unrecorded.push(name);
+    } else if (folder?.status === 'compared') {
+      summary.compared.push(folder.policy);
     } else {
-      summary.compared.push(summariseReport(name, report, result));
+      summary.unrecorded.push(name);
     }
-  }
+  });
 
   return summary;
+}
+
+/**
+ * Reads one policy folder and sorts it as {@link collectQuoteResults} does: failed, declined, compared (with its
+ * comparison summarised), or unrecorded (no `result.json` saying otherwise and no `report.json`).
+ * @param root Folder holding the policy folders.
+ * @param name The policy's `<policyDetailsId>-<historyId>` folder name.
+ * @returns How the summary counts the policy, with its `result.json` when there is one.
+ * @throws When its `result.json` or `report.json` cannot be read or parsed.
+ */
+export async function summarisePolicyFolder(root: string, name: string): Promise<PolicyFolderSummary> {
+  const { result, report } = await readPolicyFolder(root, name);
+  if (result?.outcome === 'failed' || result?.outcome === 'declined') {
+    return { status: result.outcome, result };
+  }
+
+  if (report === undefined) {
+    return { status: 'unrecorded', result };
+  }
+
+  return { status: 'compared', result, policy: summariseReport(name, report, result) };
+}
+
+/**
+ * Describes a Buildings & Contents re-check as the summary does, for example `Matched MRP: buildings, contents, …; was
+ * Contents only on NHI`.
+ * @param recheck The re-check recorded in the policy's `result.json`.
+ * @returns Its outcome's description and the cover type NHI had before.
+ */
+export function describeCoverTypeRecheck(recheck: CoverTypeRecheck): string {
+  const outcome =
+    recheck.outcome === undefined ? noCoverTypeRecheckOutcome : coverTypeRecheckDescriptions[recheck.outcome];
+  return `${outcome}; was ${nameCoverType(recheck.originalCoverType)} on NHI`;
 }
 
 /**
