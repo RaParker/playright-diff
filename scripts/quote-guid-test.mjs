@@ -131,6 +131,7 @@ async function fixture(base, mrpFiles = { [`${policyA}-1`]: 'orig-guid' }) {
   const env = { ...process.env };
   delete env.OUTPUT_DIR;
   delete env.QUOTE_JOURNEY_ENVIRONMENT;
+  delete env.QUOTE_JOURNEY_RUN_NAME;
   Object.assign(env, {
     // A project folder with no go.mod, so a missing MRP file is reported and its policy fails, without fetching.
     MRP_AND_QUOTE_PROJECT_DIR: directory,
@@ -510,6 +511,49 @@ describe('quote-page NHI Oops fallback', () => {
       assert.ok((await readdir(join(outputRoot, 'tst', `${policyA}-1`))).includes('report.json'));
       assert.deepEqual(await readdir(outputRoot), ['tst']);
       assert.ok(!(await readdir(directory)).includes('quote-guid-mapping.json'));
+    });
+  });
+
+  test("keeps a named run's mapping and output in its own folder, reading the environment's MRP files", async () => {
+    await withServer(quoteJourneyHandler(['orig-guid']), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base, {});
+      const outputRoot = join(directory, 'output');
+      const mrpFolder = join(outputRoot, 'tst', 'mrp-and-quote');
+      await mkdir(mrpFolder, { recursive: true });
+      await writeFile(join(mrpFolder, `${policyA}-1-mrp.json`), JSON.stringify({ artemisQuoteGuid: 'orig-guid' }));
+      Object.assign(env, { OUTPUT_DIR: outputRoot, QUOTE_JOURNEY_ENVIRONMENT: 'tst', QUOTE_JOURNEY_RUN_NAME: 'temp2' });
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.deepEqual(await readMapping(join(outputRoot, 'temp2')), { 'orig-guid': 'new-guid' });
+      assert.ok((await readdir(join(outputRoot, 'temp2', `${policyA}-1`))).includes('report.json'));
+      assert.deepEqual(JSON.parse(await readFile(join(outputRoot, 'temp2', 'run.json'), 'utf8')), {
+        environment: 'tst'
+      });
+      assert.deepEqual(await readdir(join(outputRoot, 'tst')), ['mrp-and-quote']);
+    });
+  });
+
+  test('refuses a named run made with another environment, before opening any page', async () => {
+    await withServer(quoteJourneyHandler(['orig-guid']), async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base);
+      const outputRoot = join(directory, 'output');
+      await mkdir(join(outputRoot, 'temp2'), { recursive: true });
+      await writeFile(join(outputRoot, 'temp2', 'run.json'), JSON.stringify({ environment: 'dev' }));
+      Object.assign(env, { OUTPUT_DIR: outputRoot, QUOTE_JOURNEY_ENVIRONMENT: 'tst', QUOTE_JOURNEY_RUN_NAME: 'temp2' });
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.notEqual(result.code, 0);
+      assert.match(result.output, /was made with dev, not tst/);
+      assert.doesNotMatch(result.output, /NHI: opening/);
     });
   });
 

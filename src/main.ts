@@ -22,7 +22,8 @@ import { screenshot, ValidationError } from './screenshot.js';
 import { parseScreenshotScale } from './screenshot-scale.js';
 import { loadEnvironment } from './environment.js';
 import { isMissing } from './fs-helpers.js';
-import { environmentFolder, mrpAndQuoteFolderName, outputPath, setOutputRoot } from './output-paths.js';
+import { environmentFolder, mrpAndQuotePath, outputPath, setEnvironmentRoot, setOutputRoot } from './output-paths.js';
+import { checkRunEnvironment, runFolder } from './run-name.js';
 import { intervalToMs } from './interval.js';
 import { migrateOutput } from './migrate-output.js';
 import { printRunSettings } from './run-settings.js';
@@ -115,6 +116,8 @@ Environment (.env or environment):
   MRP_AND_QUOTE_PROJECT_DIR    Where mrp-and-quote's fetch runs (without it, missing MRP files are not fetched)
   QUOTE_JOURNEY_ENVIRONMENT    Environment (dev, tst or stg): the output subfolder, and the fetch's
                                SOURCE_ENVIRONMENT (without it: no subfolder, and mrp-and-quote's .env decides)
+  QUOTE_JOURNEY_RUN_NAME       Optional name of a separate run: its results go to OUTPUT_DIR/<run name>
+                               instead of OUTPUT_DIR/<environment>, sharing the environment's MRP files
   QUOTE_JOURNEY_*, QUOTE_PAGE_TIMEOUT
                                The quote-page settings (see the README)
 
@@ -193,6 +196,8 @@ Options:
 Environment (.env or environment):
   OUTPUT_DIR             Base output folder (required; the current directory is never used instead)
   QUOTE_JOURNEY_ENVIRONMENT   Environment whose subfolder is deleted; without it, all of OUTPUT_DIR
+  QUOTE_JOURNEY_RUN_NAME      Named run whose folder (OUTPUT_DIR/<run name>) is deleted instead; the
+                              environment's MRP files are then kept
 
 Notes:
   - Nothing is deleted when the folder is a drive root, the user profile, this project, a folder
@@ -230,9 +235,10 @@ async function main(): Promise<void> {
 
   const environment = await loadEnvironment();
   warnAboutRetiredSettings(environment);
-  setOutputRoot(
-    environmentFolder(optional(environment, 'OUTPUT_DIR') ?? '.', optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT'))
-  );
+  const outputDir = optional(environment, 'OUTPUT_DIR') ?? '.';
+  const environmentName = optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT');
+  setOutputRoot(runFolder(outputDir, environmentName, optional(environment, 'QUOTE_JOURNEY_RUN_NAME')));
+  setEnvironmentRoot(environmentFolder(outputDir, environmentName));
 
   if (action === 'screenshot') {
     await runScreenshot(args);
@@ -366,6 +372,7 @@ async function runQuotePage(args: string[]): Promise<void> {
 
   const environment = await loadEnvironment();
   printRunSettings(environment);
+  await checkNamedRun(environment, true);
   await quotePage(policyDetailsId, Number(historyArgument), quotePageOptions(environment, values['no-ocr'] !== true));
 }
 
@@ -398,6 +405,7 @@ async function runQuotePages(args: string[]): Promise<void> {
 
   const environment = await loadEnvironment();
   printRunSettings(environment);
+  await checkNamedRun(environment, values['dry-run'] !== true);
   const options: QuotePagesOptions = {
     ...quotePageOptions(environment, values['no-ocr'] !== true),
     concurrency: parseConcurrency(values.concurrency)
@@ -472,7 +480,7 @@ async function runSummarise(args: string[]): Promise<void> {
   // Unlike quote-pages, the GUID list is optional: without it the GUID list totals are skipped.
   const environment = await loadEnvironment();
   const guidListPath = optional(environment, 'QUOTE_GUID_LIST_PATH');
-  const mrpAndQuoteOutputDir = outputPath(mrpAndQuoteFolderName);
+  const mrpAndQuoteOutputDir = mrpAndQuotePath();
   if (guidListPath !== undefined) {
     await noteMissingMrpFolder(mrpAndQuoteOutputDir);
   }
@@ -542,7 +550,11 @@ async function runClearOutput(args: string[]): Promise<void> {
   const outcome = await clearOutput(
     outputDir === undefined
       ? undefined
-      : environmentFolder(outputDir, optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT')),
+      : runFolder(
+          outputDir,
+          optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT'),
+          optional(environment, 'QUOTE_JOURNEY_RUN_NAME')
+        ),
     {},
     { dryRun: values['dry-run'] === true }
   );
@@ -764,7 +776,7 @@ function parseConcurrency(value: string | undefined): number {
 function quotePageOptions(environment: Record<string, string | undefined>, useOcr: boolean): QuotePageOptions {
   const { imageScale, imageNames } = readComparisonSettings(environment);
   return {
-    mrpAndQuoteOutputDir: outputPath(mrpAndQuoteFolderName),
+    mrpAndQuoteOutputDir: mrpAndQuotePath(),
     nhiQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE'),
     tcasQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE'),
     useOcr,
@@ -780,6 +792,19 @@ function quotePageOptions(environment: Record<string, string | undefined>, useOc
       tcasReplacementUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE')
     }
   };
+}
+
+/**
+ * For a named run (`QUOTE_JOURNEY_RUN_NAME`), checks its folder was not made with another environment, and records the
+ * environment on first use; nothing is checked for an environment's own folder, which only ever holds that environment.
+ * @param environment The loaded settings.
+ * @param record Whether to record the environment (not for a dry run, which writes nothing).
+ * @throws When the run was made with another environment.
+ */
+async function checkNamedRun(environment: Record<string, string | undefined>, record: boolean): Promise<void> {
+  if (optional(environment, 'QUOTE_JOURNEY_RUN_NAME') !== undefined) {
+    await checkRunEnvironment(outputPath(), optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT'), record);
+  }
 }
 
 /**

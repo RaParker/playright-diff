@@ -126,7 +126,7 @@ async function projectFixture() {
 
 async function runCli(directory, args, env = {}) {
   const childEnv = { ...process.env, ...env };
-  for (const name of ['QUOTE_GUID_LIST_PATH', 'OUTPUT_DIR', 'QUOTE_JOURNEY_ENVIRONMENT']) {
+  for (const name of ['QUOTE_GUID_LIST_PATH', 'OUTPUT_DIR', 'QUOTE_JOURNEY_ENVIRONMENT', 'QUOTE_JOURNEY_RUN_NAME']) {
     if (!(name in env)) {
       delete childEnv[name];
     }

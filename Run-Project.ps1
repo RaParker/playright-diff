@@ -129,6 +129,13 @@ example quotes-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk, or quotes-feature
 feature builds (which only reach dev and tst), so the host decides feature or not. The MRP fetch reads from the same
 environment. .env is only written when it changes.
 
+.PARAMETER RunName
+QuotePage, QuotePages, RetryFailed, RetryDifferent, Summarise, ClearOutput and ShowConfig: a separate run whose output
+goes to OUTPUT_DIR/<RunName> instead of OUTPUT_DIR/<environment>, sharing the environment's MRP files. It applies to
+this command only and is never saved to .env, so pass it to each command that should use the run (for example the
+-Summarise after a -QuotePages). The name must be a valid folder name on both Windows and Linux, and not an environment
+name. A run keeps to the environment it was first made with.
+
 .PARAMETER Task
 Development task: Install (npm install), InstallBrowser (Playwright Chromium), Build, Typecheck, Lint,
 Test (all suites), TestCompare, TestQuotePage or Verify (VerifyProject.ps1).
@@ -180,6 +187,12 @@ Test (all suites), TestCompare, TestQuotePage or Verify (VerifyProject.ps1).
 
 .EXAMPLE
 ./Run-Project.ps1 -ShowConfig -Environment tst
+
+.EXAMPLE
+./Run-Project.ps1 -QuotePages -MaxCount 20 -RunName temp2
+
+.EXAMPLE
+./Run-Project.ps1 -Summarise -RunName temp2
 
 .EXAMPLE
 ./Run-Project.ps1 -Task Verify
@@ -324,6 +337,18 @@ param(
     [Parameter(ParameterSetName = 'ShowConfig')]
     [ValidateSet('dev', 'tst', 'stg')]
     [string]$Environment = 'dev',
+
+    [Parameter(ParameterSetName = 'QuotePage')]
+    [Parameter(ParameterSetName = 'QuotePages')]
+    [Parameter(ParameterSetName = 'QuotePagesCount')]
+    [Parameter(ParameterSetName = 'QuotePagesGuid')]
+    [Parameter(ParameterSetName = 'RetryFailed')]
+    [Parameter(ParameterSetName = 'RetryDifferent')]
+    [Parameter(ParameterSetName = 'Summarise')]
+    [Parameter(ParameterSetName = 'ClearOutput')]
+    [Parameter(ParameterSetName = 'ShowConfig')]
+    [ValidateNotNullOrEmpty()]
+    [string]$RunName,
 
     [Parameter(Mandatory, ParameterSetName = 'Task')]
     [ValidateSet('Install', 'InstallBrowser', 'Build', 'Typecheck', 'Lint', 'Test', 'TestCompare', 'TestQuotePage', 'Verify')]
@@ -596,6 +621,8 @@ $overviewSections = @(
 
             @{ Depth = 1; Usage = '-Environment <dev|tst|stg>'; Description = 'Environment to run against (default: dev); saved to .env, output in OUTPUT_DIR/<env>' }
 
+            @{ Depth = 1; Usage = '-RunName <name>'; Description = 'Output to OUTPUT_DIR/<name> instead; pass it to -Summarise and -ClearOutput too' }
+
             @{ Depth = 1; Usage = '-Concurrency <n>'; Description = 'Policies run at once (default: 3)' }
 
             @{ Depth = 1; Usage = '-NoFetch'; Description = 'Only use MRP files already saved' }
@@ -783,11 +810,15 @@ if (-not $isDryRun -and -not $PSCmdlet.ShouldProcess($commandLine, 'Run')) {
 $passesEnvironment = $appliesEnvironment -or
 ($PSCmdlet.ParameterSetName -eq 'ShowConfig' -and $PSBoundParameters.ContainsKey('Environment'))
 $savedEnvironment = $env:QUOTE_JOURNEY_ENVIRONMENT
+# -RunName applies to this command only: without it, a run name left in the shell is cleared for the command
+$savedRunName = $env:QUOTE_JOURNEY_RUN_NAME
 Push-Location $PSScriptRoot
 try {
     if ($passesEnvironment) {
         $env:QUOTE_JOURNEY_ENVIRONMENT = $Environment
     }
+
+    $env:QUOTE_JOURNEY_RUN_NAME = $RunName
 
     Write-Host $commandLine -ForegroundColor DarkGray
     $global:LASTEXITCODE = 0
@@ -796,6 +827,7 @@ try {
 }
 finally {
     $env:QUOTE_JOURNEY_ENVIRONMENT = $savedEnvironment
+    $env:QUOTE_JOURNEY_RUN_NAME = $savedRunName
     Pop-Location
 }
 

@@ -23,6 +23,11 @@ The history ID, a non-negative whole number. Defaults to 1.
 .PARAMETER Destination
 The folder to write the zip to. Defaults to the output folder, and is created if it doesn't exist.
 
+.PARAMETER RunName
+A named run to zip from: its folder OUTPUT_DIR/<RunName> is used instead of the environment's subfolder. Without it,
+QUOTE_JOURNEY_RUN_NAME is used when set (from the environment, otherwise .env). The name must be a valid folder name on
+both Windows and Linux, and not an environment name, as the npm commands require.
+
 .PARAMETER Force
 Replace an existing zip without asking.
 
@@ -54,6 +59,9 @@ param(
     [string]$Destination,
 
     [Parameter(ParameterSetName = "Zip")]
+    [string]$RunName,
+
+    [Parameter(ParameterSetName = "Zip")]
     [switch]$Force,
 
     [Parameter(ParameterSetName = "Zip")]
@@ -69,13 +77,64 @@ function Get-OutputFolder([string]$Path) {
         $baseFolder = (Get-Location).Path
     }
 
-    # Output is kept per environment (OUTPUT_DIR/<environment>), as the npm commands write it
+    # A named run keeps its output in OUTPUT_DIR/<run name>, as the npm commands write it
+    $name = if ($RunName) {
+        $RunName
+    }
+    else {
+        Get-Setting $Path "QUOTE_JOURNEY_RUN_NAME"
+    }
+
+    if ($name) {
+        $problem = Get-RunNameProblem $name
+        if ($problem) {
+            throw "Run name `"$name`" $problem."
+        }
+
+        return Join-Path $baseFolder $name
+    }
+
+    # Otherwise output is kept per environment (OUTPUT_DIR/<environment>), as the npm commands write it
     $environment = Get-Setting $Path "QUOTE_JOURNEY_ENVIRONMENT"
     if (!$environment) {
         return $baseFolder
     }
 
     return Join-Path $baseFolder $environment.Trim().ToLowerInvariant()
+}
+
+# Says why a run name cannot be a folder name on both Windows and Linux, or returns nothing when it can; the same rules
+# as validateRunName in src/run-name.ts
+function Get-RunNameProblem([string]$Name) {
+    if ($Name -in @('.', '..')) {
+        return 'is not a folder name'
+    }
+
+    if ($Name -match '[<>:"/\\|?*]') {
+        return 'contains a character Windows or Linux does not allow in a folder name (< > : " / \ | ? *)'
+    }
+
+    if ($Name.ToCharArray() | Where-Object { [int]$_ -lt 0x20 }) {
+        return 'contains a control character'
+    }
+
+    if ($Name.EndsWith(' ') -or $Name.EndsWith('.')) {
+        return 'ends with a space or a dot, which Windows drops from folder names'
+    }
+
+    if ($Name -match '^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$') {
+        return 'is a name Windows reserves for a device (CON, PRN, AUX, NUL, COM1-9, LPT1-9)'
+    }
+
+    if ([System.Text.Encoding]::UTF8.GetByteCount($Name) -gt 255) {
+        return 'is longer than 255 bytes'
+    }
+
+    if ($Name.ToLowerInvariant() -in @('dev', 'stg', 'tst')) {
+        return "is an environment name; leave the run name out to use that environment's folder"
+    }
+
+    return $null
 }
 
 # Whether the path is this project or inside it, ignoring case as Windows does; output is never written there
@@ -138,7 +197,14 @@ if (![int]::TryParse($HistoryId, [ref]$historyIdValue) -or $historyIdValue -lt 0
     exit 1
 }
 
-$outputFolder = Get-OutputFolder $EnvFile
+try {
+    $outputFolder = Get-OutputFolder $EnvFile
+}
+catch {
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    exit 1
+}
+
 if (Test-InsideProject $outputFolder) {
     Write-Host "The output folder '$outputFolder' is inside this project ($PSScriptRoot). Set OUTPUT_DIR in .env to a folder outside it." -ForegroundColor Red
     exit 1

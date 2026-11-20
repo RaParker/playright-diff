@@ -235,6 +235,26 @@ describe('clear-output command', () => {
     assert.equal(await exists(join(outputDir, 'tst', 'b')), true);
   });
 
+  test("deletes only a named run's folder, keeping the environment's folder and its MRP files", async () => {
+    // arrange
+    const outputDir = join(cwd, 'output');
+    await mkdir(join(outputDir, 'temp2', 'a'), { recursive: true });
+    await mkdir(join(outputDir, 'dev', 'mrp-and-quote'), { recursive: true });
+
+    // act
+    const { code, output } = await run(cwd, {
+      OUTPUT_DIR: outputDir,
+      QUOTE_JOURNEY_ENVIRONMENT: 'dev',
+      QUOTE_JOURNEY_RUN_NAME: 'temp2'
+    });
+
+    // assert
+    assert.equal(code, 0, output);
+    assert.match(output, /output[\\/]temp2 \(1 entry\)/);
+    assert.equal(await exists(join(outputDir, 'temp2')), false);
+    assert.equal(await exists(join(outputDir, 'dev', 'mrp-and-quote')), true);
+  });
+
   test('--dry-run lists the folder and deletes nothing', async () => {
     // arrange
     const outputDir = join(cwd, 'output');

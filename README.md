@@ -73,6 +73,8 @@ reference.
 ./Run-Project.ps1 -ClearOutput                                   # delete OUTPUT_DIR/<env>
 ./Run-Project.ps1 -ClearOutput -Environment tst -WhatIf          # list what it would delete
 ./Run-Project.ps1 -ShowConfig -Environment tst                   # settings a tst run would use
+./Run-Project.ps1 -QuotePages -MaxCount 20 -RunName temp2        # output to OUTPUT_DIR/temp2
+./Run-Project.ps1 -Summarise -RunName temp2                      # pass -RunName to each command
 ./Run-Project.ps1 -Task Verify   # Install, InstallBrowser, Build, Typecheck, Lint, Test,
                                  # TestCompare, TestQuotePage, Verify
 ```
@@ -98,6 +100,16 @@ Each environment keeps its own files, so switching never mixes them up:
   OCR cache. `-ClearOutput` deletes this folder for one environment.
 - **`OUTPUT_DIR/<env>/mrp-and-quote/`**: the `-mrp.json` files, fetched from that environment.
   `-ClearOutput` deletes them too, so the next run fetches them again.
+- **`OUTPUT_DIR/<run name>/`**: a separate run's results, with `-RunName <name>` (or
+  `QUOTE_JOURNEY_RUN_NAME`) in place of the environment's folder. It has its own quote GUID
+  mapping and failed list, and shares the environment's MRP files. `-RunName` applies to that
+  command only and is never saved to `.env`, so pass it to every command for the run, such as
+  `-Summarise`, `-RetryFailed` and `-ClearOutput -RunName <name>` (which keeps the MRP files).
+  The name must be a valid folder name on both Windows and Linux (no `< > : " / \ | ? *` or
+  control characters, not ending with a space or dot, not a reserved Windows name such as `CON`
+  or `NUL`, at most 255 bytes) and not `dev`, `tst` or `stg`. The run's `run.json` records its
+  environment, and a run against another environment is refused, as its replacement quote GUIDs
+  only exist in the first.
 
 `-Summarise` and `-ClearOutput` use the environment already in `.env`; `-ClearOutput` also takes
 `-Environment`. Running the tool changes nothing in this project except `.env`: a command that
@@ -681,7 +693,8 @@ Deleted D:\temp\playright-diff-output\dev.
 <env>` clears another one; with `-WhatIf` it lists that environment's folder without
   switching `.env`. Without `QUOTE_JOURNEY_ENVIRONMENT`, all of `OUTPUT_DIR` is deleted.
 - **Only that folder:** it includes the environment's MRP files (`mrp-and-quote/`), so the next
-  `quote-pages` run fetches them again. Other environments' folders are never touched, and the
+  `quote-pages` run fetches them again. With `QUOTE_JOURNEY_RUN_NAME` (`-RunName`), the named run's
+  folder (`OUTPUT_DIR/<run name>`) is deleted instead, and the MRP files are kept. Other environments' folders are never touched, and the
   current working directory is never used in its place.
 - **Refuses** (exit code 1, nothing deleted) when `OUTPUT_DIR` is not set, or the folder is a
   drive root, the user profile, this project, a folder inside the project, or a folder
@@ -700,8 +713,9 @@ npm run show-config
 
 - **Settings:** `COMPARE_AFTER_NAME`, `COMPARE_BEFORE_NAME`, `MRP_AND_QUOTE_PROJECT_DIR`,
   `OUTPUT_DIR`, `QUOTE_GUID_LIST_PATH`, `QUOTE_JOURNEY_ENVIRONMENT`, `QUOTE_JOURNEY_HOST`,
-  `QUOTE_PAGE_TIMEOUT` and `SCREENSHOT_SCALE`, in that (alphabetical) order, each with its value
-  and source: `.env`, or `environment` when the shell (or `Run-Project.ps1 -Environment`) set it.
+  `QUOTE_JOURNEY_RUN_NAME`, `QUOTE_PAGE_TIMEOUT` and `SCREENSHOT_SCALE`, in that (alphabetical)
+  order, each with its value and source: `.env`, or `environment` when the shell (or
+  `Run-Project.ps1 -Environment` or `-RunName`) set it.
   Sources are grey, unset settings yellow and errors red.
 - **Folders:** after a blank line, under `Resolves to:`, the output folder and MRP folder the
   settings resolve to, or why the output folder is refused, in red.
@@ -722,6 +736,8 @@ which extracts to a folder of the same name:
 - **Output folder:** `OUTPUT_DIR` from `.env`, otherwise from the environment, otherwise the
   current directory, followed by the `QUOTE_JOURNEY_ENVIRONMENT` subfolder (from the environment,
   otherwise `.env`) when one is set, as the npm commands use. It must be outside this project.
+- **Run name:** `-RunName <name>` (or `QUOTE_JOURNEY_RUN_NAME`) zips from that named run's
+  folder, `OUTPUT_DIR/<run name>`, checked by the same rules as the npm commands.
 - **Destination:** the output folder, unless `-Destination` names another folder. Either way it
   must be outside this project; otherwise the script stops with exit code 1.
 - **Existing zip:** you are asked whether to replace it, unless `-Force` is given.
@@ -738,29 +754,30 @@ committed `.env` targets the dev environment's main build and writes output to
 `D:/temp/playright-diff-output`. `Run-Project.ps1 -Environment` switches it to another
 environment (see [PowerShell wrapper](#powershell-wrapper)).
 
-| Variable                                      | Used by                      | Purpose                                                                                              |
-| --------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `OUTPUT_DIR`                                  | all commands                 | Folder outside this project; its `<env>/` subfolder holds all output, MRP files included             |
-| `MRP_AND_QUOTE_PROJECT_DIR`                   | `quote-pages`                | Optional mrp-and-quote project folder the MRP fetch runs in (without it, nothing is fetched)         |
-| `QUOTE_PAGE_TIMEOUT`                          | both                         | Optional step timeout per capture, e.g. `45s` or `1m` (default `30s`)                                |
-| `SCREENSHOT_SCALE`                            | all captures and comparisons | Optional screenshot scale: `1.0` is 100%, `1.5` is 150% (`0.5` to `4`; default `1.0`)                |
-| `COMPARE_BEFORE_NAME`, `COMPARE_AFTER_NAME`   | `compare`, both              | Optional names the region crops end with, `region-N-<name>.png` (default `before` and `after`)       |
-| `QUOTE_JOURNEY_ENVIRONMENT`                   | all commands                 | Environment (`dev`, `tst`, `stg`): the `<env>/` subfolders, and the MRP fetch's `SOURCE_ENVIRONMENT` |
-| `QUOTE_JOURNEY_HOST`                          | both                         | Quote Journey host the URL templates below refer to as `${QUOTE_JOURNEY_HOST}`                       |
-| `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE`   | both                         | NHI quote URL, with `{artemisQuoteGuid}`                                                             |
-| `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE`      | both                         | Unsaved replacement journey URL (`nhi=false`)                                                        |
-| `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE`  | both                         | TCAS quote URL, with `{policyDetailsId}` and `{historyId}`                                           |
-| `QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE` | both                         | TCAS quote summary URL for a replacement GUID, with `{artemisQuoteGuid}`                             |
-| `QUOTE_JOURNEY_QUOTE_GUID_URL`                | both                         | [NHI Oops fallback](#nhi-oops-fallback) endpoint                                                     |
-| `QUOTE_JOURNEY_AGENT_ID`                      | both                         | Fallback request `agentId`                                                                           |
-| `QUOTE_JOURNEY_BRANCH_CODE`                   | both                         | Fallback request `branchCode`                                                                        |
-| `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both                         | Fallback request `callMediaUser`                                                                     |
-| `QUOTE_GUID_LIST_PATH`                        | `quote-pages`                | GUID list file, one policy ID per line (also used by `retry-failed`)                                 |
+| Variable                                      | Used by                           | Purpose                                                                                              |
+| --------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `OUTPUT_DIR`                                  | all commands                      | Folder outside this project; its `<env>/` subfolder holds all output, MRP files included             |
+| `MRP_AND_QUOTE_PROJECT_DIR`                   | `quote-pages`                     | Optional mrp-and-quote project folder the MRP fetch runs in (without it, nothing is fetched)         |
+| `QUOTE_PAGE_TIMEOUT`                          | both                              | Optional step timeout per capture, e.g. `45s` or `1m` (default `30s`)                                |
+| `SCREENSHOT_SCALE`                            | all captures and comparisons      | Optional screenshot scale: `1.0` is 100%, `1.5` is 150% (`0.5` to `4`; default `1.0`)                |
+| `COMPARE_BEFORE_NAME`, `COMPARE_AFTER_NAME`   | `compare`, both                   | Optional names the region crops end with, `region-N-<name>.png` (default `before` and `after`)       |
+| `QUOTE_JOURNEY_ENVIRONMENT`                   | all commands                      | Environment (`dev`, `tst`, `stg`): the `<env>/` subfolders, and the MRP fetch's `SOURCE_ENVIRONMENT` |
+| `QUOTE_JOURNEY_HOST`                          | both                              | Quote Journey host the URL templates below refer to as `${QUOTE_JOURNEY_HOST}`                       |
+| `QUOTE_JOURNEY_RUN_NAME`                      | runs, `summarise`, `clear-output` | Optional separate run: output in `OUTPUT_DIR/<run name>` (see the wrapper)                           |
+| `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE`   | both                              | NHI quote URL, with `{artemisQuoteGuid}`                                                             |
+| `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE`      | both                              | Unsaved replacement journey URL (`nhi=false`)                                                        |
+| `QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE`  | both                              | TCAS quote URL, with `{policyDetailsId}` and `{historyId}`                                           |
+| `QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE` | both                              | TCAS quote summary URL for a replacement GUID, with `{artemisQuoteGuid}`                             |
+| `QUOTE_JOURNEY_QUOTE_GUID_URL`                | both                              | [NHI Oops fallback](#nhi-oops-fallback) endpoint                                                     |
+| `QUOTE_JOURNEY_AGENT_ID`                      | both                              | Fallback request `agentId`                                                                           |
+| `QUOTE_JOURNEY_BRANCH_CODE`                   | both                              | Fallback request `branchCode`                                                                        |
+| `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both                              | Fallback request `callMediaUser`                                                                     |
+| `QUOTE_GUID_LIST_PATH`                        | `quote-pages`                     | GUID list file, one policy ID per line (also used by `retry-failed`)                                 |
 
-All variables listed for a command are required, except `MRP_AND_QUOTE_PROJECT_DIR` (without
-it, missing MRP files are reported, not fetched), `QUOTE_JOURNEY_ENVIRONMENT` (without it there are no
+All variables listed for a command are required, except `MRP_AND_QUOTE_PROJECT_DIR` (needed
+only when MRP files are missing; without it such a run stops, unless `--no-fetch`), `QUOTE_JOURNEY_ENVIRONMENT` (without it there are no
 `<env>/` subfolders, and the fetch uses mrp-and-quote's own `SOURCE_ENVIRONMENT`),
-`QUOTE_JOURNEY_HOST` (only needed while the templates refer to it), `QUOTE_PAGE_TIMEOUT`, `SCREENSHOT_SCALE`, `COMPARE_BEFORE_NAME` and
+`QUOTE_JOURNEY_HOST` (only needed while the templates refer to it), `QUOTE_JOURNEY_RUN_NAME`, `QUOTE_PAGE_TIMEOUT`, `SCREENSHOT_SCALE`, `COMPARE_BEFORE_NAME` and
 `COMPARE_AFTER_NAME`. The output folder is `OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>`: policy
 folders, `quote-guid-mapping.json`, `quote-pages-failed.json`, `changed-answers.json`, the
 `mrp-and-quote/` MRP files, and the `screenshots/`, `comparisons/` and OCR cache defaults in this

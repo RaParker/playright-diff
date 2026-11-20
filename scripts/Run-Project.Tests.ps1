@@ -104,8 +104,8 @@ Describe 'Run-Project.ps1 -ClearOutput -WhatIf' {
         $env:OUTPUT_DIR = $null
         $env:QUOTE_JOURNEY_ENVIRONMENT = $null
         $script:outputRoot = Join-Path $TestDrive ([guid]::NewGuid())
-        foreach ($environment in 'dev', 'stg') {
-            New-Item -ItemType Directory (Join-Path $script:outputRoot $environment 'ABCDEF1234567890ABCDEF1234567890-1') | Out-Null
+        foreach ($folder in 'dev', 'stg', 'temp2') {
+            New-Item -ItemType Directory (Join-Path $script:outputRoot $folder 'ABCDEF1234567890ABCDEF1234567890-1') | Out-Null
         }
 
         $script:copyRoot = Join-Path $TestDrive ([guid]::NewGuid())
@@ -142,6 +142,8 @@ Describe 'Run-Project.ps1 -ClearOutput -WhatIf' {
         @{ Arguments = @('-ClearOutput', '-WhatIf'); Expected = 'dev' }
 
         @{ Arguments = @('-ClearOutput', '-Environment', 'stg', '-WhatIf'); Expected = 'stg' }
+
+        @{ Arguments = @('-ClearOutput', '-RunName', 'temp2', '-WhatIf'); Expected = 'temp2' }
     ) {
         # arrange
         $expectedFolder = Join-Path $script:outputRoot $Expected
@@ -157,6 +159,7 @@ Describe 'Run-Project.ps1 -ClearOutput -WhatIf' {
         $result.Output | Should -BeLike '*Dry run: nothing was deleted.*'
         Join-Path $script:outputRoot 'dev' | Should -Exist
         Join-Path $script:outputRoot 'stg' | Should -Exist
+        Join-Path $script:outputRoot 'temp2' | Should -Exist
     }
 }
 

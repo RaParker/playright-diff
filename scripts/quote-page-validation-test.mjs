@@ -33,7 +33,7 @@ async function fixture() {
     JSON.stringify({ artemisQuoteGuid: 'guid' })
   );
   const env = { ...process.env };
-  for (const name of [...settings, 'OUTPUT_DIR', 'QUOTE_JOURNEY_ENVIRONMENT']) {
+  for (const name of [...settings, 'OUTPUT_DIR', 'QUOTE_JOURNEY_ENVIRONMENT', 'QUOTE_JOURNEY_RUN_NAME']) {
     delete env[name];
   }
 

@@ -36,16 +36,64 @@ Describe 'Create-ZipFromOutput.ps1' {
     BeforeEach {
         $script:savedOutputDir = $env:OUTPUT_DIR
         $script:savedEnvironment = $env:QUOTE_JOURNEY_ENVIRONMENT
+        $script:savedRunName = $env:QUOTE_JOURNEY_RUN_NAME
         $script:root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
         $script:noEnvFile = Join-Path $script:root 'missing.env'
         New-Item -ItemType Directory -Path $script:root | Out-Null
         $env:OUTPUT_DIR = $script:root
         $env:QUOTE_JOURNEY_ENVIRONMENT = $null
+        $env:QUOTE_JOURNEY_RUN_NAME = $null
     }
 
     AfterEach {
         $env:OUTPUT_DIR = $script:savedOutputDir
         $env:QUOTE_JOURNEY_ENVIRONMENT = $script:savedEnvironment
+        $env:QUOTE_JOURNEY_RUN_NAME = $script:savedRunName
+    }
+
+    It 'zips from the named run folder given by <Name>' -ForEach @(
+        @{ Name = '-RunName'; FromParameter = $true }
+
+        @{ Name = 'QUOTE_JOURNEY_RUN_NAME'; FromParameter = $false }
+    ) {
+        # arrange
+        $env:QUOTE_JOURNEY_ENVIRONMENT = 'dev'
+        $runFolder = Join-Path $script:root 'temp 2'
+        New-PolicyFolder $runFolder 1 | Out-Null
+        $arguments = @{ PolicyDetailsId = $script:policyId; EnvFile = $script:noEnvFile }
+
+        if ($FromParameter) {
+            $arguments.RunName = 'temp 2'
+        }
+        else {
+            $env:QUOTE_JOURNEY_RUN_NAME = 'temp 2'
+        }
+
+        # act
+        $result = Invoke-CreateZip $arguments
+
+        # assert
+        $result.ExitCode | Should -Be 0 -Because $result.Output
+        Join-Path $runFolder "$script:policyId-1.zip" | Should -Exist
+    }
+
+    It 'rejects the run name <RunName>' -ForEach @(
+        @{ RunName = '..'; Message = 'is not a folder name' }
+
+        @{ RunName = 'a/b'; Message = 'contains a character' }
+
+        @{ RunName = 'run.'; Message = 'ends with a space or a dot' }
+
+        @{ RunName = 'NUL.txt'; Message = 'is a name Windows reserves for a device' }
+
+        @{ RunName = 'Tst'; Message = 'is an environment name' }
+    ) {
+        # act
+        $result = Invoke-CreateZip @{ PolicyDetailsId = $script:policyId; RunName = $RunName; EnvFile = $script:noEnvFile }
+
+        # assert
+        $result.ExitCode | Should -Be 1
+        $result.Output | Should -BeLike "*Run name `"$RunName`" $Message*"
     }
 
     It 'zips from the QUOTE_JOURNEY_ENVIRONMENT subfolder set in <Name>' -ForEach @(

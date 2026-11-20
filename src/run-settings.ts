@@ -1,6 +1,6 @@
 import { color } from './color.js';
 import { settingSource } from './environment.js';
-import { mrpAndQuoteFolderName, outputPath } from './output-paths.js';
+import { mrpAndQuotePath, outputPath } from './output-paths.js';
 
 /** The settings a quote-page run depends on, in alphabetical order, as they are printed. */
 const shownSettings = [
@@ -11,6 +11,7 @@ const shownSettings = [
   'QUOTE_GUID_LIST_PATH',
   'QUOTE_JOURNEY_ENVIRONMENT',
   'QUOTE_JOURNEY_HOST',
+  'QUOTE_JOURNEY_RUN_NAME',
   'QUOTE_PAGE_TIMEOUT',
   'SCREENSHOT_SCALE'
 ];
@@ -90,7 +91,7 @@ function collectRunSettings(environment: Record<string, string | undefined>): Ru
     settings: shownSettings.map((name) => describeSetting(environment, name)),
     folders: [
       describeFolder('Output folder', () => outputPath()),
-      describeFolder('MRP folder', () => outputPath(mrpAndQuoteFolderName))
+      describeFolder('MRP folder', () => mrpAndQuotePath())
     ]
   };
 }

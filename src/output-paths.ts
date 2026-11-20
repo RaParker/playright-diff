@@ -4,8 +4,17 @@ import { fileURLToPath } from 'node:url';
 /** This project's folder (the parent of `src/` or `dist/`), which output is never written into. */
 export const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+/** Folder in the output folder that the `-mrp.json` files are kept in, and mrp-and-quote's fetch saves into. */
+export const mrpAndQuoteFolderName = 'mrp-and-quote';
+
 /** Folder holding each policy's output folder, or `undefined` for the current working directory. */
 let outputRoot: string | undefined;
+
+/**
+ * The environment's own folder (`OUTPUT_DIR/<environment>`), which holds its MRP files even when a named run keeps its
+ * results elsewhere; `undefined` uses the output folder.
+ */
+let environmentRoot: string | undefined;
 
 /**
  * Sets the folder each policy's `<policyDetailsId>-<historyId>` output folder is kept in (`OUTPUT_DIR`), so a
@@ -15,6 +24,27 @@ let outputRoot: string | undefined;
  */
 export function setOutputRoot(root: string | undefined): void {
   outputRoot = root === undefined || root.trim().length === 0 ? undefined : resolve(root);
+}
+
+/**
+ * Sets the environment's own folder (`OUTPUT_DIR/<environment>`), where {@link mrpAndQuotePath} keeps the MRP files. It
+ * differs from the output folder only for a named run (`QUOTE_JOURNEY_RUN_NAME`), whose results go to
+ * `OUTPUT_DIR/<run name>` while it shares the environment's MRP files.
+ * @param root The environment's folder; `undefined` or blank uses the output folder.
+ */
+export function setEnvironmentRoot(root: string | undefined): void {
+  environmentRoot = root === undefined || root.trim().length === 0 ? undefined : resolve(root);
+}
+
+/**
+ * @returns The folder of the environment's `-mrp.json` files (`OUTPUT_DIR/<environment>/mrp-and-quote`), which named
+ * runs share with the environment's other runs, since the files are the environment's data.
+ * @throws When the folder is this project or inside it.
+ */
+export function mrpAndQuotePath(): string {
+  return environmentRoot === undefined
+    ? outputPath(mrpAndQuoteFolderName)
+    : assertOutsideProject(resolve(environmentRoot, mrpAndQuoteFolderName), 'OUTPUT_DIR');
 }
 
 /**
@@ -92,9 +122,6 @@ export function environmentFolder(base: string, environment: string | undefined)
 
   return resolve(base, name);
 }
-
-/** Folder in the output folder that the `-mrp.json` files are kept in, and mrp-and-quote's fetch saves into. */
-export const mrpAndQuoteFolderName = 'mrp-and-quote';
 
 /** A quote-page output folder, `<policyDetailsId>-<historyId>`; others (such as `.ocr-cache`) are ignored. */
 export const policyFolderPattern = /^[0-9a-f]{32}-\d+$/i;
