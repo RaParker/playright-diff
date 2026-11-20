@@ -234,7 +234,7 @@ describe('migrate-output command', () => {
   async function run(cwd, args) {
     const child = spawn(process.execPath, [script, 'migrate-output', ...args], {
       cwd,
-      env: { ...process.env, DIFF_OUTPUT_DIR: cwd }
+      env: { ...process.env, OUTPUT_DIR: cwd }
     });
     let output = '';
     child.stdout.on('data', (data) => (output += data));
@@ -283,7 +283,7 @@ describe('migrate-output command', () => {
     assert.deepEqual(await listFiles(root), [`${policy}/nhi.png`, `${policy}/result.json`]);
   });
 
-  test('migrates the folder given with --root instead of DIFF_OUTPUT_DIR', async (context) => {
+  test('migrates the folder given with --root instead of OUTPUT_DIR', async (context) => {
     // arrange
     const other = await mkdtemp(join(tmpdir(), 'migrate-output-cwd-'));
     context.after(() => rm(other, { recursive: true, force: true }));

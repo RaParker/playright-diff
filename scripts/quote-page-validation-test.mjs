@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -9,7 +9,6 @@ import { quoteSummaryHtml } from './unsaved-journey-html.mjs';
 
 const script = resolve('dist/main.js');
 const settings = [
-  'MRP_AND_QUOTE_OUTPUT_DIR',
   'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE',
   'QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE',
   'QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE',
@@ -27,17 +26,18 @@ after(() => Promise.all(fixtureDirectories.map((directory) => rm(directory, { re
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'quote-validation-'));
   fixtureDirectories.push(directory);
+  // The output folder is the current directory (no OUTPUT_DIR), so the MRP files are in its mrp-and-quote folder.
+  await mkdir(join(directory, 'mrp-and-quote'));
   await writeFile(
-    join(directory, 'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'),
+    join(directory, 'mrp-and-quote', 'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'),
     JSON.stringify({ artemisQuoteGuid: 'guid' })
   );
   const env = { ...process.env };
-  for (const name of settings) {
+  for (const name of [...settings, 'OUTPUT_DIR', 'QUOTE_JOURNEY_ENVIRONMENT']) {
     delete env[name];
   }
 
   Object.assign(env, {
-    MRP_AND_QUOTE_OUTPUT_DIR: directory,
     QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE: 'http://127.0.0.1:1/nhi/{artemisQuoteGuid}',
     QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE: 'http://127.0.0.1:1/unsaved/{artemisQuoteGuid}',
     QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE: 'http://127.0.0.1:1/tcas-replacement/{artemisQuoteGuid}',
@@ -91,7 +91,7 @@ for (const [name, args, expected] of cases) {
     // assert
     assert.notEqual(result.code, 0);
     assert.match(result.output, expected);
-    assert.deepEqual(await readdir(directory), ['ABCDEF1234567890ABCDEF1234567890-42-mrp.json']);
+    assert.deepEqual(await readdir(directory), ['mrp-and-quote']);
   });
 }
 
@@ -105,10 +105,7 @@ test('quote-page saves a failed result for a missing MRP file without taking scr
   // assert
   assert.notEqual(result.code, 0);
   assert.match(result.output, /No saved MRP for this quote/);
-  assert.deepEqual((await readdir(directory)).sort(), [
-    '11111111111111111111111111111111-42',
-    'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'
-  ]);
+  assert.deepEqual((await readdir(directory)).sort(), ['11111111111111111111111111111111-42', 'mrp-and-quote']);
   assert.deepEqual(await readdir(join(directory, '11111111111111111111111111111111-42')), ['result.json']);
   const saved = await readFailedResult(directory, '11111111111111111111111111111111-42');
   assert.equal(saved.validation, false);
@@ -142,7 +139,7 @@ for (const name of settings) {
     // assert
     assert.notEqual(result.code, 0);
     assert.ok(result.output.includes(`${name} must be configured`));
-    assert.deepEqual(await readdir(directory), ['ABCDEF1234567890ABCDEF1234567890-42-mrp.json']);
+    assert.deepEqual(await readdir(directory), ['mrp-and-quote']);
   });
 }
 
@@ -157,7 +154,7 @@ for (const [name, content, expected] of [
   test(`quote-page rejects ${name}`, async () => {
     // arrange
     const { directory, env } = await fixture();
-    await writeFile(join(directory, 'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'), content);
+    await writeFile(join(directory, 'mrp-and-quote', 'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'), content);
 
     // act
     const result = await run(directory, env);
@@ -166,10 +163,7 @@ for (const [name, content, expected] of [
     assert.notEqual(result.code, 0);
     assert.match(result.output, expected);
     // Only the failed result is saved; no screenshots are taken.
-    assert.deepEqual((await readdir(directory)).sort(), [
-      'ABCDEF1234567890ABCDEF1234567890-42',
-      'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'
-    ]);
+    assert.deepEqual((await readdir(directory)).sort(), ['ABCDEF1234567890ABCDEF1234567890-42', 'mrp-and-quote']);
     assert.deepEqual(await readdir(join(directory, 'ABCDEF1234567890ABCDEF1234567890-42')), ['result.json']);
     assert.match((await readFailedResult(directory)).issues.join('\n'), expected);
   });
@@ -198,10 +192,7 @@ for (const [name, template, expected, setting = 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_UR
     assert.notEqual(result.code, 0);
     assert.match(result.output, expected);
     // Only the failed result is saved; no screenshots are taken.
-    assert.deepEqual((await readdir(directory)).sort(), [
-      'ABCDEF1234567890ABCDEF1234567890-42',
-      'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'
-    ]);
+    assert.deepEqual((await readdir(directory)).sort(), ['ABCDEF1234567890ABCDEF1234567890-42', 'mrp-and-quote']);
     assert.deepEqual(await readdir(join(directory, 'ABCDEF1234567890ABCDEF1234567890-42')), ['result.json']);
     assert.match((await readFailedResult(directory)).issues.join('\n'), expected);
   });
@@ -307,7 +298,7 @@ test('quote-page stops after an HTTP failure and respects environment over .env'
     assert.deepEqual((await readdir(directory)).sort(), [
       '.env',
       'ABCDEF1234567890ABCDEF1234567890-42',
-      'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'
+      'mrp-and-quote'
     ]);
     const saved = await readFailedResult(directory);
     assert.equal(saved.issues[0], 'Quote capture failed; comparison skipped.');

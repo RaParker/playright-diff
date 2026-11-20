@@ -122,13 +122,18 @@ after(() => Promise.all(fixtureDirectories.map((directory) => rm(directory, { re
 async function fixture(base, mrpFiles = { [`${policyA}-1`]: 'orig-guid' }) {
   const directory = await mkdtemp(join(tmpdir(), 'quote-guid-'));
   fixtureDirectories.push(directory);
+  // The output folder is the current directory (no OUTPUT_DIR), so the MRP files are in its mrp-and-quote folder.
+  await mkdir(join(directory, 'mrp-and-quote'));
   for (const [basename, artemisQuoteGuid] of Object.entries(mrpFiles)) {
-    await writeFile(join(directory, `${basename}-mrp.json`), JSON.stringify({ artemisQuoteGuid }));
+    await writeFile(join(directory, 'mrp-and-quote', `${basename}-mrp.json`), JSON.stringify({ artemisQuoteGuid }));
   }
 
   const env = { ...process.env };
+  delete env.OUTPUT_DIR;
+  delete env.QUOTE_JOURNEY_ENVIRONMENT;
   Object.assign(env, {
-    MRP_AND_QUOTE_OUTPUT_DIR: directory,
+    // A project folder with no go.mod, so a missing MRP file is reported and its policy fails, without fetching.
+    MRP_AND_QUOTE_PROJECT_DIR: directory,
     QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE: `${base}/nhi/{artemisQuoteGuid}`,
     QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE: `${base}/unsaved/{artemisQuoteGuid}`,
     QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE: `${base}/tcas-replacement/{artemisQuoteGuid}`,
@@ -490,11 +495,11 @@ describe('quote-page NHI Oops fallback', () => {
     await withServer(quoteJourneyHandler(['orig-guid']), async (base) => {
       // arrange
       const { directory, env } = await fixture(base, {});
-      const mrpFolder = join(directory, 'tst');
-      await mkdir(mrpFolder);
-      await writeFile(join(mrpFolder, `${policyA}-1-mrp.json`), JSON.stringify({ artemisQuoteGuid: 'orig-guid' }));
       const outputRoot = join(directory, 'output');
-      Object.assign(env, { DIFF_OUTPUT_DIR: outputRoot, QUOTE_JOURNEY_ENVIRONMENT: 'tst' });
+      const mrpFolder = join(outputRoot, 'tst', 'mrp-and-quote');
+      await mkdir(mrpFolder, { recursive: true });
+      await writeFile(join(mrpFolder, `${policyA}-1-mrp.json`), JSON.stringify({ artemisQuoteGuid: 'orig-guid' }));
+      Object.assign(env, { OUTPUT_DIR: outputRoot, QUOTE_JOURNEY_ENVIRONMENT: 'tst' });
 
       // act
       const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);

@@ -53,11 +53,11 @@ function recordingRunner() {
 describe('prefetchMissingMrpFiles', () => {
   test('fetches nothing when every policy has an MRP file', async () => {
     // arrange
-    const { outputDir } = await createOutputDir([policyA, policyB]);
+    const { projectDir, outputDir } = await createOutputDir([policyA, policyB]);
     const { calls, runner } = recordingRunner();
 
     // act
-    await prefetchMissingMrpFiles([policyA, policyB], 1, guidList, { outputDir }, runner);
+    await prefetchMissingMrpFiles([policyA, policyB], 1, guidList, { outputDir, projectDir }, runner);
 
     // assert
     assert.deepEqual(calls, []);
@@ -69,7 +69,7 @@ describe('prefetchMissingMrpFiles', () => {
     const { calls, runner } = recordingRunner();
 
     // act
-    await prefetchMissingMrpFiles([policyA, policyB, policyC, policyD], 1, guidList, { outputDir }, runner);
+    await prefetchMissingMrpFiles([policyA, policyB, policyC, policyD], 1, guidList, { outputDir, projectDir }, runner);
 
     // assert
     assert.deepEqual(calls, [{ projectDir, outputDir, policyDetailsIds: [policyB, policyD] }]);
@@ -77,11 +77,11 @@ describe('prefetchMissingMrpFiles', () => {
 
   test('fetches the listed missing policies but not unlisted ones', async () => {
     // arrange
-    const { outputDir } = await createOutputDir([]);
+    const { projectDir, outputDir } = await createOutputDir([]);
     const { calls, runner } = recordingRunner();
 
     // act
-    await prefetchMissingMrpFiles([unlistedPolicy, policyC], 1, guidList, { outputDir }, runner);
+    await prefetchMissingMrpFiles([unlistedPolicy, policyC], 1, guidList, { outputDir, projectDir }, runner);
 
     // assert
     assert.deepEqual(
@@ -92,23 +92,11 @@ describe('prefetchMissingMrpFiles', () => {
 
   test('skips policies not in the GUID list', async () => {
     // arrange
-    const { outputDir } = await createOutputDir([policyD]);
+    const { projectDir, outputDir } = await createOutputDir([policyD]);
     const { calls, runner } = recordingRunner();
 
     // act
-    await prefetchMissingMrpFiles([unlistedPolicy], 1, guidList, { outputDir }, runner);
-
-    // assert
-    assert.deepEqual(calls, []);
-  });
-
-  test('fetches nothing when the output folder is not in a Go project', async () => {
-    // arrange
-    const { outputDir } = await createOutputDir([], false);
-    const { calls, runner } = recordingRunner();
-
-    // act
-    await prefetchMissingMrpFiles([policyA], 1, guidList, { outputDir }, runner);
+    await prefetchMissingMrpFiles([unlistedPolicy], 1, guidList, { outputDir, projectDir }, runner);
 
     // assert
     assert.deepEqual(calls, []);
@@ -116,11 +104,11 @@ describe('prefetchMissingMrpFiles', () => {
 
   test('fetches nothing for a history ID other than 1', async () => {
     // arrange
-    const { outputDir } = await createOutputDir([]);
+    const { projectDir, outputDir } = await createOutputDir([]);
     const { calls, runner } = recordingRunner();
 
     // act
-    await prefetchMissingMrpFiles([policyA], 2, guidList, { outputDir }, runner);
+    await prefetchMissingMrpFiles([policyA], 2, guidList, { outputDir, projectDir }, runner);
 
     // assert
     assert.deepEqual(calls, []);
@@ -128,13 +116,13 @@ describe('prefetchMissingMrpFiles', () => {
 
   test('resolves when the fetch fails', async () => {
     // arrange
-    const { outputDir } = await createOutputDir([]);
+    const { projectDir, outputDir } = await createOutputDir([]);
     const runner = async () => {
       throw new Error('fetch failed');
     };
 
     // act
-    const prefetch = prefetchMissingMrpFiles([policyA], 1, guidList, { outputDir }, runner);
+    const prefetch = prefetchMissingMrpFiles([policyA], 1, guidList, { outputDir, projectDir }, runner);
 
     // assert
     await assert.doesNotReject(prefetch);
@@ -167,6 +155,32 @@ describe('prefetchMissingMrpFiles', () => {
     assert.deepEqual(calls, []);
   });
 
+  test('stops with an error when files are missing and no project folder is given', async () => {
+    // arrange
+    const { outputDir } = await createOutputDir([]);
+    const { calls, runner } = recordingRunner();
+
+    // act
+    const prefetch = prefetchMissingMrpFiles([policyA], 1, guidList, { outputDir }, runner);
+
+    // assert
+    await assert.rejects(prefetch, /1 MRP files are missing and MRP_AND_QUOTE_PROJECT_DIR is not set/);
+    assert.deepEqual(calls, []);
+  });
+
+  test('needs no project folder when no files are missing', async () => {
+    // arrange
+    const { outputDir } = await createOutputDir([policyA]);
+    const { calls, runner } = recordingRunner();
+
+    // act
+    const prefetch = prefetchMissingMrpFiles([policyA], 1, guidList, { outputDir }, runner);
+
+    // assert
+    await assert.doesNotReject(prefetch);
+    assert.deepEqual(calls, []);
+  });
+
   test('passes the runner absolute folders when given relative ones', async () => {
     // arrange
     const { projectDir, outputDir } = await createOutputDir([]);
@@ -191,7 +205,7 @@ describe('prefetchMissingMrpFiles', () => {
     const { calls, runner } = recordingRunner();
 
     // act
-    await prefetchMissingMrpFiles([policyA], 1, guidList, { outputDir, sourceEnvironment: 'tst' }, runner);
+    await prefetchMissingMrpFiles([policyA], 1, guidList, { outputDir, projectDir, sourceEnvironment: 'tst' }, runner);
 
     // assert
     assert.deepEqual(calls, [{ projectDir, outputDir, policyDetailsIds: [policyA], sourceEnvironment: 'tst' }]);

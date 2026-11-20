@@ -46,20 +46,20 @@ const server = createServer((request, response) => {
 await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
 const directory = await mkdtemp(join(tmpdir(), 'quote-page-'));
 try {
-  await mkdir(join(directory, 'mrp'));
+  await mkdir(join(directory, 'output', 'mrp-and-quote'), { recursive: true });
   await writeFile(
-    join(directory, 'mrp', 'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'),
+    join(directory, 'output', 'mrp-and-quote', 'ABCDEF1234567890ABCDEF1234567890-42-mrp.json'),
     JSON.stringify({ artemisQuoteGuid: 'guid/a b' })
   );
   const base = `http://127.0.0.1:${server.address().port}`;
   // A previous run's stale output for this policy, removed before the new captures.
-  const policyFolder = join(directory, 'ABCDEF1234567890ABCDEF1234567890-42');
+  const policyFolder = join(directory, 'output', 'ABCDEF1234567890ABCDEF1234567890-42');
   await mkdir(policyFolder);
   await writeFile(join(policyFolder, 'screenshot-failed-nhi.png'), '');
   await writeFile(
     join(directory, '.env'),
     [
-      'MRP_AND_QUOTE_OUTPUT_DIR=${QUOTE_TEST_OUTPUT_ROOT}/mrp',
+      'OUTPUT_DIR=${QUOTE_TEST_OUTPUT_ROOT}/output',
       'QUOTE_TEST_OUTPUT_ROOT=${QUOTE_TEST_BASE_PATH}',
       'QUOTE_TEST_BASE_PATH=.',
       `QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE=${base}/nhi/{artemisQuoteGuid}`,
@@ -76,7 +76,8 @@ try {
   for (const name of [
     'QUOTE_TEST_OUTPUT_ROOT',
     'QUOTE_TEST_BASE_PATH',
-    'MRP_AND_QUOTE_OUTPUT_DIR',
+    'OUTPUT_DIR',
+    'QUOTE_JOURNEY_ENVIRONMENT',
     'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE',
     'QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE',
     'QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE',

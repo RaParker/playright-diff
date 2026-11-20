@@ -13,6 +13,7 @@ const actions = [
   'summarise',
   'migrate-output',
   'clear-output',
+  'show-config',
   'help'
 ];
 

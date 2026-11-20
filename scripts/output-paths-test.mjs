@@ -3,7 +3,14 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, test } from 'node:test';
-import { environmentFolder, outputPath, outputPathOutside, projectRoot, setOutputRoot } from '../dist/output-paths.js';
+import {
+  assertOutsideProject,
+  environmentFolder,
+  outputPath,
+  outputPathOutside,
+  projectRoot,
+  setOutputRoot
+} from '../dist/output-paths.js';
 import { writeQuoteResult } from '../dist/quote-result.js';
 
 describe('outputPath', () => {
@@ -31,7 +38,7 @@ describe('outputPath', () => {
   }
 
   for (const [name, root] of [
-    ['the project itself (no DIFF_OUTPUT_DIR, run from the project root)', undefined],
+    ['the project itself (no OUTPUT_DIR, run from the project root)', undefined],
     ['a folder inside the project', join(projectRoot, 'output')],
     ['the project in another case', projectRoot.toUpperCase()]
   ]) {
@@ -40,7 +47,7 @@ describe('outputPath', () => {
       setOutputRoot(root);
 
       // act and assert
-      assert.throws(() => outputPathOutside(projectRoot, 'ID-1'), /is inside this project .*Set DIFF_OUTPUT_DIR/);
+      assert.throws(() => outputPathOutside(projectRoot, 'ID-1'), /is inside this project .*Set OUTPUT_DIR/);
     });
   }
 
@@ -66,6 +73,46 @@ describe('outputPath', () => {
     assert.equal(outputPath(), resolve(root));
     const saved = await readFile(join(root, `${result.policyDetailsId}-1`, 'result.json'), 'utf8');
     assert.deepEqual(JSON.parse(saved), result);
+  });
+});
+
+describe('assertOutsideProject', () => {
+  const project = resolve('D:/work/project');
+
+  for (const [name, path] of [
+    ['a sibling folder', 'D:/work/output'],
+    ['a sibling whose name starts with the project name', 'D:/work/project-output'],
+    ["the project's parent", 'D:/work'],
+    ['another drive', 'E:/output'],
+    ['a folder inside the user profile', 'C:/Users/someone/output']
+  ]) {
+    test(`allows ${name}, returning the absolute path`, () => {
+      // act
+      const resolved = assertOutsideProject(path, '--output', project);
+
+      // assert
+      assert.equal(resolved, resolve(path));
+    });
+  }
+
+  for (const [name, path] of [
+    ['the project itself', 'D:/work/project'],
+    ['a folder inside the project', 'D:/work/project/output'],
+    ['a file inside the project', 'D:/work/project/screenshots/a.png'],
+    ['the project in another case', 'd:/WORK/Project/out']
+  ]) {
+    test(`refuses ${name}`, () => {
+      // act and assert
+      assert.throws(
+        () => assertOutsideProject(path, '--root', project),
+        /The output path .+ \(--root\) is inside this project/
+      );
+    });
+  }
+
+  test('refuses a relative path that resolves inside this project', () => {
+    // act and assert
+    assert.throws(() => assertOutsideProject('output', '--output'), /is inside this project/);
   });
 });
 

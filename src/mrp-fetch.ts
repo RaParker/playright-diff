@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { color } from './color.js';
 
 /** History ID of every policy that mrp-and-quote's `fetch` saves (it reads one TCAS ID per line, at history 1). */
@@ -9,12 +9,9 @@ export const fetchedHistoryId = 1;
 
 /** Where mrp-and-quote's files are saved, the project that saves them, and the environment it fetches from. */
 export interface MrpAndQuoteFolders {
-  /** Output folder the `-mrp.json` files are read from, and that `fetch` saves into (`MRP_AND_QUOTE_OUTPUT_DIR`). */
+  /** Folder the `-mrp.json` files are read from, and that `fetch` saves into (`OUTPUT_DIR/<environment>/mrp-and-quote`). */
   outputDir: string;
-  /**
-   * mrp-and-quote project folder `fetch` runs in (`MRP_AND_QUOTE_PROJECT_DIR`); defaults to the output folder's parent,
-   * which suits mrp-and-quote's default `./output`.
-   */
+  /** mrp-and-quote project folder `fetch` runs in (`MRP_AND_QUOTE_PROJECT_DIR`); needed only when files are missing. */
   projectDir?: string;
   /**
    * Environment `fetch` reads MRP data from, e.g. `dev` (`QUOTE_JOURNEY_ENVIRONMENT`), passed as its
@@ -76,8 +73,15 @@ export async function prefetchMissingMrpFiles(
     return;
   }
 
+  if (folders.projectDir === undefined) {
+    throw new Error(
+      `${fetchable.length} MRP files are missing and MRP_AND_QUOTE_PROJECT_DIR is not set, so they cannot be fetched. ` +
+        'Set it in .env to the mrp-and-quote project, or run with --no-fetch.'
+    );
+  }
+
   const outputDir = resolve(folders.outputDir);
-  const projectDir = resolve(folders.projectDir ?? dirname(outputDir));
+  const projectDir = resolve(folders.projectDir);
   if (!(await exists(resolve(projectDir, 'go.mod')))) {
     console.log(
       color.Yellow(`MRP files missing, but ${projectDir} is not the mrp-and-quote project (no go.mod); not fetching.`)

@@ -1,4 +1,4 @@
-import { dirname, resolve } from 'node:path';
+import { access } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { color } from './color.js';
 import { checkImageNames, compare, defaultImageNames, type CompareOptions } from './compare.js';
@@ -21,9 +21,11 @@ import {
 import { screenshot, ValidationError } from './screenshot.js';
 import { parseScreenshotScale } from './screenshot-scale.js';
 import { loadEnvironment } from './environment.js';
-import { environmentFolder, outputPath, setOutputRoot } from './output-paths.js';
+import { isMissing } from './fs-helpers.js';
+import { environmentFolder, mrpAndQuoteFolderName, outputPath, setOutputRoot } from './output-paths.js';
 import { intervalToMs } from './interval.js';
 import { migrateOutput } from './migrate-output.js';
+import { printRunSettings } from './run-settings.js';
 import { clearOutput } from './clear-output.js';
 import { summariseChangedAnswers } from './changed-answers.js';
 import {
@@ -43,17 +45,19 @@ Actions:
   quote-pages       Run quote-page for every policy in a GUID list
   summarise         Summarise every quote-page result (alias: summarize)
   migrate-output    Move output from the old layout into one folder per policy
-  clear-output      Delete the output folder (DIFF_OUTPUT_DIR) and everything in it
+  clear-output      Delete the output folder (OUTPUT_DIR) and everything in it
+  show-config       Print the settings a quote-page run would use, and where each came from
   help              Show this help
 
 Use npm run <action> -- --help for action options.
 Each policy's output (screenshots, API responses, comparison report and result) is kept in
-<policyDetailsId>-<historyId>/ in the output folder: DIFF_OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT> (.env or
-environment), for example D:/temp/output/dev. Without DIFF_OUTPUT_DIR the current directory is used in its place.
-The quote GUID mapping and failed-policies file are kept there too, so clear-output removes them with the results.`;
+<policyDetailsId>-<historyId>/ in the output folder: OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT> (.env or
+environment), for example D:/temp/output/dev. OUTPUT_DIR must be outside this project, as must any output path
+given on the command line. The MRP files (mrp-and-quote/), quote GUID mapping and failed-policies file are kept
+there too, so clear-output removes them with the results.`;
 
 const screenshotHelp = `Usage: npm run screenshot -- <url> [options]
-  -o, --output <path>     PNG or JPEG output (default: screenshots/screenshot.png in DIFF_OUTPUT_DIR)
+  -o, --output <path>     PNG or JPEG output (default: screenshots/screenshot.png in OUTPUT_DIR)
   --width <pixels>        Viewport width (default: 1440)
   --height <pixels>       Viewport height (default: 900)
   --wait <milliseconds>   Extra delay after scrolling (default: 1000)
@@ -61,7 +65,7 @@ const screenshotHelp = `Usage: npm run screenshot -- <url> [options]
   -h, --help              Show help`;
 
 const compareHelp = `Usage: npm run compare -- <before-image> <after-image> [options]
-  -o, --output <directory> New report directory (default: comparisons/run-<timestamp> in DIFF_OUTPUT_DIR)
+  -o, --output <directory> New report directory (default: comparisons/run-<timestamp> in OUTPUT_DIR)
   --threshold <0-255>      Ignore channel differences (default: 20)
   --language <code>        OCR language (default: eng)
   --no-ocr                 Skip text extraction
@@ -76,22 +80,22 @@ const quotePagesUsage = 'Usage: npm run quote-pages -- [maxCount|guid|retry-fail
 const quotePagesHelp = `${quotePagesUsage}
 
 Runs quote-page (historyId 1) for the policies in QUOTE_GUID_LIST_PATH, or reruns policies already
-in DIFF_OUTPUT_DIR (each with the history ID of its folder).
+in OUTPUT_DIR (each with the history ID of its folder).
 
 Selection:
   (none)            The first 250 GUIDs in the list
   <maxCount>        The first maxCount GUIDs
   <guid>            Just that GUID
   retry-failed      Every policy that failed or did not finish: those in ${failedQuotePagesFileName},
-                    those in DIFF_OUTPUT_DIR whose result is a failure, and folders with no result
-  retry-different   Every policy in DIFF_OUTPUT_DIR whose screenshots or end points differed (the
+                    those in OUTPUT_DIR whose result is a failure, and folders with no result
+  retry-different   Every policy in OUTPUT_DIR whose screenshots or end points differed (the
                     summarise "differences" policies), and both-declined results saved before
                     declines were compared; leaves ${failedQuotePagesFileName} untouched
 
 Retries:
   retry-failed reruns the runs that did not finish a comparison (failed, or stopped part way).
   retry-different reruns the comparisons that finished but differ, to refresh their results.
-  Together they cover every policy in DIFF_OUTPUT_DIR except identical ones and matching
+  Together they cover every policy in OUTPUT_DIR except identical ones and matching
   referrals, conditional quotes or declines; policies never run need a list run.
   Add --dry-run to see what either would run, and why.
 
@@ -105,16 +109,18 @@ Options:
 
 Environment (.env or environment):
   QUOTE_GUID_LIST_PATH         The GUID list (required)
-  MRP_AND_QUOTE_OUTPUT_DIR     Where the -mrp.json files are kept, in a <environment> subfolder (required)
-  MRP_AND_QUOTE_PROJECT_DIR    Where mrp-and-quote's fetch runs (default: MRP_AND_QUOTE_OUTPUT_DIR's parent)
-  QUOTE_JOURNEY_ENVIRONMENT    Environment (dev, tst or stg): the output and MRP subfolder, and the fetch's
-                               SOURCE_ENVIRONMENT (without it: no subfolders, and mrp-and-quote's .env decides)
+  OUTPUT_DIR                   Base output folder, outside this project (without it, the current
+                               directory, which must then be outside the project); the -mrp.json files
+                               are kept in its <environment>/mrp-and-quote subfolder
+  MRP_AND_QUOTE_PROJECT_DIR    Where mrp-and-quote's fetch runs (without it, missing MRP files are not fetched)
+  QUOTE_JOURNEY_ENVIRONMENT    Environment (dev, tst or stg): the output subfolder, and the fetch's
+                               SOURCE_ENVIRONMENT (without it: no subfolder, and mrp-and-quote's .env decides)
   QUOTE_JOURNEY_*, QUOTE_PAGE_TIMEOUT
                                The quote-page settings (see the README)
 
 Notes:
-  - Missing -mrp.json files are fetched first with mrp-and-quote's fetch (OUTPUT_DIR set to the
-    environment's MRP folder); files already saved are always reused.
+  - Missing -mrp.json files are fetched first with mrp-and-quote's fetch (its own OUTPUT_DIR set to
+    the output folder's mrp-and-quote subfolder); files already saved are always reused.
   - Failed policies are saved to ${failedQuotePagesFileName} in the output folder by list runs (not
     one-off runs: a guid or a maxCount of 1) and by retry-failed when its policies share one history
     ID; retry-different leaves the file untouched.
@@ -128,7 +134,7 @@ const summariseUsage = `Usage: npm run summarise [${summariseModeNames.join('|')
 
 const summariseHelp = `${summariseUsage}      (alias: npm run summarize)
 
-Summarises the quote-page results in <policyDetailsId>-<historyId>/ (in DIFF_OUTPUT_DIR).
+Summarises the quote-page results in <policyDetailsId>-<historyId>/ (in OUTPUT_DIR).
 
 Modes:
   (none)            Full report: each policy's differences, most common text changes, failed
@@ -145,10 +151,11 @@ Options:
                     text differences
   -h, --help        Show help
 
-Environment (.env or environment, both optional):
-  QUOTE_GUID_LIST_PATH, MRP_AND_QUOTE_OUTPUT_DIR
-                    Needed for the GUID list totals and the MRP records not retrieved;
-                    those parts are skipped without them
+Environment (.env or environment):
+  OUTPUT_DIR            Base output folder (without it, the current directory, outside this project)
+  QUOTE_GUID_LIST_PATH  Needed for the GUID list totals and the MRP records not retrieved (checked
+                        in the output folder's mrp-and-quote subfolder); those parts are skipped
+                        without it
 
 Notes:
   - Outcomes come from each folder's result.json. Folders with only a report.json (older runs)
@@ -165,7 +172,7 @@ report.json and report.md at the screenshots' new place. comparisons/.ocr-cache 
 
 Options:
   --apply           Move the files (without it, only lists what would move)
-  --root <folder>   Output folder to migrate (default: DIFF_OUTPUT_DIR, or the current directory)
+  --root <folder>   Output folder to migrate, outside this project (default: OUTPUT_DIR/<environment>)
   -h, --help        Show help
 
 Notes:
@@ -175,7 +182,7 @@ Notes:
 
 const clearOutputHelp = `Usage: npm run clear-output [-- --dry-run]
 
-Deletes the current environment's output folder (DIFF_OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>) and
+Deletes the current environment's output folder (OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>) and
 everything in it, after printing the folder and how many entries it holds. That includes the environment's
 quote-guid-mapping.json and quote-pages-failed.json, so the next run requests fresh replacement quote GUIDs.
 
@@ -184,14 +191,24 @@ Options:
   -h, --help        Show help
 
 Environment (.env or environment):
-  DIFF_OUTPUT_DIR             Base output folder (required; the current directory is never used instead)
-  QUOTE_JOURNEY_ENVIRONMENT   Environment whose subfolder is deleted; without it, all of DIFF_OUTPUT_DIR
+  OUTPUT_DIR             Base output folder (required; the current directory is never used instead)
+  QUOTE_JOURNEY_ENVIRONMENT   Environment whose subfolder is deleted; without it, all of OUTPUT_DIR
 
 Notes:
-  - Nothing is deleted when the folder is a drive root, the user profile, this project, or a
-    folder containing either; the exit code is then 1.
+  - Nothing is deleted when the folder is a drive root, the user profile, this project, a folder
+    inside the project, or a folder containing the profile or project; the exit code is then 1.
   - A missing folder is reported and the exit code is 0.
-  - Other environments' folders and MRP_AND_QUOTE_OUTPUT_DIR are never touched.`;
+  - The environment's MRP files (mrp-and-quote/) are deleted with it, so the next quote-pages run
+    fetches them again. Other environments' folders are never touched.`;
+
+const showConfigHelp = `Usage: npm run show-config
+
+Prints the settings a quote-page or quote-pages run would use, without running anything: each
+setting's value and whether it came from .env or the environment (such as the shell), then the
+output and MRP folders they resolve to. Runs print the same at the start.
+
+Options:
+  -h, --help        Show help`;
 
 /** What `summarise` can be given after its name: only the differences, or the changed answers. */
 const summariseModes = new Set(summariseModeNames);
@@ -212,11 +229,9 @@ async function main(): Promise<void> {
   }
 
   const environment = await loadEnvironment();
+  warnAboutRetiredSettings(environment);
   setOutputRoot(
-    environmentFolder(
-      optional(environment, 'DIFF_OUTPUT_DIR') ?? '.',
-      optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT')
-    )
+    environmentFolder(optional(environment, 'OUTPUT_DIR') ?? '.', optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT'))
   );
 
   if (action === 'screenshot') {
@@ -251,6 +266,11 @@ async function main(): Promise<void> {
 
   if (action === 'clear-output') {
     await runClearOutput(args);
+    return;
+  }
+
+  if (action === 'show-config') {
+    runShowConfig(args, environment);
     return;
   }
 
@@ -345,7 +365,7 @@ async function runQuotePage(args: string[]): Promise<void> {
   }
 
   const environment = await loadEnvironment();
-
+  printRunSettings(environment);
   await quotePage(policyDetailsId, Number(historyArgument), quotePageOptions(environment, values['no-ocr'] !== true));
 }
 
@@ -377,6 +397,7 @@ async function runQuotePages(args: string[]): Promise<void> {
   }
 
   const environment = await loadEnvironment();
+  printRunSettings(environment);
   const options: QuotePagesOptions = {
     ...quotePageOptions(environment, values['no-ocr'] !== true),
     concurrency: parseConcurrency(values.concurrency)
@@ -386,10 +407,7 @@ async function runQuotePages(args: string[]): Promise<void> {
       ? reportMissingMrpFiles(policyDetailsIds, historyId, options.mrpAndQuoteOutputDir)
       : prefetchMissingMrpFiles(policyDetailsIds, historyId, guidList, {
           outputDir: options.mrpAndQuoteOutputDir,
-          // Defaults to the base MRP folder's parent, not the environment subfolder's (which is the base folder).
-          projectDir:
-            optional(environment, 'MRP_AND_QUOTE_PROJECT_DIR') ??
-            dirname(resolve(required(environment, 'MRP_AND_QUOTE_OUTPUT_DIR'))),
+          projectDir: optional(environment, 'MRP_AND_QUOTE_PROJECT_DIR'),
           sourceEnvironment: optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT')
         });
   const plan =
@@ -405,6 +423,7 @@ async function runQuotePages(args: string[]): Promise<void> {
 
   // Read only once there is something to run, so a retry with nothing to do needs no GUID list.
   const guidList = plan.guidList ?? (await readQuoteGuidList(required(environment, 'QUOTE_GUID_LIST_PATH')));
+  await noteMissingMrpFolder(options.mrpAndQuoteOutputDir);
   if (values['dry-run'] === true) {
     await printQuotePagesPlan(plan, guidList, options.mrpAndQuoteOutputDir, values['no-fetch'] !== true);
     return;
@@ -450,13 +469,17 @@ async function runSummarise(args: string[]): Promise<void> {
     return;
   }
 
-  // Unlike quote-pages, the GUID list and MRP folder are optional: without them the GUID list totals are skipped.
+  // Unlike quote-pages, the GUID list is optional: without it the GUID list totals are skipped.
   const environment = await loadEnvironment();
-  const mrpAndQuoteOutputDir = optional(environment, 'MRP_AND_QUOTE_OUTPUT_DIR');
+  const guidListPath = optional(environment, 'QUOTE_GUID_LIST_PATH');
+  const mrpAndQuoteOutputDir = outputPath(mrpAndQuoteFolderName);
+  if (guidListPath !== undefined) {
+    await noteMissingMrpFolder(mrpAndQuoteOutputDir);
+  }
+
   await summariseQuoteResults({
-    guidListPath: optional(environment, 'QUOTE_GUID_LIST_PATH'),
-    mrpAndQuoteOutputDir:
-      mrpAndQuoteOutputDir === undefined ? undefined : environmentMrpFolder(environment, mrpAndQuoteOutputDir),
+    guidListPath,
+    mrpAndQuoteOutputDir,
     differentOnly: positionals[0] === 'differences',
     detail: values.detail === true
   });
@@ -515,17 +538,43 @@ async function runClearOutput(args: string[]): Promise<void> {
   }
 
   const environment = await loadEnvironment();
-  const diffOutputDir = optional(environment, 'DIFF_OUTPUT_DIR');
+  const outputDir = optional(environment, 'OUTPUT_DIR');
   const outcome = await clearOutput(
-    diffOutputDir === undefined
+    outputDir === undefined
       ? undefined
-      : environmentFolder(diffOutputDir, optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT')),
+      : environmentFolder(outputDir, optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT')),
     {},
     { dryRun: values['dry-run'] === true }
   );
   if (outcome === 'refused') {
     process.exitCode = 1;
   }
+}
+
+function runShowConfig(args: string[], environment: Record<string, string | undefined>): void {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      help: { type: 'boolean', short: 'h' }
+    }
+  });
+  if (values.help === true) {
+    console.log(showConfigHelp);
+    return;
+  }
+
+  if (positionals.length > 0) {
+    throw new Error(
+      usageError(
+        `show-config takes no arguments (got ${positionals.join(' ')}).`,
+        'Usage: npm run show-config',
+        'show-config'
+      )
+    );
+  }
+
+  printRunSettings(environment);
 }
 
 /**
@@ -715,7 +764,7 @@ function parseConcurrency(value: string | undefined): number {
 function quotePageOptions(environment: Record<string, string | undefined>, useOcr: boolean): QuotePageOptions {
   const { imageScale, imageNames } = readComparisonSettings(environment);
   return {
-    mrpAndQuoteOutputDir: environmentMrpFolder(environment, required(environment, 'MRP_AND_QUOTE_OUTPUT_DIR')),
+    mrpAndQuoteOutputDir: outputPath(mrpAndQuoteFolderName),
     nhiQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_NHI_QUOTE_PAGE_URL_TEMPLATE'),
     tcasQuotePageUrlTemplate: required(environment, 'QUOTE_JOURNEY_TCAS_QUOTE_PAGE_URL_TEMPLATE'),
     useOcr,
@@ -734,11 +783,50 @@ function quotePageOptions(environment: Record<string, string | undefined>, useOc
 }
 
 /**
- * @returns The environment's MRP folder, `MRP_AND_QUOTE_OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>`, since the fetch reads
- * each environment's own policies; the base folder itself when no environment is set.
+ * Warns about settings this tool no longer reads, so an old `.env` does not silently send output or MRP files
+ * elsewhere: `DIFF_OUTPUT_DIR` is now `OUTPUT_DIR`, and the MRP files moved from `MRP_AND_QUOTE_OUTPUT_DIR` into the
+ * output folder.
  */
-function environmentMrpFolder(environment: Record<string, string | undefined>, mrpAndQuoteOutputDir: string): string {
-  return environmentFolder(mrpAndQuoteOutputDir, optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT'));
+function warnAboutRetiredSettings(environment: Record<string, string | undefined>): void {
+  // Only the names are checked: reading a .env value expands its ${NAME} references, which can throw, and a setting
+  // nothing reads any more must not stop every command.
+  const names = new Set(Object.keys(environment));
+  if (names.has('DIFF_OUTPUT_DIR')) {
+    console.log(color.Yellow('DIFF_OUTPUT_DIR is no longer read: rename it to OUTPUT_DIR in .env.'));
+  }
+
+  if (names.has('MRP_AND_QUOTE_OUTPUT_DIR')) {
+    console.log(
+      color.Yellow(
+        'MRP_AND_QUOTE_OUTPUT_DIR is no longer read: the -mrp.json files are kept in ' +
+          'OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>/mrp-and-quote. Move any you want to keep there and remove the ' +
+          'setting from .env.'
+      )
+    );
+  }
+}
+
+/**
+ * Says where the MRP files are now expected when that folder does not exist yet, as after upgrading from
+ * `MRP_AND_QUOTE_OUTPUT_DIR`, so a run that fetches every file again (or a summary listing every one as not retrieved)
+ * is explained.
+ * @param folder The environment's MRP folder.
+ */
+async function noteMissingMrpFolder(folder: string): Promise<void> {
+  try {
+    await access(folder);
+  } catch (error) {
+    if (!isMissing(error)) {
+      throw error;
+    }
+
+    console.log(
+      color.Yellow(
+        `No MRP folder at ${folder} yet. The -mrp.json files are kept there now (MRP_AND_QUOTE_OUTPUT_DIR is no ` +
+          'longer read): move any you want to keep there, or missing ones are fetched again.'
+      )
+    );
+  }
 }
 
 /**

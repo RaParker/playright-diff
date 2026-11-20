@@ -2,7 +2,7 @@ import { mkdir, readdir, rename, rmdir, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { color } from './color.js';
 import { isMissing, parseJson, readOptionalTextFile, replaceFile, retryWhileBusy } from './fs-helpers.js';
-import { outputPath, policyFolderPattern } from './output-paths.js';
+import { assertOutsideProject, outputPath, policyFolderPattern } from './output-paths.js';
 
 /** Folder older versions saved quote-page screenshots, failure pages and API responses in. */
 const oldScreenshotsFolder = 'screenshots';
@@ -49,10 +49,12 @@ export interface MigrateOutputOptions {
  * listed, as are entries that are not quote-page output.
  * @param options Output folder and whether to move the files.
  * @returns The plan that was printed (and applied, with `apply`).
- * @throws When a folder cannot be read, or a file cannot be moved or rewritten.
+ * @throws When the folder is inside this project, a folder cannot be read, or a file cannot be moved or rewritten.
  */
 export async function migrateOutput(options: MigrateOutputOptions = {}): Promise<OutputMigrationPlan> {
-  const plan = await planOutputMigration(options.root ?? outputPath());
+  const plan = await planOutputMigration(
+    options.root === undefined ? outputPath() : assertOutsideProject(options.root, '--root')
+  );
   if (options.apply === true) {
     await applyOutputMigration(plan);
   }

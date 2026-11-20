@@ -5,9 +5,11 @@
 Zips a policy's output folder (<policy-details-id>-<history-id>) from the output folder set in .env.
 
 .DESCRIPTION
-The output folder is DIFF_OUTPUT_DIR, taken from the environment when it is set there, otherwise from this project's
-.env, otherwise this project's folder - the same order the npm commands use - followed by the QUOTE_JOURNEY_ENVIRONMENT
-subfolder (found the same way, e.g. dev) when one is set. The policy's folder in it is zipped to
+The output folder is OUTPUT_DIR, taken from this project's .env when it is set there, otherwise from the environment,
+otherwise the current directory - the same order the npm commands use (.env comes first for OUTPUT_DIR only, so a value
+left in the shell for mrp-and-quote, which reads its own OUTPUT_DIR, is ignored) - followed by the
+QUOTE_JOURNEY_ENVIRONMENT subfolder (from the environment, otherwise .env, e.g. dev) when one is set. The output folder
+and the zip folder must be outside this project. The policy's folder in it is zipped to
 <policy-details-id>-<history-id>.zip, so the zip extracts to a folder of the same name.
 
 When the zip already exists you are asked whether to replace it, unless -Force is given.
@@ -25,7 +27,7 @@ The folder to write the zip to. Defaults to the output folder, and is created if
 Replace an existing zip without asking.
 
 .PARAMETER EnvFile
-The .env file to read DIFF_OUTPUT_DIR and QUOTE_JOURNEY_ENVIRONMENT from. Defaults to this project's .env.
+The .env file to read OUTPUT_DIR and QUOTE_JOURNEY_ENVIRONMENT from. Defaults to this project's .env.
 
 .PARAMETER Help
 Show this help.
@@ -62,12 +64,12 @@ param(
 )
 
 function Get-OutputFolder([string]$Path) {
-    $baseFolder = Get-Setting $Path "DIFF_OUTPUT_DIR"
+    $baseFolder = Get-Setting $Path "OUTPUT_DIR"
     if (!$baseFolder) {
-        $baseFolder = $PSScriptRoot
+        $baseFolder = (Get-Location).Path
     }
 
-    # Output is kept per environment (DIFF_OUTPUT_DIR/<environment>), as the npm commands write it
+    # Output is kept per environment (OUTPUT_DIR/<environment>), as the npm commands write it
     $environment = Get-Setting $Path "QUOTE_JOURNEY_ENVIRONMENT"
     if (!$environment) {
         return $baseFolder
@@ -76,8 +78,25 @@ function Get-OutputFolder([string]$Path) {
     return Join-Path $baseFolder $environment.Trim().ToLowerInvariant()
 }
 
-# Returns the setting from the environment when it is set there, otherwise from the .env file
+# Whether the path is this project or inside it, ignoring case as Windows does; output is never written there
+function Test-InsideProject([string]$Path) {
+    $separators = [char[]]@([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    $project = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd($separators)
+    $fullPath = [System.IO.Path]::GetFullPath($Path, (Get-Location).Path).TrimEnd($separators)
+    return $fullPath -ieq $project -or
+    $fullPath.StartsWith("$project$([System.IO.Path]::DirectorySeparatorChar)", [StringComparison]::OrdinalIgnoreCase)
+}
+
+# Returns the setting from the environment when it is set there, otherwise from the .env file. OUTPUT_DIR is the
+# exception: .env comes first, as in src/environment.ts, because mrp-and-quote reads an OUTPUT_DIR of its own
 function Get-Setting([string]$Path, [string]$Name) {
+    if ($Name -eq "OUTPUT_DIR") {
+        $fromFile = Get-EnvFileValue $Path $Name
+        if ($fromFile) {
+            return $fromFile
+        }
+    }
+
     $fromEnvironment = [Environment]::GetEnvironmentVariable($Name)
     if ($fromEnvironment) {
         return $fromEnvironment
@@ -120,6 +139,11 @@ if (![int]::TryParse($HistoryId, [ref]$historyIdValue) -or $historyIdValue -lt 0
 }
 
 $outputFolder = Get-OutputFolder $EnvFile
+if (Test-InsideProject $outputFolder) {
+    Write-Host "The output folder '$outputFolder' is inside this project ($PSScriptRoot). Set OUTPUT_DIR in .env to a folder outside it." -ForegroundColor Red
+    exit 1
+}
+
 $policyFolderName = "$($PolicyDetailsId.ToUpperInvariant())-$historyIdValue"
 $policyFolder = Join-Path $outputFolder $policyFolderName
 if (!(Test-Path -LiteralPath $policyFolder -PathType Container)) {
@@ -129,6 +153,11 @@ if (!(Test-Path -LiteralPath $policyFolder -PathType Container)) {
 
 if (!$Destination) {
     $Destination = $outputFolder
+}
+
+if (Test-InsideProject $Destination) {
+    Write-Host "The zip folder '$Destination' is inside this project ($PSScriptRoot). Choose a folder outside it, so runs leave the project unchanged." -ForegroundColor Red
+    exit 1
 }
 
 $zipPath = Join-Path $Destination "$policyFolderName.zip"

@@ -70,36 +70,39 @@ reference.
 ./Run-Project.ps1 -Summarise                                     # or -Summarize
 ./Run-Project.ps1 -Summarise -Mode changed-answers               # or -Mode differences
 ./Run-Project.ps1 -MigrateOutput -Root D:/temp/old-output        # add -Apply to move the files
-./Run-Project.ps1 -ClearOutput                                   # delete DIFF_OUTPUT_DIR/<env>
+./Run-Project.ps1 -ClearOutput                                   # delete OUTPUT_DIR/<env>
 ./Run-Project.ps1 -ClearOutput -Environment tst -WhatIf          # list what it would delete
+./Run-Project.ps1 -ShowConfig -Environment tst                   # settings a tst run would use
 ./Run-Project.ps1 -Task Verify   # Install, InstallBrowser, Build, Typecheck, Lint, Test,
                                  # TestCompare, TestQuotePage, Verify
 ```
 
 `-QuotePage`, `-QuotePages`, `-RetryFailed` and `-RetryDifferent` take `-Environment dev|tst|stg`
 (default `dev`). Before the command runs, the wrapper writes it to `.env` as
-`QUOTE_JOURNEY_ENVIRONMENT`, and its Quote Journey host as `QUOTE_JOURNEY_HOST`:
+`QUOTE_JOURNEY_ENVIRONMENT`. The host comes from `.env`'s `QUOTE_JOURNEY_HOST`, which must refer
+to the environment, so the host line decides whether runs use feature builds:
 
-- **dev**: `quotes-feature-dev.homeprotect.co.uk`
-- **tst**: `quotes-feature-tst.homeprotect.co.uk`
-- **stg**: `quotes-stg.homeprotect.co.uk` (feature builds only reach dev and tst, so stg runs `main`)
+- **Main builds** (committed): `QUOTE_JOURNEY_HOST=quotes-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk`
+- **Feature builds** (dev and tst only): `QUOTE_JOURNEY_HOST=quotes-feature-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk`
 
-`.env` is only written when one of them changes, so the setting stays for `npm run` commands
+The wrapper stops with an error when the host line does not refer to `${QUOTE_JOURNEY_ENVIRONMENT}`.
+`.env` is only written when the environment changes, so the setting stays for `npm run` commands
 too, and the committed `.env` shows as changed in `git status` until you switch back to `dev`.
 The quote page URLs use the host, and the MRP fetch reads from the same environment (see
 [Configuration](#configuration)).
 
 Each environment keeps its own files, so switching never mixes them up:
 
-- **`DIFF_OUTPUT_DIR/<env>/`** (for example `D:/temp/playright-diff-output/dev/`): the policy
+- **`OUTPUT_DIR/<env>/`** (for example `D:/temp/playright-diff-output/dev/`): the policy
   folders, `quote-guid-mapping.json`, `quote-pages-failed.json`, `changed-answers.json` and the
   OCR cache. `-ClearOutput` deletes this folder for one environment.
-- **`MRP_AND_QUOTE_OUTPUT_DIR/<env>/`**: the `-mrp.json` files, fetched from that environment.
+- **`OUTPUT_DIR/<env>/mrp-and-quote/`**: the `-mrp.json` files, fetched from that environment.
+  `-ClearOutput` deletes them too, so the next run fetches them again.
 
 `-Summarise` and `-ClearOutput` use the environment already in `.env`; `-ClearOutput` also takes
 `-Environment`. Running the tool changes nothing in this project except `.env`: a command that
-would write its output inside the project (for example with `DIFF_OUTPUT_DIR` not set) stops
-with an error instead.
+would write its output inside the project (for example with `OUTPUT_DIR` not set, or an
+`--output`, `-o`, `--root` or `-Destination` inside it) stops with an error instead.
 
 When you add or change a CLI option in `src/main.ts`, update the matching parameter in
 `Run-Project.ps1` and its tests in `scripts/Run-Project.Tests.ps1`.
@@ -204,7 +207,7 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
 
 - **Arguments:** `<policyDetailsId> <historyId>`. The policy ID is a UUID with dashes removed
   (32 hex characters), case-insensitive and normalised to uppercase.
-- **Input:** `MRP_AND_QUOTE_OUTPUT_DIR/<ID>-<historyId>-mrp.json`, whose top-level
+- **Input:** `OUTPUT_DIR/<env>/mrp-and-quote/<ID>-<historyId>-mrp.json`, whose top-level
   `artemisQuoteGuid` fills `{artemisQuoteGuid}` in the NHI URL template. The TCAS template
   uses `{policyDetailsId}` and `{historyId}`. All values are URL-encoded.
 - **Output:** everything for one policy and history ID goes in one folder,
@@ -294,15 +297,15 @@ list of TCAS-format policy IDs that drives `mrp-and-quote`'s `fetch`/`compare`/`
 commands, one per line.
 
 Before any policy runs (including `retry-failed` and `retry-different`), policies with no `-1-mrp.json` in
-the environment's MRP folder (`MRP_AND_QUOTE_OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>`) are written to a
+the environment's MRP folder (`OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>/mrp-and-quote`) are written to a
 temporary file (one per line, removed afterwards) and
 fetched by running `go run . fetch --guid-file <file> --keep-output` once in the mrp-and-quote
-project (`MRP_AND_QUOTE_PROJECT_DIR`, or `MRP_AND_QUOTE_OUTPUT_DIR`'s parent when that is not set), so only
+project (`MRP_AND_QUOTE_PROJECT_DIR`), so only
 the missing policies are fetched and every existing file is kept (this needs an mrp-and-quote
-with `--guid-file` and `--keep-output` support). The fetch runs with `OUTPUT_DIR` set to
+with `--guid-file` and `--keep-output` support). The fetch runs with mrp-and-quote's own `OUTPUT_DIR` set to
 that environment's MRP folder and `SOURCE_ENVIRONMENT` to the environment, which mrp-and-quote's
 own `.env` does not override, so the files are always saved where they are read from. Policies not in the list are reported in yellow and not
-fetched, as is a project folder with no `go.mod`. A failed fetch (e.g. quotes without saved MRPs) is reported in yellow and the run
+fetched, as is a project folder with no `go.mod`. Missing files with no `MRP_AND_QUOTE_PROJECT_DIR` stop the run with an error (set it, or use `--no-fetch`). A failed fetch (e.g. quotes without saved MRPs) is reported in yellow and the run
 continues; policies still missing an MRP file then fail individually.
 
 `--no-fetch` skips that fetch and uses only the MRP files already saved: it reports how many
@@ -479,7 +482,7 @@ In order, it prints:
 - **Failures by reason:** each issue with the number of policies reporting it; URLs, file paths
   and IDs are ignored so the same error groups together (dates such as `DD/MM/YYYY` are kept).
 - **MRP records not retrieved:** GUID list entries with no `<ID>-1-mrp.json` in
-  `MRP_AND_QUOTE_OUTPUT_DIR`.
+  `OUTPUT_DIR/<env>/mrp-and-quote`.
 - **Totals:** the GUID list size, how many have a result and how many do not (not run, or an
   empty folder); the compared, identical, different, matching end point and failed counts (and
   any both-declined results from before declines were compared); and the Oops pages.
@@ -492,9 +495,8 @@ Oops pages: NHI 957 (953 later compared or declined), TCAS 10 (1 later compared 
 Endorsement order: 12 compared after putting NHI's and TCAS's different orders in standard order (11 then identical).
 ```
 
-- **GUID list:** read from `QUOTE_GUID_LIST_PATH` and `MRP_AND_QUOTE_OUTPUT_DIR` in `.env`.
-  Unlike for the other commands, both are optional; without them the GUID list line and MRP
-  section are skipped.
+- **GUID list:** read from `QUOTE_GUID_LIST_PATH` in `.env`. Unlike for the other commands, it
+  is optional; without it the GUID list line and MRP section are skipped.
 - **Oops pages:** counts the `<ID>-<historyId>/failed-nhi.html` and
   `failed-mrp.html` pages (`nhi-failed.html` and `tcas-failed.html` in results saved before
   those names) that show the Oops heading. A policy that "later compared or
@@ -602,7 +604,7 @@ npm run summarise changed-answers
 ```
 
 This combines every `<ID>-<historyId>/answer-changes.json` into one
-`changed-answers.json` in the output folder (`DIFF_OUTPUT_DIR`), replacing any earlier one. Its
+`changed-answers.json` in the output folder (`OUTPUT_DIR`), replacing any earlier one. Its
 keys are the policy folder names, each holding that policy's `nhi` and `tcas` changes by section,
 as in its own file. Cover start changes are left out, since nearly every run moves the cover
 start into range, and so is any section, flow or policy left with no other change. It then
@@ -648,12 +650,12 @@ npm run migrate-output -- --root D:/temp/old-output --apply
   as `comparisons/run-<timestamp>` reports or `screenshots/screenshot.png`, are left in place
   and listed too. `screenshots/`, `comparisons/` and the old policy folders are removed only
   when left empty.
-- **Root:** `--root` migrates another folder; without it, `DIFF_OUTPUT_DIR` (or the current
-  working directory) is used.
+- **Root:** `--root` migrates another folder, which must be outside this project; without it,
+  the output folder (`OUTPUT_DIR/<env>`) is used.
 
 ### clear-output
 
-Deletes the current environment's output folder, `DIFF_OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>`,
+Deletes the current environment's output folder, `OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>`,
 with everything in it, so the next run starts clean. That includes the environment's
 `quote-guid-mapping.json`, so the next run requests fresh replacement quote GUIDs (see
 [Every policy fails with NHI Oops](#every-policy-fails-with-nhi-oops)), and its
@@ -677,12 +679,34 @@ Deleted D:\temp\playright-diff-output\dev.
   wrapper, `-WhatIf` runs this dry run rather than only printing the command.
 - **Environment:** the one in `.env` (the last `-Environment` used). `-ClearOutput -Environment
 <env>` clears another one; with `-WhatIf` it lists that environment's folder without
-  switching `.env`. Without `QUOTE_JOURNEY_ENVIRONMENT`, all of `DIFF_OUTPUT_DIR` is deleted.
-- **Only that folder:** other environments' folders and `MRP_AND_QUOTE_OUTPUT_DIR` are never
-  touched, and the current working directory is never used in its place.
-- **Refuses** (exit code 1, nothing deleted) when `DIFF_OUTPUT_DIR` is not set, or the folder is a
-  drive root, the user profile, this project, or a folder containing either of the last two.
+  switching `.env`. Without `QUOTE_JOURNEY_ENVIRONMENT`, all of `OUTPUT_DIR` is deleted.
+- **Only that folder:** it includes the environment's MRP files (`mrp-and-quote/`), so the next
+  `quote-pages` run fetches them again. Other environments' folders are never touched, and the
+  current working directory is never used in its place.
+- **Refuses** (exit code 1, nothing deleted) when `OUTPUT_DIR` is not set, or the folder is a
+  drive root, the user profile, this project, a folder inside the project, or a folder
+  containing the profile or the project.
 - **Missing folder:** reported, nothing deleted, exit code 0.
+
+### show-config
+
+Prints the settings a `quote-page` or `quote-pages` run would use, without running anything:
+
+```powershell
+npm run show-config
+./Run-Project.ps1 -ShowConfig                    # the environment in .env
+./Run-Project.ps1 -ShowConfig -Environment tst   # as a tst run would, without writing .env
+```
+
+- **Settings:** `COMPARE_AFTER_NAME`, `COMPARE_BEFORE_NAME`, `MRP_AND_QUOTE_PROJECT_DIR`,
+  `OUTPUT_DIR`, `QUOTE_GUID_LIST_PATH`, `QUOTE_JOURNEY_ENVIRONMENT`, `QUOTE_JOURNEY_HOST`,
+  `QUOTE_PAGE_TIMEOUT` and `SCREENSHOT_SCALE`, in that (alphabetical) order, each with its value
+  and source: `.env`, or `environment` when the shell (or `Run-Project.ps1 -Environment`) set it.
+  Sources are grey, unset settings yellow and errors red.
+- **Folders:** after a blank line, under `Resolves to:`, the output folder and MRP folder the
+  settings resolve to, or why the output folder is refused, in red.
+- **Every run:** `quote-page` and `quote-pages` print the same block at the start, so each log
+  records what it used.
 
 ### Create-ZipFromOutput.ps1
 
@@ -695,10 +719,11 @@ which extracts to a folder of the same name:
 ./Create-ZipFromOutput.ps1 -Help
 ```
 
-- **Output folder:** `DIFF_OUTPUT_DIR` from the environment, otherwise from `.env`, otherwise
-  this project's folder, followed by the `QUOTE_JOURNEY_ENVIRONMENT` subfolder (found the same
-  way) when one is set, as the npm commands use.
-- **Destination:** the output folder, unless `-Destination` names another folder.
+- **Output folder:** `OUTPUT_DIR` from `.env`, otherwise from the environment, otherwise the
+  current directory, followed by the `QUOTE_JOURNEY_ENVIRONMENT` subfolder (from the environment,
+  otherwise `.env`) when one is set, as the npm commands use. It must be outside this project.
+- **Destination:** the output folder, unless `-Destination` names another folder. Either way it
+  must be outside this project; otherwise the script stops with exit code 1.
 - **Existing zip:** you are asked whether to replace it, unless `-Force` is given.
 - **Missing policy folder or invalid ID:** reported, exit code 1.
 - The zip holds the test policy's details, so share it with care.
@@ -706,16 +731,17 @@ which extracts to a folder of the same name:
 ## Configuration
 
 Every command reads `.env` in the current working directory. `quote-page`, `quote-pages` and
-`summarise` take their settings from it, and every command takes `DIFF_OUTPUT_DIR` from it. The
-committed `.env` targets the feature-dev environment and writes output to
+`summarise` take their settings from it, and every command takes `OUTPUT_DIR` from it. A variable
+set in your shell overrides `.env`, except `OUTPUT_DIR`: mrp-and-quote reads an `OUTPUT_DIR` of its
+own, so `.env`'s value wins when it sets one, and a shell value is used only when it does not. The
+committed `.env` targets the dev environment's main build and writes output to
 `D:/temp/playright-diff-output`. `Run-Project.ps1 -Environment` switches it to another
 environment (see [PowerShell wrapper](#powershell-wrapper)).
 
 | Variable                                      | Used by                      | Purpose                                                                                              |
 | --------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `DIFF_OUTPUT_DIR`                             | all commands                 | Folder whose `<env>/` subfolder holds the policy folders, GUID mapping and failed-policies file      |
-| `MRP_AND_QUOTE_OUTPUT_DIR`                    | both                         | Folder whose `<env>/` subfolder holds the `<ID>-<historyId>-mrp.json` files                          |
-| `MRP_AND_QUOTE_PROJECT_DIR`                   | `quote-pages`                | Optional mrp-and-quote project folder the MRP fetch runs in                                          |
+| `OUTPUT_DIR`                                  | all commands                 | Folder outside this project; its `<env>/` subfolder holds all output, MRP files included             |
+| `MRP_AND_QUOTE_PROJECT_DIR`                   | `quote-pages`                | Optional mrp-and-quote project folder the MRP fetch runs in (without it, nothing is fetched)         |
 | `QUOTE_PAGE_TIMEOUT`                          | both                         | Optional step timeout per capture, e.g. `45s` or `1m` (default `30s`)                                |
 | `SCREENSHOT_SCALE`                            | all captures and comparisons | Optional screenshot scale: `1.0` is 100%, `1.5` is 150% (`0.5` to `4`; default `1.0`)                |
 | `COMPARE_BEFORE_NAME`, `COMPARE_AFTER_NAME`   | `compare`, both              | Optional names the region crops end with, `region-N-<name>.png` (default `before` and `after`)       |
@@ -731,17 +757,20 @@ environment (see [PowerShell wrapper](#powershell-wrapper)).
 | `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both                         | Fallback request `callMediaUser`                                                                     |
 | `QUOTE_GUID_LIST_PATH`                        | `quote-pages`                | GUID list file, one policy ID per line (also used by `retry-failed`)                                 |
 
-All variables listed for a command are required, except `MRP_AND_QUOTE_PROJECT_DIR` (default:
-`MRP_AND_QUOTE_OUTPUT_DIR`'s parent), `QUOTE_JOURNEY_ENVIRONMENT` (without it there are no
+All variables listed for a command are required, except `MRP_AND_QUOTE_PROJECT_DIR` (without
+it, missing MRP files are reported, not fetched), `QUOTE_JOURNEY_ENVIRONMENT` (without it there are no
 `<env>/` subfolders, and the fetch uses mrp-and-quote's own `SOURCE_ENVIRONMENT`),
 `QUOTE_JOURNEY_HOST` (only needed while the templates refer to it), `QUOTE_PAGE_TIMEOUT`, `SCREENSHOT_SCALE`, `COMPARE_BEFORE_NAME` and
-`COMPARE_AFTER_NAME`. The output folder is `DIFF_OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>`: policy
-folders, `quote-guid-mapping.json`, `quote-pages-failed.json`, `changed-answers.json`, and the
-`screenshots/`, `comparisons/` and OCR cache defaults in this README are all inside it; paths you
-pass yourself, such as `--output`, are not. `DIFF_OUTPUT_DIR` can only be left unset when the
-command runs outside this project (the current working directory is then used in its place): an
-output folder inside the project is refused, so runs never change project files other than
-`.env`. `QUOTE_PAGE_TIMEOUT` is a whole number with an
+`COMPARE_AFTER_NAME`. The output folder is `OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>`: policy
+folders, `quote-guid-mapping.json`, `quote-pages-failed.json`, `changed-answers.json`, the
+`mrp-and-quote/` MRP files, and the `screenshots/`, `comparisons/` and OCR cache defaults in this
+README are all inside it; paths you pass yourself, such as `--output`, are not. `OUTPUT_DIR` can
+only be left unset when the command runs outside this project (the current working directory is
+then used in its place). An output folder inside the project, and any output path you pass that
+is inside it (`--output`, `-o`, `--root`, `-Destination`), is refused, so runs never change
+project files other than `.env`. `DIFF_OUTPUT_DIR` was renamed `OUTPUT_DIR`, and
+`MRP_AND_QUOTE_OUTPUT_DIR` is no longer read (the MRP files moved to
+`OUTPUT_DIR/<env>/mrp-and-quote`); every command warns when either is still set. `QUOTE_PAGE_TIMEOUT` is a whole number with an
 optional `s`, `m`, `h` or `d` suffix (milliseconds without one), from 1 ms to 8 hours, matching
 how `intervalToMs` in `@avantia/client-and-server-utilities` reads it (`src/interval.ts` is this
 project's own copy). It is how long each page load, click and wait for the next page may take;
@@ -753,8 +782,8 @@ captures, comparisons and OCR take longer. Comparisons reject images over 40 mil
 `1.5` a 1440-pixel viewport allows pages up to about 12,300 pixels tall, and at `2` only about
 6,900. Set `1.0` to go back to 100%. Set
 `NO_COLOR` to any value to print the logs without colours, for example when saving them to a
-file. `summarise` also reads `QUOTE_GUID_LIST_PATH` and
-`MRP_AND_QUOTE_OUTPUT_DIR`, but both are optional there (see [summarise](#summarise)).
+file. `summarise` also reads `QUOTE_GUID_LIST_PATH`, but it is optional there (see
+[summarise](#summarise)).
 
 Rules:
 
@@ -1146,7 +1175,7 @@ When the NHI page shows `<h2>Oops</h2>`:
    the response's `guid` property. The answers are saved only in the question set store, not
    NHI or TCAS, so the NHI quote page shows Oops for the new GUID until it is quoted.
 3. The new GUID is saved in `quote-guid-mapping.json` in the environment's output folder
-   (`DIFF_OUTPUT_DIR/<env>/`) against the original `artemisQuoteGuid`.
+   (`OUTPUT_DIR/<env>/`) against the original `artemisQuoteGuid`.
 4. NHI opens `QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE` (`#guid=<new GUID>,nhi=false`) and
    drives the journey to its quote. **Get your quote** saves the answers to NHI section by
    section (`POST /api/save-details`), which creates the quote there. If NHI rejects those saves,
@@ -1180,12 +1209,12 @@ expired, so it is a common cause of repeated failures:
 request a fresh GUID for that policy only.
 
 ```dotenv
-QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE="https://${QUOTE_JOURNEY_HOST}/#guid={artemisQuoteGuid},nhi=false"
-QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE="https://${QUOTE_JOURNEY_HOST}/quotesummary#guid={artemisQuoteGuid}&source=tcas&callmediauser=${USERNAME}&bid=1066"
-QUOTE_JOURNEY_QUOTE_GUID_URL="https://${QUOTE_JOURNEY_HOST}/api/nhi/quote-guid"
 QUOTE_JOURNEY_AGENT_ID="${USERNAME}"
 QUOTE_JOURNEY_BRANCH_CODE=1066
 QUOTE_JOURNEY_CALL_MEDIA_USER="${USERNAME}"
+QUOTE_JOURNEY_NHI_UNSAVED_URL_TEMPLATE="https://${QUOTE_JOURNEY_HOST}/#guid={artemisQuoteGuid},nhi=false"
+QUOTE_JOURNEY_QUOTE_GUID_URL="https://${QUOTE_JOURNEY_HOST}/api/nhi/quote-guid"
+QUOTE_JOURNEY_TCAS_REPLACEMENT_URL_TEMPLATE="https://${QUOTE_JOURNEY_HOST}/quotesummary#guid={artemisQuoteGuid}&source=tcas&callmediauser=${USERNAME}&bid=1066"
 ```
 
 ### TCAS for a replacement GUID
@@ -1241,9 +1270,10 @@ The Quote Journey API reference is in [docs/api-documentation.json](docs/api-doc
   [Every policy fails with NHI Oops](#every-policy-fails-with-nhi-oops). After a successful
   retry, the first attempt's `screenshot-failed-nhi.png` stays in the policy's folder — this is
   expected.
-- **`The output folder … is inside this project`** — `DIFF_OUTPUT_DIR` is not set, or points
+- **`The output folder … is inside this project`** — `OUTPUT_DIR` is not set, or points
   inside the project. Set it in `.env` to a folder outside the project; runs never write
-  anything into the project except `.env`.
+  anything into the project except `.env`. **`The output path … is inside this project`** is
+  the same for a path you passed, such as `--output`: choose one outside the project.
 
 ### Every policy fails with NHI Oops
 

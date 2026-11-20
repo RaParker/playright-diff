@@ -7,8 +7,8 @@ import { spawn } from 'node:child_process';
 import sharp from 'sharp';
 import { compare, findTextChanges, isSymbolOnlyChange } from '../dist/compare.js';
 
-async function run(args) {
-  const child = spawn(process.execPath, [resolve('dist/main.js'), 'compare', ...args]);
+async function run(args, env = process.env) {
+  const child = spawn(process.execPath, [resolve('dist/main.js'), 'compare', ...args], { env });
   let output = '';
   child.stdout.on('data', (data) => (output += data));
   child.stderr.on('data', (data) => (output += data));
@@ -107,6 +107,57 @@ test('comparison detects pixel, dimension, and OCR changes', { timeout: 180000 }
     assert.notEqual(existingOutput.code, 0, 'Must refuse an existing output directory');
     assert.notEqual(negativeThreshold.code, 0);
     assert.notEqual(missingImage.code, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('comparison with OCR off needs no OUTPUT_DIR, only its --output', async () => {
+  // arrange
+  const dir = await mkdtemp(join(tmpdir(), 'image-compare-no-output-dir-'));
+  try {
+    const [before, after] = [join(dir, 'before.png'), join(dir, 'after.png')];
+    for (const [path, background] of [
+      [before, '#fff'],
+      [after, '#000']
+    ]) {
+      await sharp({ create: { width: 40, height: 20, channels: 3, background } })
+        .png()
+        .toFile(path);
+    }
+
+    const output = join(dir, 'report');
+
+    // act
+    const result = await run([before, after, '--no-ocr', '--output', output], { ...process.env, OUTPUT_DIR: '' });
+
+    // assert
+    assert.equal(result.code, 0, result.output);
+    assert.equal(JSON.parse(await readFile(join(output, 'report.json'), 'utf8')).ocrEnabled, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('comparison refuses an --output inside this project', async () => {
+  // arrange
+  const dir = await mkdtemp(join(tmpdir(), 'image-compare-inside-project-'));
+  const inside = resolve('comparisons', 'compare-test-inside-project');
+  try {
+    const [before, after] = [join(dir, 'before.png'), join(dir, 'after.png')];
+    for (const path of [before, after]) {
+      await sharp({ create: { width: 40, height: 20, channels: 3, background: '#fff' } })
+        .png()
+        .toFile(path);
+    }
+
+    // act
+    const result = await run([before, after, '--no-ocr', '--output', inside]);
+
+    // assert
+    assert.equal(result.code, 1, result.output);
+    assert.match(result.output, /The output path .+ \(--output\) is inside this project/);
+    await assert.rejects(readdir(inside), 'Nothing should be written inside the project');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -12,7 +12,7 @@ asking anyone. Follow every step; keep everything below the notes in the same st
    - Differences in the sex / jointNamesSex answers never matter; ignore them.
 
 2. Sources (all read-only; never write into the output folder)
-   - Output folder: DIFF_OUTPUT_DIR in the project's .env (D:\temp\playright-diff-output). One folder per policy,
+   - Output folder: OUTPUT_DIR in the project's .env (D:\temp\playright-diff-output). One folder per policy,
      <policyDetailsId>-<historyId>.
    - Totals: `npm run summarise` (the Totals line).
    - What differs: `npm run summarise differences` names each change in the quote data on the pages whose

@@ -95,13 +95,13 @@ describe('clearOutput', () => {
   });
 
   for (const blank of [undefined, '', '   ']) {
-    test(`refuses when DIFF_OUTPUT_DIR is ${JSON.stringify(blank)}`, async () => {
+    test(`refuses when OUTPUT_DIR is ${JSON.stringify(blank)}`, async () => {
       // act
       const { result, output } = await capture(() => clearOutput(blank, protectedPaths));
 
       // assert
       assert.equal(result, 'refused');
-      assert.match(output, /DIFF_OUTPUT_DIR is not set/);
+      assert.match(output, /OUTPUT_DIR is not set/);
     });
   }
 
@@ -138,9 +138,9 @@ describe('clearOutput', () => {
     });
   }
 
-  test('deletes a folder inside the project or profile', async () => {
+  test('deletes a folder inside the profile', async () => {
     // arrange
-    const inside = join(parent, 'project', 'output');
+    const inside = join(parent, 'profile', 'output');
     await mkdir(inside, { recursive: true });
 
     // act
@@ -149,7 +149,21 @@ describe('clearOutput', () => {
     // assert
     assert.equal(result, 'deleted');
     assert.equal(await exists(inside), false);
-    assert.equal(await exists(join(parent, 'project')), true);
+    assert.equal(await exists(join(parent, 'profile')), true);
+  });
+
+  test('refuses a folder inside the project, which holds project files rather than output', async () => {
+    // arrange
+    const inside = join(parent, 'project', 'src');
+    await mkdir(inside, { recursive: true });
+
+    // act
+    const { result, output } = await capture(() => clearOutput(inside, protectedPaths));
+
+    // assert
+    assert.equal(result, 'refused');
+    assert.match(output, /it is inside this project/);
+    assert.equal(await exists(inside), true);
   });
 
   test('ignores case when comparing with a protected folder', async () => {
@@ -190,13 +204,13 @@ describe('clear-output command', () => {
     await rm(cwd, { recursive: true, force: true });
   });
 
-  test('deletes DIFF_OUTPUT_DIR', async () => {
+  test('deletes OUTPUT_DIR', async () => {
     // arrange
     const outputDir = join(cwd, 'output');
     await mkdir(join(outputDir, 'a'), { recursive: true });
 
     // act
-    const { code, output } = await run(cwd, { DIFF_OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: '' });
+    const { code, output } = await run(cwd, { OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: '' });
 
     // assert
     assert.equal(code, 0, output);
@@ -212,7 +226,7 @@ describe('clear-output command', () => {
     await mkdir(join(outputDir, 'tst', 'b'), { recursive: true });
 
     // act
-    const { code, output } = await run(cwd, { DIFF_OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: 'DEV' });
+    const { code, output } = await run(cwd, { OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: 'DEV' });
 
     // assert
     assert.equal(code, 0, output);
@@ -227,9 +241,7 @@ describe('clear-output command', () => {
     await mkdir(join(outputDir, 'stg', 'a'), { recursive: true });
 
     // act
-    const { code, output } = await run(cwd, { DIFF_OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: 'stg' }, [
-      '--dry-run'
-    ]);
+    const { code, output } = await run(cwd, { OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: 'stg' }, ['--dry-run']);
 
     // assert
     assert.equal(code, 0, output);
@@ -237,13 +249,13 @@ describe('clear-output command', () => {
     assert.equal(await exists(join(outputDir, 'stg', 'a')), true);
   });
 
-  test('rejects an environment that could leave DIFF_OUTPUT_DIR', async () => {
+  test('rejects an environment that could leave OUTPUT_DIR', async () => {
     // arrange
     const outputDir = join(cwd, 'output');
     await mkdir(outputDir, { recursive: true });
 
     // act
-    const { code, output } = await run(cwd, { DIFF_OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: '..' });
+    const { code, output } = await run(cwd, { OUTPUT_DIR: outputDir, QUOTE_JOURNEY_ENVIRONMENT: '..' });
 
     // assert
     assert.equal(code, 1, output);
@@ -251,19 +263,58 @@ describe('clear-output command', () => {
     assert.equal(await exists(outputDir), true);
   });
 
-  test('exits with 1 when DIFF_OUTPUT_DIR is not set', async () => {
+  test('refuses OUTPUT_DIR set to this project, whose environment subfolder holds project files', async () => {
+    // arrange: --dry-run, so even a broken check deletes nothing
+    const project = resolve('.');
+
     // act
-    const { code, output } = await run(cwd, { DIFF_OUTPUT_DIR: '' });
+    const { code, output } = await run(cwd, { OUTPUT_DIR: project, QUOTE_JOURNEY_ENVIRONMENT: 'src' }, ['--dry-run']);
 
     // assert
     assert.equal(code, 1, output);
-    assert.match(output, /DIFF_OUTPUT_DIR is not set/);
+    assert.match(output, /Refusing to delete .+src: it is inside this project/);
+    assert.equal(await exists(join(project, 'src')), true);
+  });
+
+  test('warns about DIFF_OUTPUT_DIR and MRP_AND_QUOTE_OUTPUT_DIR, which are no longer read', async () => {
+    // arrange
+    const outputDir = join(cwd, 'output');
+    await mkdir(join(outputDir, 'a'), { recursive: true });
+
+    // act
+    const { code, output } = await run(
+      cwd,
+      {
+        OUTPUT_DIR: outputDir,
+        QUOTE_JOURNEY_ENVIRONMENT: '',
+        DIFF_OUTPUT_DIR: join(cwd, 'old-output'),
+        MRP_AND_QUOTE_OUTPUT_DIR: join(cwd, 'old-mrp')
+      },
+      ['--dry-run']
+    );
+
+    // assert
+    assert.equal(code, 0, output);
+    assert.match(output, /DIFF_OUTPUT_DIR is no longer read: rename it to OUTPUT_DIR in \.env\./);
+    assert.match(
+      output,
+      /MRP_AND_QUOTE_OUTPUT_DIR is no longer read: .+OUTPUT_DIR\/<QUOTE_JOURNEY_ENVIRONMENT>\/mrp-and-quote/
+    );
+  });
+
+  test('exits with 1 when OUTPUT_DIR is not set', async () => {
+    // act
+    const { code, output } = await run(cwd, { OUTPUT_DIR: '' });
+
+    // assert
+    assert.equal(code, 1, output);
+    assert.match(output, /OUTPUT_DIR is not set/);
     assert.equal(await exists(cwd), true);
   });
 
   test('rejects an argument', async () => {
     // act
-    const { code, output } = await run(cwd, { DIFF_OUTPUT_DIR: join(cwd, 'output') }, ['extra']);
+    const { code, output } = await run(cwd, { OUTPUT_DIR: join(cwd, 'output') }, ['extra']);
 
     // assert
     assert.equal(code, 1, output);

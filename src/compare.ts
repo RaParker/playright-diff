@@ -6,7 +6,7 @@ import { createWorker, PSM } from 'tesseract.js';
 import { color } from './color.js';
 import { createSerialisedUntilSuccess } from './concurrency.js';
 import { replaceFile } from './fs-helpers.js';
-import { outputPath } from './output-paths.js';
+import { assertOutsideProject, outputPath } from './output-paths.js';
 import { checkScreenshotScale, defaultScreenshotScale } from './screenshot-scale.js';
 
 export interface CompareOptions {
@@ -323,7 +323,7 @@ async function createOutputDirectory(outputArgument: string | undefined, reuseOu
   // Unless reused, a fresh directory prevents overwriting inputs or previous reports.
   const output =
     outputArgument !== undefined && outputArgument.length > 0
-      ? resolve(outputArgument)
+      ? assertOutsideProject(outputArgument, '--output')
       : outputPath('comparisons', `run-${Date.now()}`);
   await mkdir(dirname(output), { recursive: true });
   await mkdir(output, { recursive: reuseOutput });
@@ -394,11 +394,12 @@ async function processRegions(
   output: string,
   { language, useOcr, imageScale, imageNames }: RegionOptions
 ) {
-  const cachePath = outputPath('.ocr-cache');
   let worker: OcrWorker | undefined;
   const regions = [];
   try {
     if (boxes.length > 0 && useOcr) {
+      // Looked up only when OCR runs, so a comparison with OCR off needs no output folder beyond its own --output.
+      const cachePath = outputPath('.ocr-cache');
       await mkdir(cachePath, { recursive: true });
       console.log(color.Gray('Loading local OCR (first use downloads language data)…'));
       worker = await createOcrWorker(language, cachePath);

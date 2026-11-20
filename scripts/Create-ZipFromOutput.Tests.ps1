@@ -34,17 +34,17 @@ BeforeAll {
 
 Describe 'Create-ZipFromOutput.ps1' {
     BeforeEach {
-        $script:savedOutputDir = $env:DIFF_OUTPUT_DIR
+        $script:savedOutputDir = $env:OUTPUT_DIR
         $script:savedEnvironment = $env:QUOTE_JOURNEY_ENVIRONMENT
         $script:root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
         $script:noEnvFile = Join-Path $script:root 'missing.env'
         New-Item -ItemType Directory -Path $script:root | Out-Null
-        $env:DIFF_OUTPUT_DIR = $script:root
+        $env:OUTPUT_DIR = $script:root
         $env:QUOTE_JOURNEY_ENVIRONMENT = $null
     }
 
     AfterEach {
-        $env:DIFF_OUTPUT_DIR = $script:savedOutputDir
+        $env:OUTPUT_DIR = $script:savedOutputDir
         $env:QUOTE_JOURNEY_ENVIRONMENT = $script:savedEnvironment
     }
 
@@ -111,15 +111,35 @@ Describe 'Create-ZipFromOutput.ps1' {
         Join-Path $destination "$script:policyId-1.zip" | Should -Exist
     }
 
-    It 'reads DIFF_OUTPUT_DIR from the .env file, with <Name>' -ForEach @(
-        @{ Name = 'double quotes'; Format = 'DIFF_OUTPUT_DIR="{0}"' }
+    It 'refuses a Destination that is <Name>' -ForEach @(
+        @{ Name = 'the project itself'; Folder = '.' }
 
-        @{ Name = 'single quotes'; Format = "DIFF_OUTPUT_DIR='{0}'" }
-
-        @{ Name = 'no quotes and a comment'; Format = 'DIFF_OUTPUT_DIR={0} # output' }
+        @{ Name = 'inside the project'; Folder = 'zips-test-output' }
     ) {
         # arrange
-        $env:DIFF_OUTPUT_DIR = $null
+        New-PolicyFolder $script:root 1 | Out-Null
+        $project = Split-Path $script:createZip -Parent
+        $destination = Join-Path $project $Folder
+
+        # act
+        $result = Invoke-CreateZip @{ PolicyDetailsId = $script:policyId; Destination = $destination; EnvFile = $script:noEnvFile }
+
+        # assert
+        $result.ExitCode | Should -Be 1
+        $result.Output | Should -Match 'is inside this project'
+        Join-Path $destination "$script:policyId-1.zip" | Should -Not -Exist
+        Join-Path $project 'zips-test-output' | Should -Not -Exist
+    }
+
+    It 'reads OUTPUT_DIR from the .env file, with <Name>' -ForEach @(
+        @{ Name = 'double quotes'; Format = 'OUTPUT_DIR="{0}"' }
+
+        @{ Name = 'single quotes'; Format = "OUTPUT_DIR='{0}'" }
+
+        @{ Name = 'no quotes and a comment'; Format = 'OUTPUT_DIR={0} # output' }
+    ) {
+        # arrange
+        $env:OUTPUT_DIR = $null
         $outputDir = Join-Path $script:root 'from-env-file'
         New-PolicyFolder $outputDir 1 | Out-Null
         $envFile = Join-Path $script:root '.env'
@@ -133,18 +153,32 @@ Describe 'Create-ZipFromOutput.ps1' {
         Join-Path $outputDir "$script:policyId-1.zip" | Should -Exist
     }
 
-    It 'prefers the DIFF_OUTPUT_DIR environment variable to the .env file' {
+    It 'prefers the .env OUTPUT_DIR to the environment variable, which mrp-and-quote also reads' {
         # arrange
-        New-PolicyFolder $script:root 1 | Out-Null
+        $outputDir = Join-Path $script:root 'from-env-file'
+        New-PolicyFolder $outputDir 1 | Out-Null
         $envFile = Join-Path $script:root '.env'
-        Set-Content -LiteralPath $envFile -Value "DIFF_OUTPUT_DIR=$(Join-Path $script:root 'elsewhere')"
+        Set-Content -LiteralPath $envFile -Value "OUTPUT_DIR=$outputDir"
 
         # act
         $result = Invoke-CreateZip @{ PolicyDetailsId = $script:policyId; EnvFile = $envFile }
 
         # assert
         $result.ExitCode | Should -Be 0
-        Join-Path $script:root "$script:policyId-1.zip" | Should -Exist
+        Join-Path $outputDir "$script:policyId-1.zip" | Should -Exist
+        Join-Path $script:root "$script:policyId-1.zip" | Should -Not -Exist
+    }
+
+    It 'refuses an output folder inside the project, saying to set OUTPUT_DIR' {
+        # arrange
+        $env:OUTPUT_DIR = Split-Path $script:createZip -Parent
+
+        # act
+        $result = Invoke-CreateZip @{ PolicyDetailsId = $script:policyId; EnvFile = $script:noEnvFile }
+
+        # assert
+        $result.ExitCode | Should -Be 1
+        $result.Output | Should -Match 'The output folder .+ is inside this project .+ Set OUTPUT_DIR in \.env'
     }
 
     It 'fails when the policy folder does not exist' {

@@ -5,7 +5,7 @@ import { outputPath } from './output-paths.js';
 /** Name of the file listing the policies that failed in the last quote-pages run, kept in the output folder. */
 export const failedQuotePagesFileName = 'quote-pages-failed.json';
 
-/** @returns The failed-policies file in the output folder (`DIFF_OUTPUT_DIR/<environment>`), so each environment has its own. */
+/** @returns The failed-policies file in the output folder (`OUTPUT_DIR/<environment>`), so each environment has its own. */
 export function failedQuotePagesPath(): string {
   return outputPath(failedQuotePagesFileName);
 }

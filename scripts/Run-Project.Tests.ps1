@@ -18,10 +18,10 @@ BeforeAll {
         }
     }
 
-    # Writes the -Environment tests' .env beside the copied wrapper: the two lines it rewrites, between two it keeps
-    function Set-TestDotEnv([string]$environment, [string]$quoteJourneyHost, [string]$newline = "`n") {
+    # Writes the -Environment tests' .env beside the copied wrapper: the environment line it rewrites, among lines it keeps
+    function Set-TestDotEnv([string]$environment, [string]$quoteJourneyHost = 'quotes-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk', [string]$newline = "`n") {
         $lines = @(
-            'DIFF_OUTPUT_DIR="D:/temp/output"'
+            'OUTPUT_DIR="D:/temp/output"'
             "QUOTE_JOURNEY_ENVIRONMENT=$environment"
             "QUOTE_JOURNEY_HOST=$quoteJourneyHost"
             'QUOTE_JOURNEY_QUOTE_GUID_URL="https://${QUOTE_JOURNEY_HOST}/api/nhi/quote-guid"'
@@ -97,20 +97,44 @@ Describe 'Run-Project.ps1 command lines' {
 
 Describe 'Run-Project.ps1 -ClearOutput -WhatIf' {
     BeforeEach {
-        # The settings are passed in the environment, which wins over the project's .env
-        $script:savedOutputDir = $env:DIFF_OUTPUT_DIR
+        # The project's .env decides OUTPUT_DIR over the environment, so the wrapper runs from a copy with its own .env
+        # pointing at a temporary output folder; junctions to node_modules and src let the copy run the real CLI.
+        $script:savedOutputDir = $env:OUTPUT_DIR
         $script:savedEnvironment = $env:QUOTE_JOURNEY_ENVIRONMENT
+        $env:OUTPUT_DIR = $null
+        $env:QUOTE_JOURNEY_ENVIRONMENT = $null
         $script:outputRoot = Join-Path $TestDrive ([guid]::NewGuid())
         foreach ($environment in 'dev', 'stg') {
             New-Item -ItemType Directory (Join-Path $script:outputRoot $environment 'ABCDEF1234567890ABCDEF1234567890-1') | Out-Null
         }
 
-        $env:DIFF_OUTPUT_DIR = $script:outputRoot
-        $env:QUOTE_JOURNEY_ENVIRONMENT = 'dev'
+        $script:copyRoot = Join-Path $TestDrive ([guid]::NewGuid())
+        New-Item -ItemType Directory $script:copyRoot | Out-Null
+        $script:copiedScript = Join-Path $script:copyRoot 'Run-Project.ps1'
+        Copy-Item $script:runProject $script:copiedScript
+        foreach ($file in 'package.json', 'tsconfig.json') {
+            Copy-Item (Join-Path $script:projectRoot $file) $script:copyRoot
+        }
+
+        foreach ($folder in 'node_modules', 'src') {
+            New-Item -ItemType Junction -Path (Join-Path $script:copyRoot $folder) -Target (Join-Path $script:projectRoot $folder) | Out-Null
+        }
+
+        $dotEnv = @(
+            "OUTPUT_DIR=`"$($script:outputRoot -replace '\\', '/')`""
+            'QUOTE_JOURNEY_ENVIRONMENT=dev'
+            'QUOTE_JOURNEY_HOST=quotes-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk'
+        ) -join "`n"
+        [System.IO.File]::WriteAllText((Join-Path $script:copyRoot '.env'), "$dotEnv`n")
     }
 
     AfterEach {
-        $env:DIFF_OUTPUT_DIR = $script:savedOutputDir
+        # Remove the junctions first, so deleting the copy never reaches into the real folders
+        foreach ($folder in 'node_modules', 'src') {
+            [System.IO.Directory]::Delete((Join-Path $script:copyRoot $folder))
+        }
+
+        $env:OUTPUT_DIR = $script:savedOutputDir
         $env:QUOTE_JOURNEY_ENVIRONMENT = $script:savedEnvironment
     }
 
@@ -123,7 +147,7 @@ Describe 'Run-Project.ps1 -ClearOutput -WhatIf' {
         $expectedFolder = Join-Path $script:outputRoot $Expected
 
         # act
-        $result = Invoke-RunProject $Arguments
+        $result = Invoke-CopiedRunProject $Arguments
 
         # assert
         $result.ExitCode | Should -Be 0 -Because $result.Output
@@ -232,12 +256,12 @@ Describe 'Run-Project.ps1 -Environment' {
         $script:dotEnvPath = Join-Path $script:copyRoot '.env'
     }
 
-    It 'switches .env to <Environment>, changing only its two lines' -ForEach @(
-        @{ Environment = 'tst'; Arguments = @('-QuotePages', '-Environment', 'tst'); ExpectedHost = 'quotes-feature-tst.homeprotect.co.uk' }
+    It 'switches .env to <Environment>, changing only its environment line' -ForEach @(
+        @{ Environment = 'tst'; Arguments = @('-QuotePages', '-Environment', 'tst'); ExpectedHost = 'quotes-tst.homeprotect.co.uk' }
 
         @{ Environment = 'stg'; Arguments = @('-RetryFailed', '-Environment', 'stg'); ExpectedHost = 'quotes-stg.homeprotect.co.uk' }
 
-        @{ Environment = 'dev'; Arguments = @('-QuotePage', '-PolicyDetailsId', 'ABCDEF1234567890ABCDEF1234567890', '-HistoryId', '1'); ExpectedHost = 'quotes-feature-dev.homeprotect.co.uk' }
+        @{ Environment = 'dev'; Arguments = @('-QuotePage', '-PolicyDetailsId', 'ABCDEF1234567890ABCDEF1234567890', '-HistoryId', '1'); ExpectedHost = 'quotes-dev.homeprotect.co.uk' }
     ) {
         # arrange
         $startEnvironment = if ($Environment -eq 'dev') {
@@ -247,34 +271,36 @@ Describe 'Run-Project.ps1 -Environment' {
             'dev'
         }
 
-        Set-TestDotEnv $startEnvironment "quotes-feature-$startEnvironment.homeprotect.co.uk"
+        Set-TestDotEnv $startEnvironment
 
         # act
         $result = Invoke-CopiedRunProject $Arguments
 
         # assert
+        $result.Output | Should -BeLike "*Environment: $Environment ($ExpectedHost)*"
         $result.Output | Should -BeLike "*Switched .env to $Environment.*"
         [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly (
-            "DIFF_OUTPUT_DIR=`"D:/temp/output`"`nQUOTE_JOURNEY_ENVIRONMENT=$Environment`nQUOTE_JOURNEY_HOST=$ExpectedHost`n" +
+            "OUTPUT_DIR=`"D:/temp/output`"`nQUOTE_JOURNEY_ENVIRONMENT=$Environment`n" +
+            "QUOTE_JOURNEY_HOST=quotes-`${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk`n" +
             "QUOTE_JOURNEY_QUOTE_GUID_URL=`"https://`${QUOTE_JOURNEY_HOST}/api/nhi/quote-guid`"`n")
     }
 
     It 'keeps CRLF line endings when switching' {
         # arrange
-        Set-TestDotEnv 'dev' 'quotes-feature-dev.homeprotect.co.uk' "`r`n"
+        Set-TestDotEnv 'dev' -newline "`r`n"
 
         # act
         Invoke-CopiedRunProject @('-RetryDifferent', '-Environment', 'tst') | Out-Null
 
         # assert
         $text = [System.IO.File]::ReadAllText($script:dotEnvPath)
-        $text | Should -BeLike "*`r`nQUOTE_JOURNEY_HOST=quotes-feature-tst.homeprotect.co.uk`r`n*"
+        $text | Should -BeLike "*`r`nQUOTE_JOURNEY_ENVIRONMENT=tst`r`n*"
         ($text -replace "`r`n", '') | Should -Not -Match "[`r`n]"
     }
 
     It 'leaves .env unwritten when it is already on the environment' {
         # arrange
-        Set-TestDotEnv 'tst' 'quotes-feature-tst.homeprotect.co.uk'
+        Set-TestDotEnv 'tst' 'quotes-feature-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk'
         $lastWrite = (Get-Item $script:dotEnvPath).LastWriteTimeUtc.AddDays(-1)
         (Get-Item $script:dotEnvPath).LastWriteTimeUtc = $lastWrite
 
@@ -290,7 +316,7 @@ Describe 'Run-Project.ps1 -Environment' {
 
     It 'only reports the .env change with -WhatIf, defaulting to dev' {
         # arrange
-        Set-TestDotEnv 'stg' 'quotes-stg.homeprotect.co.uk'
+        Set-TestDotEnv 'stg'
         $before = [System.IO.File]::ReadAllText($script:dotEnvPath)
 
         # act
@@ -298,7 +324,8 @@ Describe 'Run-Project.ps1 -Environment' {
 
         # assert
         $result.ExitCode | Should -Be 0
-        $result.Output | Should -BeLike '*What if:*Set QUOTE_JOURNEY_ENVIRONMENT=dev and QUOTE_JOURNEY_HOST=quotes-feature-dev.homeprotect.co.uk*'
+        $result.Output | Should -BeLike '*Environment: dev (quotes-dev.homeprotect.co.uk)*'
+        $result.Output | Should -BeLike '*What if:*Set QUOTE_JOURNEY_ENVIRONMENT=dev*'
         [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly $before
     }
 
@@ -315,9 +342,23 @@ Describe 'Run-Project.ps1 -Environment' {
         [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly "QUOTE_JOURNEY_ENVIRONMENT=dev`n"
     }
 
+    It 'fails without running the command when QUOTE_JOURNEY_HOST does not refer to the environment' {
+        # arrange
+        Set-TestDotEnv 'dev' 'quotes-dev.homeprotect.co.uk'
+        $before = [System.IO.File]::ReadAllText($script:dotEnvPath)
+
+        # act
+        $result = Invoke-CopiedRunProject @('-QuotePages', '-Environment', 'tst', '-WhatIf')
+
+        # assert
+        $result.ExitCode | Should -Not -Be 0
+        $result.Output | Should -BeLike '*does not refer to ${QUOTE_JOURNEY_ENVIRONMENT}*'
+        [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly $before
+    }
+
     It 'switches .env for -ClearOutput only when -Environment is given' {
         # arrange
-        Set-TestDotEnv 'dev' 'quotes-feature-dev.homeprotect.co.uk'
+        Set-TestDotEnv 'dev'
         $before = [System.IO.File]::ReadAllText($script:dotEnvPath)
 
         # act (-WhatIf runs the dry run, which fails at node in the copy; only the .env handling is checked here)
@@ -332,7 +373,7 @@ Describe 'Run-Project.ps1 -Environment' {
 
     It 'leaves .env alone for commands without -Environment' {
         # arrange
-        Set-TestDotEnv 'tst' 'quotes-feature-tst.homeprotect.co.uk'
+        Set-TestDotEnv 'tst'
         $before = [System.IO.File]::ReadAllText($script:dotEnvPath)
 
         # act
@@ -341,6 +382,20 @@ Describe 'Run-Project.ps1 -Environment' {
         # assert
         $result.ExitCode | Should -Be 0
         $result.Output | Should -Not -BeLike '*Environment:*'
+        [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly $before
+    }
+
+    It 'runs show-config for -ShowConfig -Environment without writing .env, even with -WhatIf' {
+        # arrange
+        Set-TestDotEnv 'dev'
+        $before = [System.IO.File]::ReadAllText($script:dotEnvPath)
+
+        # act (the command itself fails at node in the copy; only that it runs, and .env, are checked here)
+        $result = Invoke-CopiedRunProject @('-ShowConfig', '-Environment', 'tst', '-WhatIf')
+
+        # assert
+        $result.Output | Should -BeLike '*src/main.ts show-config*'
+        $result.Output | Should -Not -BeLike '*What if:*'
         [System.IO.File]::ReadAllText($script:dotEnvPath) | Should -BeExactly $before
     }
 }

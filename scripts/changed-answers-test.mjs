@@ -64,7 +64,7 @@ async function outputFixture() {
 async function runCli(directory, args) {
   const child = spawn(process.execPath, [script, ...args], {
     cwd: directory,
-    env: { ...process.env, DIFF_OUTPUT_DIR: directory }
+    env: { ...process.env, OUTPUT_DIR: directory }
   });
   let output = '';
   child.stdout.on('data', (data) => (output += data));

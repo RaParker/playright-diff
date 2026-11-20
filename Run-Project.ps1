@@ -8,12 +8,13 @@ migrate-output, clear-output) and its development tasks. Each command is a switc
 only offers options that apply, and inputs are validated before Node starts.
 
 CLI commands run src/main.ts through tsx (as the npm scripts do) from the project root, so .env is always read from
-there. Output is kept per environment in DIFF_OUTPUT_DIR/<environment> (for example D:/temp/output/dev): each policy's
-<policyDetailsId>-<historyId> folder, quote-guid-mapping.json and quote-pages-failed.json. MRP files are likewise read
-from MRP_AND_QUOTE_OUTPUT_DIR/<environment>. Relative paths you pass are resolved from your current directory first.
+there. Output is kept per environment in OUTPUT_DIR/<environment> (for example D:/temp/output/dev): each policy's
+<policyDetailsId>-<historyId> folder, quote-guid-mapping.json, quote-pages-failed.json and the MRP files
+(mrp-and-quote/). OUTPUT_DIR, and any output path you pass, must be outside this project. Relative paths you pass are
+resolved from your current directory first.
 
 QuotePage, QuotePages, RetryFailed and RetryDifferent run against -Environment (default: dev). The script writes it to
-.env first (QUOTE_JOURNEY_ENVIRONMENT and QUOTE_JOURNEY_HOST), so the setting stays until the next of these commands;
+.env first (QUOTE_JOURNEY_ENVIRONMENT), so the setting stays until the next of these commands;
 Summarise and ClearOutput use the environment in .env (ClearOutput also takes -Environment).
 
 Run it with no arguments for an overview of the commands in the order they're used. Use -WhatIf to print the command
@@ -28,8 +29,8 @@ Capture a full-page screenshot of -Url.
 http or https URL to capture.
 
 .PARAMETER Output
-Screenshot: PNG or JPEG output file (default: screenshots/screenshot.png in DIFF_OUTPUT_DIR).
-Compare: new report directory (default: comparisons/run-<timestamp> in DIFF_OUTPUT_DIR).
+Screenshot: PNG or JPEG output file (default: screenshots/screenshot.png in OUTPUT_DIR).
+Compare: new report directory (default: comparisons/run-<timestamp> in OUTPUT_DIR).
 
 .PARAMETER Width
 Viewport width in pixels (default: 1440).
@@ -81,7 +82,7 @@ One GUID list entry to run (32 hex characters, case-insensitive).
 Rerun only the policies saved in quote-pages-failed.json by the last quote-pages run.
 
 .PARAMETER RetryDifferent
-Rerun every policy in DIFF_OUTPUT_DIR whose screenshots differed (the summarise "differences" count). Leaves
+Rerun every policy in OUTPUT_DIR whose screenshots differed (the summarise "differences" count). Leaves
 quote-pages-failed.json untouched.
 
 .PARAMETER Summarise
@@ -100,13 +101,13 @@ Move output from the old layout (screenshots/ and comparisons/<policyDetailsId>-
 MigrateOutput only: move the files rather than listing them.
 
 .PARAMETER Root
-MigrateOutput only: output folder to migrate (default: DIFF_OUTPUT_DIR, or the project root).
+MigrateOutput only: output folder to migrate, outside this project (default: OUTPUT_DIR/<environment>).
 
 .PARAMETER ClearOutput
-Delete the environment's output folder (DIFF_OUTPUT_DIR/<environment>) and everything in it, after printing the folder
+Delete the environment's output folder (OUTPUT_DIR/<environment>) and everything in it, after printing the folder
 and how many entries it holds. That includes its quote-guid-mapping.json, a known cause of every policy failing with
 NHI Oops (README: Troubleshooting), so the next run requests fresh replacement quote GUIDs. Other environments' folders
-are kept. Uses the environment in .env unless -Environment is given. Refuses when DIFF_OUTPUT_DIR is not set, or the
+are kept. Uses the environment in .env unless -Environment is given. Refuses when OUTPUT_DIR is not set, or the
 folder is a drive root, the user profile, this project or a folder containing either.
 
 .PARAMETER NoOcr
@@ -122,9 +123,11 @@ Quote pages, RetryFailed and RetryDifferent: number of policies run at once (def
 .PARAMETER Environment
 QuotePage, QuotePages, RetryFailed and RetryDifferent: environment to run against, dev, tst or stg (default: dev).
 ClearOutput: environment whose output folder to delete (default: the one already in .env).
-Before the command runs, .env's QUOTE_JOURNEY_ENVIRONMENT is set to it and QUOTE_JOURNEY_HOST to its Quote Journey
-host: quotes-feature-dev, quotes-feature-tst or quotes-stg (.homeprotect.co.uk; feature builds only reach dev and tst).
-The MRP fetch reads from the same environment. .env is only written when it changes.
+ShowConfig: environment to show the settings for, without writing it to .env (default: the one already in .env).
+Before the command runs, .env's QUOTE_JOURNEY_ENVIRONMENT is set to it. QUOTE_JOURNEY_HOST must refer to it, for
+example quotes-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk, or quotes-feature-${QUOTE_JOURNEY_ENVIRONMENT} for
+feature builds (which only reach dev and tst), so the host decides feature or not. The MRP fetch reads from the same
+environment. .env is only written when it changes.
 
 .PARAMETER Task
 Development task: Install (npm install), InstallBrowser (Playwright Chromium), Build, Typecheck, Lint,
@@ -174,6 +177,9 @@ Test (all suites), TestCompare, TestQuotePage or Verify (VerifyProject.ps1).
 
 .EXAMPLE
 ./Run-Project.ps1 -ClearOutput -Environment tst
+
+.EXAMPLE
+./Run-Project.ps1 -ShowConfig -Environment tst
 
 .EXAMPLE
 ./Run-Project.ps1 -Task Verify
@@ -281,6 +287,9 @@ param(
     [Parameter(Mandatory, ParameterSetName = 'ClearOutput')]
     [switch]$ClearOutput,
 
+    [Parameter(Mandatory, ParameterSetName = 'ShowConfig')]
+    [switch]$ShowConfig,
+
     [Parameter(ParameterSetName = 'Compare')]
     [Parameter(ParameterSetName = 'QuotePage')]
     [Parameter(ParameterSetName = 'QuotePages')]
@@ -312,6 +321,7 @@ param(
     [Parameter(ParameterSetName = 'RetryFailed')]
     [Parameter(ParameterSetName = 'RetryDifferent')]
     [Parameter(ParameterSetName = 'ClearOutput')]
+    [Parameter(ParameterSetName = 'ShowConfig')]
     [ValidateSet('dev', 'tst', 'stg')]
     [string]$Environment = 'dev',
 
@@ -335,13 +345,6 @@ $npmScriptByTask = @{
 
 $projectScriptByTask = @{
     Verify = 'VerifyProject.ps1'
-}
-
-# Quote Journey host of each -Environment. Feature builds only deploy to dev and tst, so stg runs main.
-$quoteJourneyHostByEnvironment = @{
-    dev = 'quotes-feature-dev.homeprotect.co.uk'
-    stg = 'quotes-stg.homeprotect.co.uk'
-    tst = 'quotes-feature-tst.homeprotect.co.uk'
 }
 
 # The commands that open the quote journey, and so always apply -Environment (default dev) to .env
@@ -429,6 +432,10 @@ function Get-CliArguments {
 
             return @('clear-output')
         }
+
+        'ShowConfig' {
+            return @('show-config')
+        }
     }
 }
 
@@ -483,31 +490,46 @@ function Resolve-UserPath([string]$path) {
 
 <#
 .SYNOPSIS
-Points .env at -Environment: sets QUOTE_JOURNEY_ENVIRONMENT to it and QUOTE_JOURNEY_HOST to its Quote Journey host.
+Points .env at -Environment: sets QUOTE_JOURNEY_ENVIRONMENT to it.
 
 .DESCRIPTION
-Only those two lines change, keeping the file's line endings, and the file is only written when one of them differs.
-Honours -WhatIf and -Confirm. Throws when .env has no line for either setting, since the URL templates would then
-keep pointing at another environment.
+Only that line changes, keeping the file's line endings, and the file is only written when it differs. The host is
+left to .env's QUOTE_JOURNEY_HOST, which decides feature or not and must refer to ${QUOTE_JOURNEY_ENVIRONMENT}.
+Honours -WhatIf and -Confirm. Throws when .env has no QUOTE_JOURNEY_ENVIRONMENT line, or a QUOTE_JOURNEY_HOST that
+does not refer to it, since the URL templates would then keep pointing at another environment.
 #>
 function Set-DotEnvEnvironment {
     $dotEnvPath = Join-Path $PSScriptRoot '.env'
-    $quoteJourneyHost = $quoteJourneyHostByEnvironment[$Environment]
     $original = [System.IO.File]::ReadAllText($dotEnvPath)
+    $quoteJourneyHost = Get-DotEnvQuoteJourneyHost $original
 
     $updated = Set-DotEnvValue $original 'QUOTE_JOURNEY_ENVIRONMENT' $Environment
-    $updated = Set-DotEnvValue $updated 'QUOTE_JOURNEY_HOST' $quoteJourneyHost
 
     Write-Host "Environment: $Environment ($quoteJourneyHost)" -ForegroundColor DarkGray
     if ($updated -ceq $original) {
         return
     }
 
-    $action = "Set QUOTE_JOURNEY_ENVIRONMENT=$Environment and QUOTE_JOURNEY_HOST=$quoteJourneyHost"
+    $action = "Set QUOTE_JOURNEY_ENVIRONMENT=$Environment"
     if ($PSCmdlet.ShouldProcess($dotEnvPath, $action)) {
         [System.IO.File]::WriteAllText($dotEnvPath, $updated)
         Write-Host "Switched .env to $Environment." -ForegroundColor Yellow
     }
+}
+
+# Returns .env's QUOTE_JOURNEY_HOST for -Environment, with ${QUOTE_JOURNEY_ENVIRONMENT} filled in; throws when the line
+# is missing or does not refer to the environment, as switching would then leave the host on another environment
+function Get-DotEnvQuoteJourneyHost([string]$text) {
+    if ($text -notmatch '(?m)^QUOTE_JOURNEY_HOST=["'']?([^\r\n"'']*)') {
+        throw '.env has no QUOTE_JOURNEY_HOST line, so -Environment cannot be applied. Add QUOTE_JOURNEY_HOST=quotes-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk (see the README''s Configuration).'
+    }
+
+    $template = $Matches[1]
+    if (!$template.Contains('${QUOTE_JOURNEY_ENVIRONMENT}')) {
+        throw ".env's QUOTE_JOURNEY_HOST ($template) does not refer to `${QUOTE_JOURNEY_ENVIRONMENT}, so -Environment would not change the host. Use e.g. quotes-`${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk."
+    }
+
+    return $template.Replace('${QUOTE_JOURNEY_ENVIRONMENT}', $Environment)
 }
 
 # Returns the .env text with the name=... line set to value; [^\r\n] keeps a CRLF line's \r in place
@@ -541,7 +563,7 @@ $overviewSections = @(
 
             @{ Usage = '-Task InstallBrowser'; Description = 'Install Playwright Chromium' }
 
-            @{ Description = 'Then set the .env values (README: Configuration), e.g. QUOTE_GUID_LIST_PATH and DIFF_OUTPUT_DIR.' }
+            @{ Description = 'Then set the .env values (README: Configuration), e.g. QUOTE_GUID_LIST_PATH and OUTPUT_DIR.' }
         )
     }
 
@@ -572,7 +594,7 @@ $overviewSections = @(
 
             @{ Description = 'Options for -QuotePages, -RetryFailed and -RetryDifferent:' }
 
-            @{ Depth = 1; Usage = '-Environment <dev|tst|stg>'; Description = 'Environment to run against (default: dev); saved to .env, output in DIFF_OUTPUT_DIR/<env>' }
+            @{ Depth = 1; Usage = '-Environment <dev|tst|stg>'; Description = 'Environment to run against (default: dev); saved to .env, output in OUTPUT_DIR/<env>' }
 
             @{ Depth = 1; Usage = '-Concurrency <n>'; Description = 'Policies run at once (default: 3)' }
 
@@ -598,6 +620,8 @@ $overviewSections = @(
             @{ Depth = 1; Usage = '[-Output <dir>] [-Threshold <0-255>] [-Language <code>] [-NoOcr]' }
 
             @{ Usage = '-MigrateOutput [-Root <dir>] [-Apply]'; Description = 'Move output from the old folder layout' }
+
+            @{ Usage = '-ShowConfig [-Environment <dev|tst|stg>]'; Description = 'Print the settings a run would use, and their source' }
         )
     }
 
@@ -747,17 +771,21 @@ if ($appliesEnvironment) {
     Set-DotEnvEnvironment
 }
 
-# -ClearOutput -WhatIf runs the CLI's dry run, which deletes nothing; every other -WhatIf only prints the command
-$isDryRun = $PSCmdlet.ParameterSetName -eq 'ClearOutput' -and $WhatIfPreference
+# -ClearOutput -WhatIf runs the CLI's dry run, which deletes nothing, and -ShowConfig only reads; every other -WhatIf
+# only prints the command
+$isDryRun = ($PSCmdlet.ParameterSetName -eq 'ClearOutput' -and $WhatIfPreference) -or
+($PSCmdlet.ParameterSetName -eq 'ShowConfig')
 if (-not $isDryRun -and -not $PSCmdlet.ShouldProcess($commandLine, 'Run')) {
     exit 0
 }
 
-# -WhatIf leaves .env as it is, so the environment is passed to the command directly (it wins over .env)
+# -WhatIf and -ShowConfig leave .env as it is, so the environment is passed to the command directly (it wins over .env)
+$passesEnvironment = $appliesEnvironment -or
+($PSCmdlet.ParameterSetName -eq 'ShowConfig' -and $PSBoundParameters.ContainsKey('Environment'))
 $savedEnvironment = $env:QUOTE_JOURNEY_ENVIRONMENT
 Push-Location $PSScriptRoot
 try {
-    if ($appliesEnvironment) {
+    if ($passesEnvironment) {
         $env:QUOTE_JOURNEY_ENVIRONMENT = $Environment
     }
 

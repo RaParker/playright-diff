@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
-import { loadEnvironment } from '../dist/environment.js';
+import { loadEnvironment, settingSource } from '../dist/environment.js';
 
 async function load(content, environment = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'environment-test-'));
@@ -20,14 +20,43 @@ async function load(content, environment = {}) {
 test('environment resolves quoted, nested and forward references from .env', async () => {
   // arrange
   const content =
-    'MRP_AND_QUOTE_OUTPUT_DIR="${OUTPUT_ROOT}/output"\nOUTPUT_ROOT=${REPO_BASE_PATH}/GoPackages/internal/mrp-and-quote\nREPO_BASE_PATH="D:/repo with spaces"';
+    'MRP_AND_QUOTE_PROJECT_DIR="${OUTPUT_ROOT}/output"\nOUTPUT_ROOT=${REPO_BASE_PATH}/GoPackages/internal/mrp-and-quote\nREPO_BASE_PATH="D:/repo with spaces"';
 
   // act
   const values = await load(content);
 
   // assert
-  assert.equal(values.MRP_AND_QUOTE_OUTPUT_DIR, 'D:/repo with spaces/GoPackages/internal/mrp-and-quote/output');
+  assert.equal(values.MRP_AND_QUOTE_PROJECT_DIR, 'D:/repo with spaces/GoPackages/internal/mrp-and-quote/output');
   assert.equal(values.OUTPUT_ROOT, 'D:/repo with spaces/GoPackages/internal/mrp-and-quote');
+});
+
+for (const [name, content, environment, setting, expected] of [
+  ['a value only in .env', 'HOST=a', {}, 'HOST', '.env'],
+  ['a value only in the environment', 'OTHER=1', { HOST: 'b' }, 'HOST', 'environment'],
+  ['an environment value that overrides .env', 'HOST=a', { HOST: 'b' }, 'HOST', 'environment'],
+  ['an environment value equal to .env', 'HOST=a', { HOST: 'a' }, 'HOST', '.env'],
+  ['OUTPUT_DIR, where .env wins over the environment', 'OUTPUT_DIR=D:/a', { OUTPUT_DIR: 'D:/b' }, 'OUTPUT_DIR', '.env'],
+  ['a setting that is not set', 'OTHER=1', {}, 'HOST', undefined]
+]) {
+  test(`settingSource reports where ${name} came from`, async () => {
+    // act
+    const values = await load(content, environment);
+
+    // assert
+    assert.equal(settingSource(values, setting), expected);
+  });
+}
+
+test('settingSource reports the environment when there is no .env file', async (context) => {
+  // arrange
+  const directory = await mkdtemp(join(tmpdir(), 'environment-test-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+
+  // act
+  const values = await loadEnvironment(join(directory, '.env'), { HOST: 'b' });
+
+  // assert
+  assert.equal(settingSource(values, 'HOST'), 'environment');
 });
 
 test('environment uses externally configured values over file values without mutating the input', async () => {
@@ -42,6 +71,30 @@ test('environment uses externally configured values over file values without mut
   assert.equal(values.UNRELATED, '${MISSING}');
   assert.equal(environment.OUTPUT, '${ROOT}/override');
 });
+
+for (const [name, content, environment, expected] of [
+  ['.env wins when it sets OUTPUT_DIR', 'OUTPUT_DIR=D:/diff-output', { OUTPUT_DIR: 'D:/mrp-output' }, 'D:/diff-output'],
+  [
+    'the environment is used when .env has no OUTPUT_DIR',
+    'OTHER=1',
+    { OUTPUT_DIR: 'D:/shell-output' },
+    'D:/shell-output'
+  ],
+  [
+    '.env references still expand in OUTPUT_DIR',
+    'BASE=D:/base\nOUTPUT_DIR=${BASE}/out',
+    { OUTPUT_DIR: 'D:/x' },
+    'D:/base/out'
+  ]
+]) {
+  test(`environment reads OUTPUT_DIR from .env first, so mrp-and-quote's shell value is ignored: ${name}`, async () => {
+    // act
+    const values = await load(content, environment);
+
+    // assert
+    assert.equal(values.OUTPUT_DIR, expected);
+  });
+}
 
 test('environment supports references defined only in the process environment', async () => {
   // arrange
@@ -92,10 +145,10 @@ test('environment rejects direct and indirect reference cycles when the setting 
 
 test('environment reads a setting without references when another references a missing name', async () => {
   // arrange
-  const values = await load('DIFF_OUTPUT_DIR=D:/output\nPROJECT=${REPO_BASE_PATH}/project');
+  const values = await load('OUTPUT_DIR=D:/output\nPROJECT=${REPO_BASE_PATH}/project');
 
   // act
-  const output = values.DIFF_OUTPUT_DIR;
+  const output = values.OUTPUT_DIR;
 
   // assert
   assert.equal(output, 'D:/output');
@@ -149,13 +202,13 @@ test('an action shows its help when .env references a name defined nowhere', asy
 
 test('environment reads the first setting of a .env file saved with a byte order mark', async () => {
   // arrange
-  const content = '\uFEFFDIFF_OUTPUT_DIR=D:/output\nOTHER=1';
+  const content = '\uFEFFOUTPUT_DIR=D:/output\nOTHER=1';
 
   // act
   const values = await load(content);
 
   // assert
-  assert.equal(values.DIFF_OUTPUT_DIR, 'D:/output');
+  assert.equal(values.OUTPUT_DIR, 'D:/output');
 });
 
 test(

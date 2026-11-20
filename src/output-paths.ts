@@ -8,7 +8,7 @@ export const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..'
 let outputRoot: string | undefined;
 
 /**
- * Sets the folder each policy's `<policyDetailsId>-<historyId>` output folder is kept in (`DIFF_OUTPUT_DIR`), so a
+ * Sets the folder each policy's `<policyDetailsId>-<historyId>` output folder is kept in (`OUTPUT_DIR`), so a
  * run's output can live outside the project. Paths passed on the command line (such as `--output`) are not affected.
  * @param root Output folder, resolved from the current working directory; `undefined` or blank uses the current
  * working directory.
@@ -22,7 +22,7 @@ export function setOutputRoot(root: string | undefined): void {
  * @param segments Path segments, for example a policy folder name and a file name; none gives the output folder.
  * @param project This project's folder, which the output folder must be outside (replaceable in tests).
  * @returns The absolute path.
- * @throws When the output folder is this project or inside it (for example `DIFF_OUTPUT_DIR` is not set and the
+ * @throws When the output folder is this project or inside it (for example `OUTPUT_DIR` is not set and the
  * command runs from the project root), so a run never changes anything in the project but `.env`.
  */
 export function outputPath(...segments: string[]): string {
@@ -34,12 +34,32 @@ export function outputPathOutside(project: string, ...segments: string[]): strin
   const root = resolve(outputRoot ?? '.');
   if (contains(project, root)) {
     throw new Error(
-      `The output folder ${root} is inside this project (${project}). Set DIFF_OUTPUT_DIR in .env to a folder ` +
+      `The output folder ${root} is inside this project (${project}). Set OUTPUT_DIR in .env to a folder ` +
         'outside it, so runs leave the project unchanged.'
     );
   }
 
   return resolve(root, ...segments);
+}
+
+/**
+ * Checks that an output path given on the command line (such as `--output`) is outside this project, so a run never changes anything in the project but `.env`.
+ * @param path The output file or folder, resolved from the current working directory.
+ * @param description What the path is, for the error, such as `--output`.
+ * @param project This project's folder (replaceable in tests).
+ * @returns The absolute path.
+ * @throws When the path is this project or inside it.
+ */
+export function assertOutsideProject(path: string, description: string, project: string = projectRoot): string {
+  const resolved = resolve(path);
+  if (contains(project, resolved)) {
+    throw new Error(
+      `The output path ${resolved} (${description}) is inside this project (${project}). Choose a folder outside it, ` +
+        'so runs leave the project unchanged.'
+    );
+  }
+
+  return resolved;
 }
 
 /** Whether `folder` is `path` or one of its parents, ignoring case as Windows does. */
@@ -52,7 +72,7 @@ export function contains(folder: string, path: string): boolean {
 /**
  * Resolves the folder for one environment inside a base folder, so results, the quote GUID mapping and MRP files from
  * dev, tst and stg are kept apart (for example `D:/temp/output` and `dev` give `D:/temp/output/dev`).
- * @param base Base folder (such as `DIFF_OUTPUT_DIR` or `MRP_AND_QUOTE_OUTPUT_DIR`), resolved from the current working
+ * @param base Base folder (such as `OUTPUT_DIR`), resolved from the current working
  * directory.
  * @param environment `QUOTE_JOURNEY_ENVIRONMENT`; `undefined` or blank gives the base folder itself.
  * @returns The absolute folder, with the environment in lower case.
@@ -72,6 +92,9 @@ export function environmentFolder(base: string, environment: string | undefined)
 
   return resolve(base, name);
 }
+
+/** Folder in the output folder that the `-mrp.json` files are kept in, and mrp-and-quote's fetch saves into. */
+export const mrpAndQuoteFolderName = 'mrp-and-quote';
 
 /** A quote-page output folder, `<policyDetailsId>-<historyId>`; others (such as `.ocr-cache`) are ignored. */
 export const policyFolderPattern = /^[0-9a-f]{32}-\d+$/i;

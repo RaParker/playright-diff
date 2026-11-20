@@ -123,7 +123,7 @@ export interface SummariseOptions {
   root?: string;
   /** GUID list (`QUOTE_GUID_LIST_PATH`); the GUID list totals are left out unless this and the next are set. */
   guidListPath?: string;
-  /** mrp-and-quote's output folder (`MRP_AND_QUOTE_OUTPUT_DIR`), checked for each listed policy's MRP record. */
+  /** Folder of the `-mrp.json` files (`OUTPUT_DIR/<environment>/mrp-and-quote`), checked for each listed policy's MRP record. */
   mrpAndQuoteOutputDir?: string;
   /**
    * Print only what differs: the changes in the quote data, counted across policies, then the policies whose data or
@@ -809,7 +809,7 @@ function printTotals(
 
 function printGuidListTotals(guidList: GuidListStatus | undefined): void {
   if (guidList === undefined) {
-    console.log(color.Gray('GUID list skipped: QUOTE_GUID_LIST_PATH and MRP_AND_QUOTE_OUTPUT_DIR are not both set.'));
+    console.log(color.Gray('GUID list skipped: QUOTE_GUID_LIST_PATH is not set.'));
     return;
   }
 

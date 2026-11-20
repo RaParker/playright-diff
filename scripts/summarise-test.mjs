@@ -108,7 +108,7 @@ async function projectFixture() {
   await writeFile(join(root, `${visualPolicy}-1`, 'failed-mrp.html'), '<h1>Cover details</h1>');
   await writeFile(join(root, `${identicalPolicy}-1`, 'screenshot-quote-page-nhi.png'), '');
 
-  const mrp = join(directory, 'mrp');
+  const mrp = join(root, 'mrp-and-quote');
   await mkdir(mrp);
   for (const policy of [identicalPolicy, textPolicy, visualPolicy, declinedPolicy, unrecordedPolicy]) {
     await writeFile(join(mrp, `${policy}-1-mrp.json`), '{}');
@@ -126,7 +126,7 @@ async function projectFixture() {
 
 async function runCli(directory, args, env = {}) {
   const childEnv = { ...process.env, ...env };
-  for (const name of ['QUOTE_GUID_LIST_PATH', 'MRP_AND_QUOTE_OUTPUT_DIR']) {
+  for (const name of ['QUOTE_GUID_LIST_PATH', 'OUTPUT_DIR', 'QUOTE_JOURNEY_ENVIRONMENT']) {
     if (!(name in env)) {
       delete childEnv[name];
     }
@@ -1045,12 +1045,11 @@ describe('summarise command', () => {
   for (const action of ['summarise', 'summarize']) {
     test(`${action} prints the differences, failures and totals`, async () => {
       // arrange
-      const { directory, mrp, guidList } = await projectFixture();
+      const { directory, guidList } = await projectFixture();
 
       // act
       const { code, output } = await runCli(directory, [action], {
-        QUOTE_GUID_LIST_PATH: guidList,
-        MRP_AND_QUOTE_OUTPUT_DIR: mrp
+        QUOTE_GUID_LIST_PATH: guidList
       });
 
       // assert
@@ -1083,6 +1082,19 @@ describe('summarise command', () => {
     });
   }
 
+  test('says where MRP files are expected when the output folder has no MRP folder yet', async () => {
+    // arrange
+    const { directory, mrp, guidList } = await projectFixture();
+    await rm(mrp, { recursive: true, force: true });
+
+    // act
+    const { code, output } = await runCli(directory, ['summarise'], { QUOTE_GUID_LIST_PATH: guidList });
+
+    // assert
+    assert.equal(code, 0, output);
+    assert.match(output, /No MRP folder at .+mrp-and-quote yet\. The -mrp\.json files are kept there now/);
+  });
+
   test('skips the GUID list totals when the list is not configured', async () => {
     // arrange
     const { directory } = await projectFixture();
@@ -1092,18 +1104,17 @@ describe('summarise command', () => {
 
     // assert
     assert.equal(code, 0, output);
-    assert.match(output, /GUID list skipped: QUOTE_GUID_LIST_PATH and MRP_AND_QUOTE_OUTPUT_DIR are not both set\./);
+    assert.match(output, /GUID list skipped: QUOTE_GUID_LIST_PATH is not set\./);
     assert.doesNotMatch(output, /MRP records not retrieved/);
   });
 
   test('differences reports different results captured before end points were recorded as not captured, not as changes', async () => {
     // arrange
-    const { directory, mrp, guidList } = await projectFixture();
+    const { directory, guidList } = await projectFixture();
 
     // act
     const { code, output } = await runCli(directory, ['summarise', 'differences'], {
-      QUOTE_GUID_LIST_PATH: guidList,
-      MRP_AND_QUOTE_OUTPUT_DIR: mrp
+      QUOTE_GUID_LIST_PATH: guidList
     });
 
     // assert
@@ -1148,12 +1159,11 @@ describe('summarise command', () => {
 
   test('differences leaves out failures, MRP records, the GUID list and Oops pages', async () => {
     // arrange
-    const { directory, mrp, guidList } = await projectFixture();
+    const { directory, guidList } = await projectFixture();
 
     // act
     const { code, output } = await runCli(directory, ['summarise', 'differences'], {
-      QUOTE_GUID_LIST_PATH: guidList,
-      MRP_AND_QUOTE_OUTPUT_DIR: mrp
+      QUOTE_GUID_LIST_PATH: guidList
     });
 
     // assert

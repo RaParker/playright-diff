@@ -1,9 +1,9 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, extname, resolve } from 'node:path';
+import { dirname, extname } from 'node:path';
 import { chromium, errors, type Page } from 'playwright';
 import { recordApiResponses, type ApiResponseRecorder } from './api-responses.js';
 import { color } from './color.js';
-import { outputPath } from './output-paths.js';
+import { assertOutsideProject, outputPath } from './output-paths.js';
 import { checkScreenshotScale, defaultScreenshotScale } from './screenshot-scale.js';
 
 export interface ScreenshotOptions {
@@ -423,7 +423,10 @@ function validateOptions(urlArgument: string, options: ScreenshotOptions) {
   const scale = checkScreenshotScale(options.scale ?? defaultScreenshotScale, 'scale');
   const wait = integer(options.wait ?? 1000, 'wait', 0);
   const timeout = integer(options.timeout ?? 30000, 'timeout', 1);
-  const output = options.output === undefined ? outputPath('screenshots', 'screenshot.png') : resolve(options.output);
+  const output =
+    options.output === undefined
+      ? outputPath('screenshots', 'screenshot.png')
+      : assertOutsideProject(options.output, '--output');
   const extension = extname(output).toLowerCase();
   if (!['.png', '.jpg', '.jpeg'].includes(extension)) {
     throw new Error('Output must have a .png, .jpg, or .jpeg extension.');

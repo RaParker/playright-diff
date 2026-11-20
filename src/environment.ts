@@ -4,7 +4,29 @@ import { parseEnv } from 'node:util';
 type Environment = Record<string, string | undefined>;
 
 /**
- * Loads `.env` settings beneath the given environment, which wins where both set a name. `${NAME}` references in the
+ * Settings `.env` decides when it sets them, ahead of the environment. mrp-and-quote reads its own `OUTPUT_DIR`, so a
+ * value left in the shell for it must not send this tool's output (or clear-output's delete) to mrp-and-quote's folder.
+ */
+export const fileFirstSettings: readonly string[] = ['OUTPUT_DIR'];
+
+/** Where a loaded setting's value came from: the `.env` file or the environment (such as the shell). */
+export type SettingSource = '.env' | 'environment';
+
+/** The source of each setting of the objects {@link loadEnvironment} returned. */
+const settingSources = new WeakMap<Environment, Map<string, SettingSource>>();
+
+/**
+ * @param settings Settings returned by {@link loadEnvironment}.
+ * @param name Setting name.
+ * @returns Where the setting's value came from, or `undefined` when it is not set (or `settings` were not loaded).
+ */
+export function settingSource(settings: Environment, name: string): SettingSource | undefined {
+  return settingSources.get(settings)?.get(name);
+}
+
+/**
+ * Loads `.env` settings beneath the given environment, which wins where both set a name, except for
+ * {@link fileFirstSettings}, where `.env` wins. `${NAME}` references in the
  * file's settings are expanded when each setting is read, not when the file is loaded, so a reference only one
  * command needs (such as `${REPO_BASE_PATH}`) cannot stop the others, or `--help`, from running.
  * @param path `.env` file; a missing file is allowed.
@@ -15,7 +37,9 @@ type Environment = Record<string, string | undefined>;
 export async function loadEnvironment(path = '.env', environment: Environment = process.env): Promise<Environment> {
   const fileValues = await readEnvironmentFile(path);
   if (fileValues === undefined) {
-    return { ...environment };
+    const settings = { ...environment };
+    settingSources.set(settings, sourcesOf({}, settings));
+    return settings;
   }
 
   const values = mergeEnvironment(fileValues, environment);
@@ -25,7 +49,20 @@ export async function loadEnvironment(path = '.env', environment: Environment = 
     Object.defineProperty(settings, name, { enumerable: true, get: () => expand(name) });
   }
 
+  settingSources.set(settings, sourcesOf(fileValues, values));
   return settings;
+}
+
+/** Records, for each set value, whether it is the `.env` file's (merged values equal to the file's) or the environment's. */
+function sourcesOf(fileValues: Environment, values: Environment): Map<string, SettingSource> {
+  const sources = new Map<string, SettingSource>();
+  for (const [name, value] of Object.entries(values)) {
+    if (value !== undefined) {
+      sources.set(name, fileValues[name] !== undefined && fileValues[name] === value ? '.env' : 'environment');
+    }
+  }
+
+  return sources;
 }
 
 async function readEnvironmentFile(path: string): Promise<Environment | undefined> {
@@ -37,7 +74,7 @@ async function readEnvironmentFile(path: string): Promise<Environment | undefine
 function mergeEnvironment(fileValues: Environment, environment: Environment): Environment {
   const values: Environment = { ...fileValues };
   for (const [name, value] of Object.entries(environment)) {
-    if (value !== undefined) {
+    if (value !== undefined && !(fileFirstSettings.includes(name) && fileValues[name] !== undefined)) {
       values[name] = value;
     }
   }
