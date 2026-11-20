@@ -11,8 +11,12 @@ import {
   type PolicyFolderSummary
 } from './summarise.js';
 
-/** How the viewer lists a policy: the summary's comparison kind, or why it has no comparison. */
-export type ViewerPolicyKind = ComparisonKind | 'failed' | 'declined' | 'unrecorded';
+/**
+ * How the viewer lists a policy: the summary's comparison kind, or why it has no comparison. `not-compared` is a result
+ * an earlier version saved as both declined without comparing them (the summary's "run them again"), kept apart from
+ * the comparison kind `declined`.
+ */
+export type ViewerPolicyKind = ComparisonKind | 'failed' | 'not-compared' | 'unrecorded';
 
 /** One policy in the viewer's list. */
 export interface ViewerPolicy {
@@ -131,7 +135,8 @@ export async function readViewerPolicyDetail(root: string, folder: string): Prom
 
 function toViewerPolicy(name: string, summary: PolicyFolderSummary | undefined): ViewerPolicy {
   if (summary?.status !== 'compared') {
-    return { name, kind: summary?.status ?? 'unrecorded', hasTextDifferences: false };
+    const kind = summary?.status === 'declined' ? 'not-compared' : (summary?.status ?? 'unrecorded');
+    return { name, kind, hasTextDifferences: false };
   }
 
   const { policy } = summary;

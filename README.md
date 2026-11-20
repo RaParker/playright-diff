@@ -687,7 +687,8 @@ npm run serve -- --port 5000 --no-open # another port; print the URL only
 - **What it reads:** the same output folder as `summarise` (`OUTPUT_DIR/<environment>`, or
   `OUTPUT_DIR/<run name>`), read again on every request, so **Refresh** (or reloading the page)
   shows policies that finished since. It never changes anything in the folder.
-- **Who can reach it:** only this computer. It listens on `127.0.0.1`, and serves only the files
+- **Who can reach it:** only this computer. It listens on `127.0.0.1` and answers only requests
+  addressed to `127.0.0.1` or `localhost` (so a web page can't read it through another domain), and serves only the files
   directly inside each `<policyDetailsId>-<historyId>` folder (not the saved API responses).
 - **The list:** different policies by default, counted as the summary's Totals line counts them,
   including those whose NHI cover type was re-checked with Buildings & Contents (marked

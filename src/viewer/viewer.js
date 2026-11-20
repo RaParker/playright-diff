@@ -18,6 +18,12 @@ const filters = {
   all: { label: '', test: () => true }
 };
 
+/** How a result is worded where the summary words it differently from its kind. */
+const kindLabels = {
+  'not-compared': 'both declined before declines were compared (run them again)',
+  unrecorded: 'no result yet'
+};
+
 const zoomLevels = [0.5, 0.75, 1, 1.5, 2, 3];
 const blinkIntervalMs = 500;
 
@@ -236,8 +242,11 @@ function showRegion(region) {
   document.querySelectorAll('.region').forEach((outline) => {
     outline.classList.toggle('current', outline.dataset.region === String(region.id));
   });
-  const image = element('pane-nhi').querySelector('img');
-  const scale = image?.naturalWidth ? image.clientWidth / image.naturalWidth : 1;
+  // The scale of whichever view is showing: a hidden pane's image has no width
+  const image = [...document.querySelectorAll('#panes .pane:not([hidden]) img')].find(
+    (candidate) => candidate.naturalWidth > 0 && candidate.clientWidth > 0
+  );
+  const scale = image ? image.clientWidth / image.naturalWidth : 1;
   for (const id of ['pane-nhi', 'pane-overlay', 'pane-diff']) {
     element(id).scrollTop = Math.max(0, region.bounds.top * scale - 40);
   }
@@ -252,7 +261,7 @@ function renderDetails() {
     }
   };
   add('Policy', detail.name);
-  add('Result', detail.kind);
+  add('Result', kindLabels[detail.kind] ?? detail.kind);
   add('Changed', detail.changedPercent === undefined ? undefined : `${detail.changedPercent.toFixed(2)}% of pixels`);
   add('Page sizes differ', detail.sizeDifference);
   add('End points', detail.endpoints);

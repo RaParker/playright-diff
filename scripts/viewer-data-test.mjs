@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { rm } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import { collectQuoteResults } from '../dist/summarise.js';
@@ -58,6 +58,31 @@ describe('listViewerPolicies', () => {
     assert.match(rechecked.coverTypeRecheck, /^Matched MRP: buildings, contents/);
     assert.match(rechecked.coverTypeRecheck, /was Contents only on NHI$/);
     assert.equal(policies.find(({ name }) => name === `${differentPolicy}-1`).coverTypeRecheck, undefined);
+  });
+
+  test('keeps policies declined before declines were compared apart from compared declines', async (context) => {
+    // arrange
+    const root = await fixture(context);
+    const name = `${'D'.repeat(32)}-1`;
+    await mkdir(join(root, name));
+    await writeFile(
+      join(root, name, 'result.json'),
+      JSON.stringify({
+        policyDetailsId: 'D'.repeat(32),
+        historyId: 1,
+        outcome: 'declined',
+        validation: false,
+        issues: [],
+        startedAt: '2000-01-01T00:00:00.000Z',
+        finishedAt: '2000-01-01T00:01:00.000Z'
+      })
+    );
+
+    // act
+    const { policies } = await listViewerPolicies(root, {});
+
+    // assert
+    assert.equal(policies.find((policy) => policy.name === name).kind, 'not-compared');
   });
 
   test('lists nothing for an empty folder', async (context) => {

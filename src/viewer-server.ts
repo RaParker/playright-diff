@@ -55,8 +55,10 @@ const contentTypes: Readonly<Record<string, string>> = {
 export async function startViewerServer(options: ViewerServerOptions): Promise<ViewerServer> {
   const root = resolve(options.root);
   const staticDir = options.staticDir ?? join(projectRoot, 'src', 'viewer');
+  // The port is known only once listening (port 0 picks one); requests arrive after that
+  let port = options.port;
   const server = createServer((request, response) => {
-    handleRequest(request, response, { ...options, root, staticDir }).catch((error: unknown) => {
+    handleRequest(request, response, { ...options, root, staticDir, port }).catch((error: unknown) => {
       console.error(color.Red(`Viewer: ${request.url ?? ''} failed: ${String(error)}`));
       if (!response.headersSent) {
         send(response, 500, 'text/plain; charset=utf-8', 'Internal error');
@@ -66,7 +68,7 @@ export async function startViewerServer(options: ViewerServerOptions): Promise<V
     });
   });
   await listen(server, options.port);
-  const { port } = server.address() as AddressInfo;
+  port = (server.address() as AddressInfo).port;
   return {
     url: `http://${host}:${port}/`,
     port,
@@ -77,8 +79,13 @@ export async function startViewerServer(options: ViewerServerOptions): Promise<V
 async function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
-  options: Required<Omit<ViewerServerOptions, 'port'>>
+  options: Required<ViewerServerOptions>
 ): Promise<void> {
+  if (!isOwnHost(request.headers.host, options.port)) {
+    send(response, 403, 'text/plain; charset=utf-8', 'Forbidden');
+    return;
+  }
+
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     response.setHeader('Allow', 'GET, HEAD');
     send(response, 405, 'text/plain; charset=utf-8', 'Method not allowed');
@@ -107,6 +114,15 @@ async function handleRequest(
   } else {
     sendNotFound(response);
   }
+}
+
+/**
+ * True when a request names this server as its host. Binding to 127.0.0.1 keeps other machines out, but a web page the
+ * user visits could point its own domain at 127.0.0.1 (DNS rebinding) and read the data; its requests carry that
+ * domain as their Host, so only this server's own names are answered.
+ */
+function isOwnHost(hostHeader: string | undefined, port: number): boolean {
+  return hostHeader === `${host}:${port}` || hostHeader === `localhost:${port}`;
 }
 
 /**

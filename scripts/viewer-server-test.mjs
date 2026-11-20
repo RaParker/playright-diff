@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import { startViewerServer } from '../dist/viewer-server.js';
@@ -115,6 +116,40 @@ describe('viewer server', () => {
 
     // assert
     assert.equal(response.status, 405);
+  });
+
+  for (const hostHeader of ['evil.example', 'evil.example:4173', '127.0.0.1.evil.example']) {
+    test(`refuses a request for another host, ${hostHeader} (DNS rebinding)`, async (context) => {
+      // arrange
+      const { server } = await startOnFixture(context);
+
+      // act
+      const status = await new Promise((resolveStatus, reject) => {
+        const request = httpRequest(
+          { host: '127.0.0.1', port: server.port, path: '/api/policies', headers: { Host: hostHeader } },
+          (response) => {
+            response.resume();
+            resolveStatus(response.statusCode);
+          }
+        );
+        request.on('error', reject);
+        request.end();
+      });
+
+      // assert
+      assert.equal(status, 403);
+    });
+  }
+
+  test('accepts localhost as the host', async (context) => {
+    // arrange
+    const { server } = await startOnFixture(context);
+
+    // act
+    const response = await fetch(`http://localhost:${server.port}/api/policies`);
+
+    // assert
+    assert.equal(response.status, 200);
   });
 
   test('listens on 127.0.0.1 only', async (context) => {

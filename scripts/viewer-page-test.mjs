@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { rm } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { chromium } from 'playwright';
@@ -145,6 +145,52 @@ describe('viewer page', () => {
     const visible = await page.locator('#viewer img:visible').evaluateAll((images) => images.map((image) => image.src));
     assert.equal(visible.length, 1, JSON.stringify(visible));
     assert.match(visible[0], /diff\.png$/);
+  });
+
+  test('scrolls to a region in the diff.png view', async (context) => {
+    // arrange
+    const { server } = await serveFixture(context);
+    const page = await openViewer(context, server.url);
+    await selectPolicy(page, different);
+    await page.locator('#mode button[data-mode="diff"]').click();
+    await page.waitForFunction(() => document.querySelector('#pane-diff img')?.complete);
+
+    // act
+    await page.locator('#regions button[data-region="2"]').click();
+
+    // assert
+    assert.ok((await page.locator('#pane-diff').evaluate((pane) => pane.scrollTop)) > 0);
+  });
+
+  test('lists policies declined before declines were compared under All, not Matching end points', async (context) => {
+    // arrange
+    const name = `${'D'.repeat(32)}-1`;
+    const { server } = await serveFixture(context, {}, async (root) => {
+      await mkdir(join(root, name));
+      await writeFile(
+        join(root, name, 'result.json'),
+        JSON.stringify({
+          policyDetailsId: 'D'.repeat(32),
+          historyId: 1,
+          outcome: 'declined',
+          validation: false,
+          issues: [],
+          startedAt: '2000-01-01T00:00:00.000Z',
+          finishedAt: '2000-01-01T00:01:00.000Z'
+        })
+      );
+    });
+    const page = await openViewer(context, server.url);
+
+    // act
+    await page.locator('#filter').selectOption('endpoints');
+    const underEndpoints = await page.locator(`#policy-list li[data-name="${name}"]`).count();
+    await page.locator('#filter').selectOption('all');
+    const underAll = await page.locator(`#policy-list li[data-name="${name}"]`).count();
+
+    // assert
+    assert.equal(underEndpoints, 0);
+    assert.equal(underAll, 1);
   });
 
   test('reopens the policy in the hash', async (context) => {
