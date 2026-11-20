@@ -2,7 +2,56 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Output viewer</title>
+    <link rel="stylesheet" href="/viewer.css" />
   </head>
-  <body></body>
+  <body>
+    <header>
+      <span id="run"></span>
+      <label for="filter">Show</label>
+      <select id="filter">
+        <option value="different">Different</option>
+        <option value="different-not-rechecked">Different, not re-checked</option>
+        <option value="identical">Identical</option>
+        <option value="endpoints">Matching end points</option>
+        <option value="failed">Failed</option>
+        <option value="all">All</option>
+      </select>
+      <span id="count"></span>
+      <button type="button" id="previous" title="Previous policy (K)">◀</button>
+      <button type="button" id="next" title="Next policy (J)">▶</button>
+      <button type="button" id="refresh" title="Read the output folder again">Refresh</button>
+    </header>
+    <div id="layout">
+      <ul id="policy-list"></ul>
+      <main id="viewer">
+        <p id="empty" hidden></p>
+        <div id="toolbar" hidden>
+          <span id="mode">
+            <button type="button" data-mode="side" aria-pressed="true">Side by side</button>
+            <button type="button" data-mode="slider" aria-pressed="false">Slider</button>
+            <button type="button" data-mode="blink" aria-pressed="false">Blink</button>
+            <button type="button" data-mode="diff" aria-pressed="false">diff.png</button>
+          </span>
+          <span id="zoom">
+            <button type="button" data-zoom="-1" title="Zoom out">−</button>
+            <span id="zoom-level">100%</span>
+            <button type="button" data-zoom="1" title="Zoom in">+</button>
+          </span>
+          <span id="regions"></span>
+        </div>
+        <div id="region-text"></div>
+        <div id="panes">
+          <section id="pane-nhi" class="pane"></section>
+          <section id="pane-mrp" class="pane"></section>
+          <section id="pane-overlay" class="pane" hidden></section>
+          <section id="pane-diff" class="pane" hidden></section>
+        </div>
+        <input id="slider" type="range" min="0" max="100" value="50" hidden aria-label="Slider position" />
+        <div id="details"></div>
+      </main>
+    </div>
+    <script src="/viewer.js"></script>
+  </body>
 </html>

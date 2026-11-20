@@ -1,0 +1,173 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font:
+    14px/1.4 system-ui,
+    sans-serif;
+  color: #222;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 12px;
+  border-bottom: 1px solid #ccc;
+  background: #f6f6f6;
+}
+
+#run {
+  font-weight: 600;
+}
+
+#layout {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+#policy-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 290px;
+  overflow-y: auto;
+  border-right: 1px solid #ccc;
+}
+
+#policy-list li {
+  padding: 4px 8px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+#policy-list li[aria-current='true'] {
+  background: #dbe9ff;
+}
+
+#policy-list .marker {
+  font-family: system-ui, sans-serif;
+  color: #8a5a00;
+  margin-left: 6px;
+}
+
+#viewer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 6px 12px;
+  gap: 6px;
+}
+
+#toolbar {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+#toolbar[hidden] {
+  display: none;
+}
+
+button[aria-pressed='true'] {
+  background: #2d6cdf;
+  color: white;
+}
+
+#region-text {
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+}
+
+.removed {
+  color: #b00020;
+}
+
+.added {
+  color: #0a7a2f;
+}
+
+#panes {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+  min-height: 0;
+}
+
+.pane {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid #ccc;
+  position: relative;
+}
+
+.pane[hidden] {
+  display: none;
+}
+
+.pane h2 {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 2px 6px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.stage {
+  position: relative;
+  width: calc(100% * var(--zoom, 1));
+}
+
+.stage img {
+  display: block;
+  width: 100%;
+}
+
+.overlay-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.region {
+  position: absolute;
+  border: 2px solid rgba(230, 0, 90, 0.8);
+  pointer-events: none;
+}
+
+.region.current {
+  border-color: #2d6cdf;
+  background: rgba(45, 108, 223, 0.12);
+}
+
+.missing {
+  padding: 24px;
+  color: #8a5a00;
+}
+
+#details {
+  max-height: 25vh;
+  overflow-y: auto;
+  border-top: 1px solid #ccc;
+  padding-top: 4px;
+}
+
+#details dt {
+  font-weight: 600;
+}
+
+#details dd {
+  margin: 0 0 4px 12px;
+}
