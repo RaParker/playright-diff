@@ -58,6 +58,7 @@ and tools, then development tasks. `Get-Help ./Run-Project.ps1 -Full` gives the 
 reference.
 
 ```powershell
+./Run-Project.ps1 -Interactive                                   # answer questions, then run
 ./Run-Project.ps1 -Screenshot -Url https://example.com -Width 390 -Height 844
 ./Run-Project.ps1 -Compare -Before screenshots/before.png -After screenshots/after.png -NoOcr
 ./Run-Project.ps1 -QuotePage -PolicyDetailsId ABCDEF1234567890ABCDEF1234567890 -HistoryId 42
@@ -115,6 +116,30 @@ Each environment keeps its own files, so switching never mixes them up:
 `-Environment`. Running the tool changes nothing in this project except `.env`: a command that
 would write its output inside the project (for example with `OUTPUT_DIR` not set, or an
 `--output`, `-o`, `--root` or `-Destination` inside it) stops with an error instead.
+
+#### Interactive mode
+
+`./Run-Project.ps1 -Interactive` asks what to run, one question at a time, each with a default in
+brackets that Enter accepts:
+
+1. **What to run:** Quote pages (how many `[250]`, or one policy GUID), Retry failed, Retry
+   different, One policy (its policy details ID, and history ID `[1]`) or Summarise only.
+2. **Run name** `[]`: blank for the environment's own folder; an invalid name is asked again.
+3. **Environment:** a named run's recorded environment, otherwise `.env`'s; not asked for
+   Summarise only. A named run refuses another environment.
+4. **Settings:** the `-ShowConfig` block for those answers, then whether to continue `[Y]`.
+5. **Clear the output first** `[N]`, after listing what would be deleted: only for Quote pages and
+   One policy, as a retry needs the earlier results.
+6. **Options:** policies run at once `[3]`, no MRP fetch `[N]` and no OCR `[N]`; not asked for
+   Summarise only, and One policy has no concurrency or fetch option.
+7. **Summarise afterwards** `[Y]`.
+
+It then prints the plain commands, such as `./Run-Project.ps1 -QuotePages -MaxCount 20 -RunName
+temp2`, and runs them in turn once you confirm `[Y]`, so you can run the same without
+`-Interactive` next time. A failed clear stops the rest; a failed run still goes on to its
+Summarise. With `-WhatIf` it only prints the commands. It needs a console to answer in, and
+stops at once when input is redirected or PowerShell runs with `-NonInteractive`. The questions
+are in `scripts/Read-InteractiveRun.ps1`, tested in `scripts/Read-InteractiveRun.Tests.ps1`.
 
 When you add or change a CLI option in `src/main.ts`, update the matching parameter in
 `Run-Project.ps1` and its tests in `scripts/Run-Project.Tests.ps1`.

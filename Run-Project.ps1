@@ -129,6 +129,13 @@ example quotes-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk, or quotes-feature
 feature builds (which only reach dev and tst), so the host decides feature or not. The MRP fetch reads from the same
 environment. .env is only written when it changes.
 
+.PARAMETER Interactive
+Asks step by step what to run, each question with a default that Enter accepts: the task (Quote pages, Retry failed,
+Retry different, One policy or Summarise only) and its details, the run name, the environment (a named run's recorded
+one by default), then shows the settings. A fresh run offers to clear the output first, and runs offer their options
+and a Summarise afterwards. It then prints the plain commands and runs them once you confirm, so the same can be run
+without -Interactive next time. With -WhatIf it only prints them. It needs a console to answer in.
+
 .PARAMETER RunName
 QuotePage, QuotePages, RetryFailed, RetryDifferent, Summarise, ClearOutput and ShowConfig: a separate run whose output
 goes to OUTPUT_DIR/<RunName> instead of OUTPUT_DIR/<environment>, sharing the environment's MRP files. It applies to
@@ -139,6 +146,9 @@ name. A run keeps to the environment it was first made with.
 .PARAMETER Task
 Development task: Install (npm install), InstallBrowser (Playwright Chromium), Build, Typecheck, Lint,
 Test (all suites), TestCompare, TestQuotePage or Verify (VerifyProject.ps1).
+
+.EXAMPLE
+./Run-Project.ps1 -Interactive
 
 .EXAMPLE
 ./Run-Project.ps1 -Screenshot -Url https://example.com -Output screenshots/example.png -Width 390 -Height 844
@@ -302,6 +312,9 @@ param(
 
     [Parameter(Mandatory, ParameterSetName = 'ShowConfig')]
     [switch]$ShowConfig,
+
+    [Parameter(Mandatory, ParameterSetName = 'Interactive')]
+    [switch]$Interactive,
 
     [Parameter(ParameterSetName = 'Compare')]
     [Parameter(ParameterSetName = 'QuotePage')]
@@ -595,6 +608,8 @@ $overviewSections = @(
     @{
         Title = '2. Compare NHI and TCAS quote pages (main workflow, in this order)'
         Rows  = @(
+            @{ Usage = '-Interactive'; Description = 'Answer questions (with defaults) and it runs the commands below' }
+
             @{ Usage = '-ClearOutput'; Description = "Optional: delete this environment's output to start afresh" }
 
             @{ Depth = 1; Usage = '[-Environment <dev|tst|stg>]'; Description = 'Environment to clear (default: the one in .env)' }
@@ -775,6 +790,81 @@ function Format-Usage([string]$usage, [string]$usageStyle) {
     return $styledParts -join ''
 }
 
+<#
+.SYNOPSIS
+Runs -Interactive: asks what to run, prints the commands, and runs each through this script once confirmed.
+
+.OUTPUTS
+The exit code: the first failing command's, or 0. A run that fails still goes on to its Summarise, which reports why.
+#>
+function Invoke-InteractiveRun {
+    # Read-Host cannot answer from redirected input or with -NonInteractive; stop rather than fail part way through
+    if ([Console]::IsInputRedirected -or ([Environment]::GetCommandLineArgs() -contains '-NonInteractive')) {
+        Write-Host '-Interactive needs a console to answer its questions in. Run the commands themselves instead (see ./Run-Project.ps1 with no arguments).' -ForegroundColor Red
+        return 1
+    }
+
+    . (Join-Path $PSScriptRoot 'scripts' 'Read-InteractiveRun.ps1')
+    $steps = Read-InteractiveRun -DotEnvPath (Join-Path $PSScriptRoot '.env') -ShowConfig {
+        param($environment, $runName)
+
+        Invoke-RunProjectStep (@('-ShowConfig') + @(Get-CommonArguments $environment $runName)) | Out-Null
+    } -ShowClearOutput {
+        param($environment, $runName)
+
+        Invoke-RunProjectStep (@('-ClearOutput', '-WhatIf') + @(Get-CommonArguments $environment $runName)) | Out-Null
+    }
+
+    if ($steps.Count -eq 0) {
+        Write-Host 'Nothing was run.'
+        return 0
+    }
+
+    Write-Host 'Commands:' -ForegroundColor Cyan
+    foreach ($step in $steps) {
+        Write-Host "  $(Format-InteractiveCommand $step)"
+    }
+
+    if ($WhatIfPreference) {
+        return 0
+    }
+
+    if (!(Read-InteractiveYesNo 'Run these' $true)) {
+        Write-Host 'Nothing was run.'
+        return 0
+    }
+
+    return Invoke-InteractiveSteps $steps
+}
+
+# Runs each command in turn. A failed clear stops the rest (the run would mix old and new output); a failed run still
+# goes on to the Summarise after it, which lists the failures.
+function Invoke-InteractiveSteps([object[]]$steps) {
+    $firstFailure = 0
+    foreach ($step in $steps) {
+        $exitCode = Invoke-RunProjectStep $step
+        if ($exitCode -ne 0 -and $firstFailure -eq 0) {
+            $firstFailure = $exitCode
+        }
+
+        if ($exitCode -ne 0 -and $step[0] -eq '-ClearOutput') {
+            break
+        }
+    }
+
+    return $firstFailure
+}
+
+# Runs this script with the given arguments and returns its exit code
+function Invoke-RunProjectStep([string[]]$arguments) {
+    Write-Host ''
+    Write-Host (Format-InteractiveCommand $arguments) -ForegroundColor Cyan
+    $global:LASTEXITCODE = 0
+    # To the console, not the function's output, which is only the exit code
+    & $PSCommandPath @arguments | Out-Host
+    return $LASTEXITCODE
+}
+
 function Format-Styled([string]$text, [string]$style) {
     if (!$useOverviewColour) {
         return $text
@@ -786,6 +876,10 @@ function Format-Styled([string]$text, [string]$style) {
 if ($PSCmdlet.ParameterSetName -eq 'Help') {
     Write-Overview
     exit 0
+}
+
+if ($PSCmdlet.ParameterSetName -eq 'Interactive') {
+    exit (Invoke-InteractiveRun)
 }
 
 # Option names match the CLI flags; only parameters the caller passed are forwarded so the CLI keeps its defaults.

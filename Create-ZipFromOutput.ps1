@@ -71,6 +71,9 @@ param(
     [switch]$Help
 )
 
+. (Join-Path $PSScriptRoot "scripts" "Get-EnvFileValue.ps1")
+. (Join-Path $PSScriptRoot "scripts" "Get-RunNameProblem.ps1")
+
 function Get-OutputFolder([string]$Path) {
     $baseFolder = Get-Setting $Path "OUTPUT_DIR"
     if (!$baseFolder) {
@@ -103,40 +106,6 @@ function Get-OutputFolder([string]$Path) {
     return Join-Path $baseFolder $environment.Trim().ToLowerInvariant()
 }
 
-# Says why a run name cannot be a folder name on both Windows and Linux, or returns nothing when it can; the same rules
-# as validateRunName in src/run-name.ts
-function Get-RunNameProblem([string]$Name) {
-    if ($Name -in @('.', '..')) {
-        return 'is not a folder name'
-    }
-
-    if ($Name -match '[<>:"/\\|?*]') {
-        return 'contains a character Windows or Linux does not allow in a folder name (< > : " / \ | ? *)'
-    }
-
-    if ($Name.ToCharArray() | Where-Object { [int]$_ -lt 0x20 }) {
-        return 'contains a control character'
-    }
-
-    if ($Name.EndsWith(' ') -or $Name.EndsWith('.')) {
-        return 'ends with a space or a dot, which Windows drops from folder names'
-    }
-
-    if ($Name -match '^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$') {
-        return 'is a name Windows reserves for a device (CON, PRN, AUX, NUL, COM1-9, LPT1-9)'
-    }
-
-    if ([System.Text.Encoding]::UTF8.GetByteCount($Name) -gt 255) {
-        return 'is longer than 255 bytes'
-    }
-
-    if ($Name.ToLowerInvariant() -in @('dev', 'stg', 'tst')) {
-        return "is an environment name; leave the run name out to use that environment's folder"
-    }
-
-    return $null
-}
-
 # Whether the path is this project or inside it, ignoring case as Windows does; output is never written there
 function Test-InsideProject([string]$Path) {
     $separators = [char[]]@([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
@@ -162,22 +131,6 @@ function Get-Setting([string]$Path, [string]$Name) {
     }
 
     return Get-EnvFileValue $Path $Name
-}
-
-function Get-EnvFileValue([string]$Path, [string]$Name) {
-    if (!(Test-Path -LiteralPath $Path -PathType Leaf)) {
-        return $null
-    }
-
-    # Matches NAME=value, NAME="value" or NAME='value', with optional "export " and a trailing # comment
-    $pattern = "^\s*(?:export\s+)?$([regex]::Escape($Name))\s*=\s*(?:`"([^`"]*)`"|'([^']*)'|([^#]*?))\s*(?:#.*)?$"
-    foreach ($line in Get-Content -LiteralPath $Path) {
-        if ($line -match $pattern) {
-            return @($Matches[1], $Matches[2], $Matches[3]) | Where-Object { $_ } | Select-Object -First 1
-        }
-    }
-
-    return $null
 }
 
 if ($Help) {
