@@ -159,7 +159,10 @@ export interface GuidListStatus {
   total: number;
   /** Listed policies with no recorded result: no `<policyDetailsId>-1` folder, or one without a result. */
   withoutResult: string[];
-  /** Listed policies with no `<policyDetailsId>-1-mrp.json` in mrp-and-quote's output folder. */
+  /**
+   * Listed policies with a result but no `<policyDetailsId>-1-mrp.json` in mrp-and-quote's output folder. Policies not
+   * run yet are left out: a run fetches their MRP files first.
+   */
   missingMrp: string[];
 }
 
@@ -283,7 +286,8 @@ export async function countOopsPages(summary: QuoteResultsSummary): Promise<Oops
  * @param guidListPath GUID list file, one policy ID per line.
  * @param mrpAndQuoteOutputDir mrp-and-quote's output folder.
  * @param summary The results summary, to tell which listed policies have run.
- * @returns The list's size, its policies with no recorded result, and those whose MRP record was not retrieved.
+ * @returns The list's size, its policies with no recorded result, and those with a result whose MRP record was not
+ * retrieved.
  * @throws When the GUID list cannot be read or has an invalid line.
  */
 export async function collectGuidListStatus(
@@ -297,11 +301,12 @@ export async function collectGuidListStatus(
     ...summary.declined,
     ...summary.failed.map(({ name }) => name)
   ]);
+  const hasResult = (guid: string): boolean => names.has(`${guid}-${fetchedHistoryId}`);
   return {
     path: resolve(guidListPath),
     total: guids.length,
-    withoutResult: guids.filter((guid) => !names.has(`${guid}-${fetchedHistoryId}`)),
-    missingMrp: await filterMissingMrpFiles(guids, mrpAndQuoteOutputDir)
+    withoutResult: guids.filter((guid) => !hasResult(guid)),
+    missingMrp: await filterMissingMrpFiles(guids.filter(hasResult), mrpAndQuoteOutputDir)
   };
 }
 

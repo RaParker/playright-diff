@@ -526,8 +526,9 @@ In order, it prints:
   [quote-pages](#quote-pages).
 - **Failures by reason:** each issue with the number of policies reporting it; URLs, file paths
   and IDs are ignored so the same error groups together (dates such as `DD/MM/YYYY` are kept).
-- **MRP records not retrieved:** GUID list entries with no `<ID>-1-mrp.json` in
-  `OUTPUT_DIR/<env>/mrp-and-quote`.
+- **MRP records not retrieved:** GUID list entries with a result but no `<ID>-1-mrp.json` in
+  `OUTPUT_DIR/<env>/mrp-and-quote`. Policies not run yet are left out, since a run fetches
+  their MRP files first.
 - **Totals:** the GUID list size, how many have a result and how many do not (not run, or an
   empty folder); the compared, identical, different, matching end point and failed counts (and
   any both-declined results from before declines were compared); and the Oops pages.

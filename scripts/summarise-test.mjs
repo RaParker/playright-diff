@@ -1026,7 +1026,7 @@ describe('summarise differences from the quote data', () => {
 });
 
 describe('collectGuidListStatus', () => {
-  test('counts the list, the policies not run and the MRP records not retrieved', async () => {
+  test('counts the list, the policies not run and the MRP records not retrieved for policies with a result', async () => {
     // arrange
     const { root, mrp, guidList } = await projectFixture();
     const summary = await collectQuoteResults(root);
@@ -1037,7 +1037,7 @@ describe('collectGuidListStatus', () => {
     // assert
     assert.equal(status.total, 7);
     assert.deepEqual(status.withoutResult, [unrecordedPolicy, notRunPolicy]);
-    assert.deepEqual(status.missingMrp, [failedPolicy, notRunPolicy]);
+    assert.deepEqual(status.missingMrp, [failedPolicy]);
   });
 });
 
@@ -1066,10 +1066,11 @@ describe('summarise command', () => {
         output,
         /Failures by reason\n {2}1× NHI: Website displayed <h2>Oops<\/h2>; stopping the journey\.\n/
       );
-      assert.match(output, /MRP records not retrieved \(2\)\n {2}C{32}\n {2}1{32}\n/);
+      assert.match(output, /MRP records not retrieved \(1\)\n {2}C{32}\n\n/);
+      assert.doesNotMatch(output, /^ {2}1{32}$/m);
       assert.match(
         output,
-        /GUID list: 7 policies \(.*guids\.txt\); 5 with a result, 2 without; 2 MRP records not retrieved\./
+        /GUID list: 7 policies \(.*guids\.txt\); 5 with a result, 2 without; 1 MRP records not retrieved\./
       );
       assert.match(
         output,
