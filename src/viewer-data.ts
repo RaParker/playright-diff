@@ -125,7 +125,7 @@ export async function readViewerPolicyDetail(root: string, folder: string): Prom
   return {
     ...toViewerPolicy(folder, summary),
     ...(typeof raw.imageScale === 'number' ? { imageScale: raw.imageScale } : {}),
-    images: findImages(directory, new Set(files), raw),
+    images: await findImages(directory, new Set(files), raw, summary.result?.startedAt),
     regions: compared === undefined ? [] : readRegions(raw, compared),
     issues: summary.result?.issues ?? [],
     ...(answerChanges === undefined ? {} : { answerChanges }),
@@ -158,7 +158,12 @@ function toViewerPolicy(name: string, summary: PolicyFolderSummary | undefined):
  * Finds the screenshots in a policy folder. The compared pair are the files `report.json` names (a decline saves
  * `screenshot-declined-*.png`), falling back to the quote page screenshots.
  */
-function findImages(directory: string, files: Set<string>, report: RawReport): ViewerImages {
+async function findImages(
+  directory: string,
+  files: Set<string>,
+  report: RawReport,
+  runStartedAt: string | undefined
+): Promise<ViewerImages> {
   const present = (path: unknown): string | undefined => {
     const name = typeof path === 'string' ? basename(path) : undefined;
     return name !== undefined && files.has(name) ? name : undefined;
@@ -169,10 +174,26 @@ function findImages(directory: string, files: Set<string>, report: RawReport): V
     nhi: present(report.before) ?? present(flow('nhi').screenshot),
     mrp: present(report.after) ?? present(flow('mrp').screenshot),
     diff: present('diff.png'),
-    failedNhi: present(flow('nhi').stopped.failed.screenshot),
-    failedMrp: present(flow('mrp').stopped.failed.screenshot)
+    failedNhi: await presentFromLastRun(present(flow('nhi').stopped.failed.screenshot), directory, runStartedAt),
+    failedMrp: await presentFromLastRun(present(flow('mrp').stopped.failed.screenshot), directory, runStartedAt)
   };
   return Object.fromEntries(Object.entries(images).filter(([, value]) => value !== undefined));
+}
+
+/**
+ * Keeps a failure screenshot only when it was saved during the policy's last run, as the summary does for Oops pages: a
+ * run that stopped before clearing old output (such as for a missing MRP) leaves an earlier run's screenshot behind.
+ */
+async function presentFromLastRun(
+  name: string | undefined,
+  directory: string,
+  runStartedAt: string | undefined
+): Promise<string | undefined> {
+  if (name === undefined || runStartedAt === undefined) {
+    return name;
+  }
+
+  return (await stat(join(directory, name))).mtimeMs < Date.parse(runStartedAt) ? undefined : name;
 }
 
 /** Each region of `report.json` with the summary's line-by-line text change for it. */

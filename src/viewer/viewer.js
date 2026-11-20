@@ -26,6 +26,8 @@ const kindLabels = {
 
 const zoomLevels = [0.5, 0.75, 1, 1.5, 2, 3];
 const blinkIntervalMs = 500;
+/** Space left above a region when scrolling to it, so its outline is not at the very top of the pane. */
+const regionScrollMarginPx = 40;
 
 const state = { run: undefined, visible: [], selected: undefined, detail: undefined, mode: 'side', zoom: 2 };
 let blinkTimer;
@@ -64,7 +66,7 @@ async function loadRun() {
   const { environment, runName, root } = state.run;
   element('run').textContent = [environment, runName].filter(Boolean).join(' / ') || 'Output';
   element('run').title = root;
-  const wanted = decodeURIComponent(location.hash.slice(1)) || state.selected;
+  const wanted = readHash() ?? state.selected;
   if (wanted && !state.run.policies.some(({ name, ...policy }) => name === wanted && currentFilter().test(policy))) {
     if (state.run.policies.some(({ name }) => name === wanted)) {
       element('filter').value = 'all';
@@ -127,13 +129,50 @@ async function selectPolicy(name) {
   markSelected();
   history.replaceState(null, '', `#${encodeURIComponent(name)}`);
   element('policy-list').querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'nearest' });
-  const detail = await fetchJson(`/api/policies/${encodeURIComponent(name)}`);
+  let detail;
+  try {
+    detail = await fetchJson(`/api/policies/${encodeURIComponent(name)}`);
+  } catch (error) {
+    // Clear the previous policy, so its screenshots are never shown under this one's name
+    if (state.selected === name) {
+      showLoadError(name, error);
+    }
+
+    return;
+  }
+
   if (state.selected !== name) {
     return;
   }
 
   state.detail = detail;
   renderPolicy();
+}
+
+function showLoadError(name, error) {
+  state.detail = undefined;
+  clearInterval(blinkTimer);
+  element('toolbar').hidden = true;
+  element('slider').hidden = true;
+  element('region-text').textContent = '';
+  for (const id of ['pane-nhi', 'pane-mrp', 'pane-overlay', 'pane-diff']) {
+    element(id).replaceChildren();
+  }
+
+  element('details').replaceChildren(
+    create('p', `Could not load ${name}: ${error.message}. Refresh to read the output folder again.`, {
+      class: 'missing'
+    })
+  );
+}
+
+/** The policy named in the URL hash, or `undefined` when there is none or it cannot be decoded. */
+function readHash() {
+  try {
+    return decodeURIComponent(location.hash.slice(1)) || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function fileUrl(file) {
@@ -152,7 +191,7 @@ function renderPolicy() {
   renderPane('pane-diff', 'diff.png', detail.images.diff, false);
   renderRegions();
   renderDetails();
-  setMode(failed ? 'side' : state.mode);
+  showMode(failed ? 'side' : state.mode);
 }
 
 function renderPane(id, label, file, failed) {
@@ -248,7 +287,7 @@ function showRegion(region) {
   );
   const scale = image ? image.clientWidth / image.naturalWidth : 1;
   for (const id of ['pane-nhi', 'pane-overlay', 'pane-diff']) {
-    element(id).scrollTop = Math.max(0, region.bounds.top * scale - 40);
+    element(id).scrollTop = Math.max(0, region.bounds.top * scale - regionScrollMarginPx);
   }
 }
 
@@ -289,18 +328,24 @@ function describeAnswerChanges(answerChanges) {
   return lines;
 }
 
-function setMode(mode) {
-  state.mode = mode === 'side' || state.detail?.kind !== 'failed' ? mode : 'side';
+/** Records the view the user chose, which later policies open in, and shows it. */
+function chooseMode(mode) {
+  state.mode = mode;
+  showMode(mode);
+}
+
+/** Shows a view without changing the user's choice (a failed policy is always shown side by side). */
+function showMode(mode) {
   for (const button of element('mode').querySelectorAll('button')) {
-    button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode));
+    button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
   }
 
-  const overlay = state.mode === 'slider' || state.mode === 'blink';
-  element('pane-nhi').hidden = state.mode !== 'side';
-  element('pane-mrp').hidden = state.mode !== 'side';
+  const overlay = mode === 'slider' || mode === 'blink';
+  element('pane-nhi').hidden = mode !== 'side';
+  element('pane-mrp').hidden = mode !== 'side';
   element('pane-overlay').hidden = !overlay;
-  element('pane-diff').hidden = state.mode !== 'diff';
-  element('slider').hidden = state.mode !== 'slider';
+  element('pane-diff').hidden = mode !== 'diff';
+  element('slider').hidden = mode !== 'slider';
   clearInterval(blinkTimer);
   const top = element('pane-overlay').querySelector('.overlay-top');
   if (top) {
@@ -308,9 +353,9 @@ function setMode(mode) {
     top.style.clipPath = '';
   }
 
-  if (state.mode === 'slider') {
+  if (mode === 'slider') {
     applySlider();
-  } else if (state.mode === 'blink' && top) {
+  } else if (mode === 'blink' && top) {
     blinkTimer = setInterval(() => {
       top.style.visibility = top.style.visibility === 'hidden' ? 'visible' : 'hidden';
     }, blinkIntervalMs);
@@ -376,7 +421,7 @@ element('slider').addEventListener('input', applySlider);
 element('mode').addEventListener('click', (event) => {
   const mode = event.target.closest('button')?.dataset.mode;
   if (mode) {
-    setMode(mode);
+    chooseMode(mode);
   }
 });
 element('zoom').addEventListener('click', (event) => {
@@ -389,7 +434,7 @@ element('pane-nhi').addEventListener('scroll', syncScroll);
 element('pane-mrp').addEventListener('scroll', syncScroll);
 window.addEventListener('resize', drawRegionOutlines);
 window.addEventListener('hashchange', () => {
-  const name = decodeURIComponent(location.hash.slice(1));
+  const name = readHash();
   if (name && name !== state.selected) {
     selectPolicy(name);
   }

@@ -49,7 +49,7 @@ policy without leaving the browser.
 ## Approaches
 
 1. **A `serve` command in this tool (chosen).** A server on Node's built-in `http` module, started by
-   `npm run serve` and `Run-Project.ps1 -Serve`. It reuses `collectQuoteResults` and the summary's classification,
+   `npm run serve` and `Run-Project.ps1 -Serve`. It reuses the summary's classification (`summarisePolicyFolder`, shared with `collectQuoteResults`),
    serves one static HTML/CSS/JS page, and reads the policy folders on each request, so a refresh shows new results
    during a run. No new dependencies.
 2. **A static HTML report** written by `summarise --html`. No server, but it must be regenerated after every run, and
@@ -70,14 +70,14 @@ dependencies. Layout A (list on the left, full screenshots side by side) was pic
   overview like `-Summarise`, with `-WhatIf` printing the command.
 - `-Interactive`: a new task, "View results", which asks only for the run name (as "Summarise only" does) and runs
   `-Serve`.
-- It binds to `127.0.0.1` only. If the port is taken it fails with a message naming `-Port`.
+- It binds to `127.0.0.1` only. If the port is taken it fails with `Port <n> is in use; choose another with --port (-Port in Run-Project.ps1)`.
 
 ### Server
 
 - Routes (all `GET`):
   - `/` and static assets: the viewer page, from a folder in the project (for example `src/viewer/`, copied to
     `dist/` by the build or served from `src/`; builder's call).
-  - `/api/policies`: every policy from `collectQuoteResults`, each with its folder name, kind (identical, different,
+  - `/api/policies`: every policy as `collectQuoteResults` sorts it, each with its folder name, kind (identical, different,
     matching end point, failed, declined, unrecorded), changed %, size difference, whether it has text differences,
     its end points and its cover type re-check (outcome and previous cover type) when set. Also the run (environment and run name) and the output folder, for the header.
   - `/api/policies/<folder>`: one policy's detail: its `report.json` regions (id, bounds, text changes, confidence),
@@ -111,7 +111,7 @@ Run: dev / <run name> | Different (7) ▾ | ◀ ▶ (J/K)
   - Decided with the user: the default matches the full summary rather than `-Mode differences`. The selected policy is kept in the URL hash, so a
     refresh or a shared link reopens it.
 - **Viewer:** both screenshots scaled to the pane width, scrolling and zooming together; region bounds (from
-  `report.json`, scaled by its `imageScale`) drawn as outlines on both. Clicking a region number scrolls to it and shows
+  `report.json`, which are in screenshot pixels, so scaled by the displayed width over the screenshot's width) drawn as outlines on both. Clicking a region number scrolls to it and shows
   its text change below. Slider and blink overlay MRP on NHI at the same scale; `diff.png` replaces both.
 - **Details:** end points, size difference, answer changes, and the endorsement-order note when set.
 - **Failed policies:** the failure screenshot(s) and the issues from `result.json`, instead of the comparison.

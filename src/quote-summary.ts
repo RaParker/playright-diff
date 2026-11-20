@@ -227,9 +227,9 @@ async function tickConfirmation(
   }
 
   console.log(color.Gray(`${label}: ticking ${confirm.label}.`));
-  const id = await checkbox.getAttribute('id');
+  // Found by its text, so it works whether the label is linked to the input by id or holds it
   await page
-    .locator(`label[for="${id ?? ''}"]`)
+    .locator('label')
     .filter({ hasText: exactText(confirm.label) })
     .click();
 }

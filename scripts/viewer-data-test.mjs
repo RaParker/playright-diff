@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import { collectQuoteResults } from '../dist/summarise.js';
@@ -154,6 +154,19 @@ describe('readViewerPolicyDetail', () => {
       'NHI: Website displayed <h2>Oops</h2>; stopping the journey.'
     ]);
     assert.deepEqual(detail.images, { failedNhi: 'screenshot-failed-nhi.png' });
+  });
+
+  test('leaves out a failure screenshot saved before the last run started', async (context) => {
+    // arrange
+    const root = await fixture(context);
+    const earlier = new Date('1999-12-31T00:00:00.000Z');
+    await utimes(join(root, `${failedPolicy}-1`, 'screenshot-failed-nhi.png'), earlier, earlier);
+
+    // act
+    const detail = await readViewerPolicyDetail(root, `${failedPolicy}-1`);
+
+    // assert
+    assert.deepEqual(detail.images, {});
   });
 
   for (const folder of ['mrp-and-quote', '..', '.ocr-cache', `${'9'.repeat(32)}-1`]) {

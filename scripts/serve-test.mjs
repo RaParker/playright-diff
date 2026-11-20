@@ -82,6 +82,21 @@ describe('serve command', () => {
     });
   }
 
+  for (const option of ['--bogus', '-x']) {
+    test(`reports the unknown option ${option} as unknown, not as a bad port`, async (context) => {
+      // arrange
+      const root = await fixture(context);
+
+      // act
+      const { code, output } = await runCli(root, ['serve', option]);
+
+      // assert
+      assert.equal(code, 1);
+      assert.match(output, /Unknown option/);
+      assert.doesNotMatch(output, /--port must be/);
+    });
+  }
+
   test('reports a port in use', async (context) => {
     // arrange
     const root = await fixture(context);
@@ -95,7 +110,7 @@ describe('serve command', () => {
 
     // assert
     assert.equal(code, 1);
-    assert.match(output, new RegExp(`Port ${port} is in use; pass --port`));
+    assert.match(output, new RegExp(`Port ${port} is in use; choose another with --port`));
     assert.doesNotMatch(output, /\n\s+at /);
   });
 

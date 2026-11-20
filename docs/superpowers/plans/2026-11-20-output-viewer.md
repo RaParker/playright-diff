@@ -6,7 +6,7 @@
 policy's NHI and MRP screenshots side by side.
 
 **Architecture:** `src/viewer-data.ts` turns the output folder into JSON using the summary's own
-`collectQuoteResults`; `src/viewer-server.ts` serves that JSON, the policy files and a static page from
+`summarisePolicyFolder` (as built; shared with `collectQuoteResults`); `src/viewer-server.ts` serves that JSON, the policy files and a static page from
 `src/viewer/` on Node's `http` module; `main.ts` adds the `serve` command; `Run-Project.ps1` and
 `Read-InteractiveRun.ps1` start it.
 
@@ -43,7 +43,7 @@ Playwright for the page test, Pester for PowerShell.
    scale from the top, so pixel rows line up and the shorter one simply ends; scroll stays locked. Owned by Task 4.
 4. **Nothing to show:** an empty output folder, or no different policies. Expected: the server starts, the page says
    "No different policies" and shows the output folder path. Owned by Tasks 1 and 4.
-5. **Port already in use.** Expected: `serve` exits non-zero with `Port <n> is in use; pass --port` (`-Port` from
+5. **Port already in use.** Expected: `serve` exits non-zero with `Port <n> is in use; choose another with --port (-Port in Run-Project.ps1)` (`-Port` from
    Run-Project.ps1), not a stack trace. Owned by Task 3.
 
 ---
@@ -122,7 +122,7 @@ from the output folder`.
     `src/` under tsx and `dist/`).
   - `export async function startViewerServer(options: ViewerServerOptions): Promise<{ url: string; port: number;
 close(): Promise<void> }>`: binds `127.0.0.1`; `port: 0` picks a free port; rejects with
-    `Error('Port <n> is in use; pass --port')` on `EADDRINUSE`.
+    `Error('Port <n> is in use; choose another with --port (-Port in Run-Project.ps1)')` on `EADDRINUSE`.
   - Routes (GET and HEAD only; anything else `405`): `/` → `index.html`; `/viewer.css`, `/viewer.js` → those files;
     `/api/policies` → `ViewerRun`; `/api/policies/<folder>` → `ViewerPolicyDetail` or `404`;
     `/files/<folder>/<file>` → the file or `404`. Unknown paths `404`.
@@ -141,7 +141,7 @@ close(): Promise<void> }>`: binds `127.0.0.1`; `port: 0` picks a free port; reje
     lists it.
   - `rejects writes`: `POST /api/policies` is `405`.
   - `reports a port in use` (Review Focus 5): start one server, start a second on its port; rejects with
-    `/Port \d+ is in use; pass --port/`.
+    `/Port \d+ is in use; choose another with --port/`.
 - [ ] **Step 2:** `npm run build && node --import ./scripts/test-setup.mjs --test scripts/viewer-server-test.mjs` —
       expected FAIL.
 - [ ] **Step 3: Implement** `src/viewer-server.ts`. Decode the path once, then require the folder to match
@@ -176,7 +176,7 @@ scripts/viewer-fixture.mjs scripts/viewer-data-test.mjs` — `feat: viewer serve
   - `rejects a port that is not a number`: `serve --port abc` exits 1 with `--port must be a whole number from 0 to
 65535` and the usage line.
   - `reports a port in use` (Review Focus 5): occupy a port with `net.createServer`; `serve --port <n> --no-open`
-    exits 1 with `Port <n> is in use; pass --port`, no stack trace.
+    exits 1 with `Port <n> is in use; choose another with --port (-Port in Run-Project.ps1)`, no stack trace.
   - `--help` prints the serve usage.
 - [ ] **Step 2:** `npm run build && node --import ./scripts/test-setup.mjs --test scripts/serve-test.mjs` — expected
       FAIL.
@@ -226,7 +226,8 @@ for the output viewer`.
 - [ ] **Step 2:** `npm run build && node --import ./scripts/test-setup.mjs --test scripts/viewer-page-test.mjs` —
       expected FAIL.
 - [ ] **Step 3: Implement** the page as in the spec's layout A. Both images get the same CSS width (the pane width ×
-      zoom), so heights keep their ratio; region outlines are absolutely positioned boxes at `bounds / imageScale` × the
+      zoom), so heights keep their ratio; region outlines are absolutely positioned boxes at `bounds` × the displayed width over the screenshot's width (as built: bounds are in screenshot pixels, so
+      `imageScale` is not applied) ×
       displayed scale. Slider: MRP over NHI with `clip-path` from a range input. Blink: toggles which image is visible
       every 500 ms. The hash holds the folder name; `hashchange` selects it. Refresh = reload `/api/policies` keeping the
       selection.

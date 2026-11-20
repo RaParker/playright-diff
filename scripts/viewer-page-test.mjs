@@ -193,6 +193,49 @@ describe('viewer page', () => {
     assert.equal(underAll, 1);
   });
 
+  test('says when a policy cannot be loaded, rather than showing the previous one', async (context) => {
+    // arrange
+    const { root, server } = await serveFixture(context);
+    const page = await openViewer(context, server.url);
+    await selectPolicy(page, different);
+    await rm(join(root, rechecked), { recursive: true, force: true });
+
+    // act
+    await page.locator(`#policy-list li[data-name="${rechecked}"]`).click();
+
+    // assert
+    await page.locator('#details', { hasText: `Could not load ${rechecked}` }).waitFor();
+    assert.equal(await page.locator('#viewer img').count(), 0);
+  });
+
+  test('ignores a malformed hash', async (context) => {
+    // arrange
+    const { server } = await serveFixture(context);
+
+    // act
+    const page = await openViewer(context, `${server.url}#%E0`);
+
+    // assert
+    assert.equal(await page.locator('#policy-list li').count(), 2);
+  });
+
+  test('keeps the chosen view after showing a failed policy', async (context) => {
+    // arrange
+    const { server } = await serveFixture(context);
+    const page = await openViewer(context, server.url);
+    await selectPolicy(page, different);
+    await page.locator('#mode button[data-mode="blink"]').click();
+    await page.locator('#filter').selectOption('all');
+    await selectPolicy(page, failed);
+
+    // act
+    await selectPolicy(page, different);
+    await page.locator('#pane-overlay img[src$="screenshot-quote-page-mrp.png"]').waitFor({ state: 'attached' });
+
+    // assert
+    assert.equal(await page.locator('#mode button[data-mode="blink"]').getAttribute('aria-pressed'), 'true');
+  });
+
   test('reopens the policy in the hash', async (context) => {
     // arrange
     const { server } = await serveFixture(context);

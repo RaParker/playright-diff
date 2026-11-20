@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, join, resolve } from 'node:path';
@@ -21,8 +22,11 @@ export interface ViewerServerOptions {
 
 /** A running viewer server. */
 export interface ViewerServer {
+  /** The page's address, for example `http://127.0.0.1:4173/`. */
   url: string;
+  /** The port it listens on (the one picked, when started with port 0). */
   port: number;
+  /** Stops listening and closes open connections. */
   close(): Promise<void>;
 }
 
@@ -34,6 +38,15 @@ const staticFiles: Readonly<Record<string, string>> = {
   '/': 'index.html',
   '/viewer.css': 'viewer.css',
   '/viewer.js': 'viewer.js'
+};
+
+/**
+ * Sent with every file from a policy folder. The saved quote pages are the site's own HTML, scripts included, so they are
+ * sandboxed: opened from the viewer they cannot run as the viewer's origin and read its data.
+ */
+const policyFileHeaders: Readonly<Record<string, string>> = {
+  'Content-Security-Policy': 'sandbox',
+  'X-Content-Type-Options': 'nosniff'
 };
 
 const contentTypes: Readonly<Record<string, string>> = {
@@ -156,16 +169,22 @@ async function sendPolicyFile(response: ServerResponse, root: string, folder: st
     return;
   }
 
-  await sendFile(response, join(root, folder), file);
+  await sendFile(response, join(root, folder), file, policyFileHeaders);
 }
 
-async function sendFile(response: ServerResponse, directory: string, file: string): Promise<void> {
+async function sendFile(
+  response: ServerResponse,
+  directory: string,
+  file: string,
+  headers: Readonly<Record<string, string>> = {}
+): Promise<void> {
   if (!(await readFileNames(directory)).includes(file)) {
     sendNotFound(response);
     return;
   }
 
   response.writeHead(200, {
+    ...headers,
     'Cache-Control': 'no-store',
     'Content-Type': contentTypes[extname(file).toLowerCase()] ?? 'application/octet-stream'
   });
@@ -174,9 +193,14 @@ async function sendFile(response: ServerResponse, directory: string, file: strin
     return;
   }
 
-  await new Promise<void>((resolveSent, reject) => {
-    createReadStream(join(directory, file)).on('error', reject).pipe(response).on('finish', resolveSent);
-  });
+  try {
+    // pipeline closes the file when the browser cancels a download (as it does when moving to another policy)
+    await pipeline(createReadStream(join(directory, file)), response);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+      throw error;
+    }
+  }
 }
 
 function sendJson(response: ServerResponse, value: unknown): void {
@@ -195,7 +219,11 @@ function send(response: ServerResponse, status: number, contentType: string, bod
 function listen(server: Server, port: number): Promise<void> {
   return new Promise((resolveListen, reject) => {
     server.once('error', (error: NodeJS.ErrnoException) => {
-      reject(error.code === 'EADDRINUSE' ? new Error(`Port ${port} is in use; pass --port`) : error);
+      reject(
+        error.code === 'EADDRINUSE'
+          ? new Error(`Port ${port} is in use; choose another with --port (-Port in Run-Project.ps1)`)
+          : error
+      );
     });
     server.listen(port, host, () => resolveListen());
   });

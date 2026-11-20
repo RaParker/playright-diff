@@ -145,6 +145,11 @@ Notes:
 /** Port the output viewer listens on when `--port` is not given. */
 const defaultServePort = 4173;
 
+/** The highest TCP port number. */
+const maxPort = 65535;
+
+const portProblem = `--port must be a whole number from 0 to ${maxPort}.`;
+
 const serveUsage = 'Usage: npm run serve -- [--port <port>] [--no-open]';
 
 const serveHelp = `${serveUsage}
@@ -570,22 +575,23 @@ function parseServeArgs(args: string[]) {
       options: { port: { type: 'string' }, 'no-open': { type: 'boolean' }, help: { type: 'boolean', short: 'h' } }
     });
   } catch (error) {
-    const port = args[args.indexOf('--port') + 1];
-    const problem =
-      port?.startsWith('-') === true ? '--port must be a whole number from 0 to 65535.' : describeError(error);
+    // parseArgs refuses a value starting with a dash (--port -1) before parseServePort can say what a port must be
+    const portIndex = args.indexOf('--port');
+    const port = portIndex === -1 ? undefined : args[portIndex + 1];
+    const problem = port?.startsWith('-') === true ? portProblem : describeError(error);
     throw new Error(usageError(problem, serveUsage, 'serve'), { cause: error });
   }
 }
 
-/** Reads `--port`: a whole number from 0 (any free port) to 65535, or {@link defaultServePort} when not given. */
+/** Reads `--port`: a whole number from 0 (any free port) to {@link maxPort}, or {@link defaultServePort} when not given. */
 function parseServePort(value: string | undefined): number {
   if (value === undefined) {
     return defaultServePort;
   }
 
   const port = Number(value);
-  if (!/^\d+$/.test(value) || port > 65535) {
-    throw new Error(usageError('--port must be a whole number from 0 to 65535.', serveUsage, 'serve'));
+  if (!/^\d+$/.test(value) || port > maxPort) {
+    throw new Error(usageError(portProblem, serveUsage, 'serve'));
   }
 
   return port;

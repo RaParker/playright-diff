@@ -94,9 +94,9 @@ Summarise only: differences (only the policies whose screenshots differed) or ch
 every policy's answer changes). Without it, the full summary is shown.
 
 .PARAMETER Serve
-Open the output viewer in the browser: a local, read-only page listing the policies as -Summarise counts them (the
-different ones first), with each policy's NHI and MRP screenshots side by side. Ctrl+C stops it. Takes -RunName to view
-a named run.
+Open the output viewer in the browser: a local, read-only page listing the policies as -Summarise counts them
+(showing the different ones by default), with each policy's NHI and MRP screenshots side by side. Ctrl+C stops it.
+Takes -RunName to view a named run.
 
 .PARAMETER Port
 Serve only: port the viewer listens on, on this computer only (default: 4173; 0 picks any free port).
@@ -140,15 +140,15 @@ environment. .env is only written when it changes.
 
 .PARAMETER Interactive
 Asks step by step what to run, each question with a default that Enter accepts: the task (Quote pages, Retry failed,
-Retry different, One policy, Summarise only or View results) and its details, the run name, the environment (a named run's recorded
-one by default), then shows the settings. A fresh run offers to clear the output first, runs offer their options, and
-every run is followed by a Summarise. It then prints the plain commands and runs them once you confirm, so the same can be run
-without -Interactive next time. With -WhatIf it only prints them. It needs a console to answer in.
+Retry different, One policy, Summarise only or View results) and its details, the run name, the environment (a named
+run's recorded one by default), then shows the settings. A fresh run offers to clear the output first, runs offer their
+options, and every run is followed by a Summarise. It then prints the plain commands and runs them once you confirm, so
+the same can be run without -Interactive next time. With -WhatIf it only prints them. It needs a console to answer in.
 
 .PARAMETER RunName
-QuotePage, QuotePages, RetryFailed, RetryDifferent, Summarise, Serve, ClearOutput and ShowConfig: a separate run whose output
-goes to OUTPUT_DIR/<RunName> instead of OUTPUT_DIR/<environment>, sharing the environment's MRP files. It applies to
-this command only and is never saved to .env, so pass it to each command that should use the run (for example the
+QuotePage, QuotePages, RetryFailed, RetryDifferent, Summarise, Serve, ClearOutput and ShowConfig: a separate run whose
+output goes to OUTPUT_DIR/<RunName> instead of OUTPUT_DIR/<environment>, sharing the environment's MRP files. It applies
+to this command only and is never saved to .env, so pass it to each command that should use the run (for example the
 -Summarise after a -QuotePages). The name must be a valid folder name on both Windows and Linux, and not an environment
 name. A run keeps to the environment it was first made with.
 

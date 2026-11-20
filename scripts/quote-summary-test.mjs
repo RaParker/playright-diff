@@ -152,6 +152,19 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
     ['NHI: ticking All assumptions and answers above are correct.', 'NHI: clicking Continue on assumptions.']
   ],
   [
+    'ticks an assumptions box whose label holds it, with no id to link them',
+    confirmAssumptionsHtml({
+      start:
+        '<h1>Before you continue</h1><div id="hp-assumptions-button-group"><label class="form-check-label">' +
+        '<input name="areAssumptionsAcknowledged" type="checkbox" style="display: none">' +
+        '<span>All assumptions and answers above are correct</span></label><div><button type="button" ' +
+        'class="btn btn-primary hp-submit-form"><div>Continue</div></button></div></div>'
+    }),
+    undefined,
+    'NHI',
+    ['NHI: ticking All assumptions and answers above are correct.', 'NHI: clicking Continue on assumptions.']
+  ],
+  [
     'clicks Continue without unticking an assumptions box already ticked',
     confirmAssumptionsHtml({ ticked: true }),
     undefined,

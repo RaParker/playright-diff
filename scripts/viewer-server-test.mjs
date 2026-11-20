@@ -91,6 +91,23 @@ describe('viewer server', () => {
     });
   }
 
+  test('serves saved site HTML sandboxed, so its scripts cannot run on the viewer', async (context) => {
+    // arrange
+    const { root, server } = await startOnFixture(context);
+    await writeFile(
+      join(root, `${differentPolicy}-1`, 'quote-page-nhi.html'),
+      '<script>fetch("/api/policies")</script>'
+    );
+
+    // act
+    const response = await fetch(new URL(`/files/${differentPolicy}-1/quote-page-nhi.html`, server.url));
+
+    // assert
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-security-policy'), 'sandbox');
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  });
+
   test('picks up a policy written after it started', async (context) => {
     // arrange
     const { root, server } = await startOnFixture(context);
@@ -171,6 +188,9 @@ describe('viewer server', () => {
     const second = startViewerServer({ root, port: server.port, run: {} });
 
     // assert
-    await assert.rejects(second, new RegExp(`^Error: Port ${server.port} is in use; pass --port$`));
+    await assert.rejects(
+      second,
+      new RegExp(`^Error: Port ${server.port} is in use; choose another with --port \\(-Port in Run-Project\\.ps1\\)$`)
+    );
   });
 });
