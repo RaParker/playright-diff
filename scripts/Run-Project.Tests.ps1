@@ -1,4 +1,8 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0' }
+#Requires -Version 7.4
+Set-StrictMode -Version Latest                   # error on undefined variables, missing properties, bad indexing
+$ErrorActionPreference = 'Stop'                  # non-terminating errors become terminating
+$PSNativeCommandUseErrorActionPreference = $true # non-zero exit codes from native commands (git, kubectl, go…) throw
 
 BeforeAll {
     $script:runProject = Join-Path $PSScriptRoot '..' 'Run-Project.ps1' | Resolve-Path
@@ -10,6 +14,8 @@ BeforeAll {
     function Invoke-RunProject([string[]]$arguments) {
         Push-Location $script:projectRoot
         try {
+            # Tests check the exit code themselves, so a failing run must not throw
+            $PSNativeCommandUseErrorActionPreference = $false
             $output = pwsh -NoProfile -NonInteractive -File $script:runProject @arguments 2>&1 | Out-String
             return [pscustomobject]@{ Output = $output; ExitCode = $LASTEXITCODE }
         }
@@ -31,6 +37,8 @@ BeforeAll {
 
     # Runs the copied wrapper, which reads and writes its own .env rather than the project's
     function Invoke-CopiedRunProject([string[]]$arguments) {
+        # Tests check the exit code themselves, so a failing run must not throw
+        $PSNativeCommandUseErrorActionPreference = $false
         $output = pwsh -NoProfile -NonInteractive -File $script:copiedScript @arguments 2>&1 | Out-String
         return [pscustomobject]@{ Output = $output; ExitCode = $LASTEXITCODE }
     }

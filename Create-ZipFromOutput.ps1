@@ -71,6 +71,11 @@ param(
     [switch]$Help
 )
 
+#Requires -Version 7.4
+Set-StrictMode -Version Latest                   # error on undefined variables, missing properties, bad indexing
+$ErrorActionPreference = 'Stop'                  # non-terminating errors become terminating
+$PSNativeCommandUseErrorActionPreference = $true # non-zero exit codes from native commands (git, kubectl, go…) throw
+
 . (Join-Path $PSScriptRoot "scripts" "Get-EnvFileValue.ps1")
 . (Join-Path $PSScriptRoot "scripts" "Get-RunNameProblem.ps1")
 

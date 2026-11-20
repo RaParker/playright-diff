@@ -7,6 +7,11 @@ Dot-source this file, then call Get-RunNameProblem. It applies the same rules as
 Run-Project.ps1 -Interactive and Create-ZipFromOutput.ps1 refuse the same names as the npm commands.
 #>
 
+#Requires -Version 7.4
+Set-StrictMode -Version Latest                   # error on undefined variables, missing properties, bad indexing
+$ErrorActionPreference = 'Stop'                  # non-terminating errors become terminating
+$PSNativeCommandUseErrorActionPreference = $true # non-zero exit codes from native commands (git, kubectl, go…) throw
+
 # Says why a run name cannot be a folder name on both Windows and Linux, or returns nothing when it can; the same rules
 # as validateRunName in src/run-name.ts
 function Get-RunNameProblem([string]$Name) {

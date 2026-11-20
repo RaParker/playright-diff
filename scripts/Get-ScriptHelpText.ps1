@@ -113,9 +113,11 @@ function Format-ExamplesSection($help) {
 }
 
 function Format-SyntaxParameter($parameter) {
-    $isSwitch = $parameter.parameterValue -eq 'SwitchParameter' -or !$parameter.parameterValue
+    $parameterValue = Get-HelpProperty $parameter 'parameterValue'
+    $position = Get-HelpProperty $parameter 'position'
+    $isSwitch = $parameterValue -eq 'SwitchParameter' -or !$parameterValue
     $name = "-$($parameter.name)"
-    if ($parameter.position -ne 'named' -and $parameter.position) {
+    if ($position -ne 'named' -and $position) {
         $name = "[$name]"
     }
 
@@ -123,10 +125,10 @@ function Format-SyntaxParameter($parameter) {
         $name
     }
     else {
-        "$name <$($parameter.parameterValue)>"
+        "$name <$parameterValue>"
     }
 
-    if ($parameter.required -eq 'true') {
+    if ((Get-HelpProperty $parameter 'required') -eq 'true') {
         return $token
     }
 
@@ -134,12 +136,22 @@ function Format-SyntaxParameter($parameter) {
 }
 
 function Format-ParameterLabel($parameter) {
-    $typeName = $parameter.type.name
+    $type = Get-HelpProperty $parameter 'type'
+    $typeName = if ($type) {
+        Get-HelpProperty $type 'name'
+    }
+
     if (!$typeName -or $typeName -eq 'SwitchParameter') {
         return "-$($parameter.name)"
     }
 
     return "-$($parameter.name) <$typeName>"
+}
+
+# Returns a help object's property, or $null when it has none (switches have no parameterValue, for example), so the
+# help can be read under Set-StrictMode, where a missing property throws
+function Get-HelpProperty($object, [string]$name) {
+    return $object.PSObject.Properties[$name]?.Value
 }
 
 function Join-WrappedTokens([string[]]$tokens, [int]$width) {

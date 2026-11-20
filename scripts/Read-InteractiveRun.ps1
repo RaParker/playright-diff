@@ -4,11 +4,19 @@ Asks, step by step, what Run-Project.ps1 -Interactive should run, and returns th
 
 .DESCRIPTION
 Dot-source this file, then call Read-InteractiveRun. Each question shows its default in brackets, which Enter accepts.
-The answers only build Run-Project.ps1 argument lists: the caller prints them as plain command lines, asks once more,
-and runs each by calling Run-Project.ps1 itself, so validation, .env handling and -WhatIf behave as on the command line.
-Questions follow the task chosen first: a Summarise has no environment, options or clearing, and only a fresh run
-(Quote pages or One policy) offers to clear the output first, as a retry needs the earlier results.
+The answers only build Run-Project.ps1 parameters: the caller prints them as plain command lines, asks once more, and
+runs each by splatting them onto Run-Project.ps1 itself, so validation, .env handling and -WhatIf behave as on the
+command line. Questions follow the task chosen first: a Summarise has no environment, options or clearing, and only a
+fresh run (Quote pages or One policy) offers to clear the output first (listing what that deletes only once asked,
+then confirming), as a retry needs the earlier results.
+Each question starts after a blank line; choices are listed one per line under a cyan heading, prompts are green,
+hints grey and corrections yellow.
 #>
+
+#Requires -Version 7.4
+Set-StrictMode -Version Latest                   # error on undefined variables, missing properties, bad indexing
+$ErrorActionPreference = 'Stop'                  # non-terminating errors become terminating
+$PSNativeCommandUseErrorActionPreference = $true # non-zero exit codes from native commands (git, kubectl, go…) throw
 
 . (Join-Path $PSScriptRoot 'Get-EnvFileValue.ps1')
 . (Join-Path $PSScriptRoot 'Get-RunNameProblem.ps1')
@@ -21,7 +29,7 @@ $interactiveEnvironments = @('dev', 'tst', 'stg')
 
 <#
 .SYNOPSIS
-Asks what to run and how, and returns the Run-Project.ps1 argument lists to run in order.
+Asks what to run and how, and returns the Run-Project.ps1 commands to run in order.
 
 .PARAMETER DotEnvPath
 The project's .env, for the default environment and OUTPUT_DIR (to find a named run's recorded environment).
@@ -30,10 +38,12 @@ The project's .env, for the default environment and OUTPUT_DIR (to find a named 
 Prints the settings for an environment and run name (its two arguments); called before asking to continue.
 
 .PARAMETER ShowClearOutput
-Lists what clearing would delete for an environment and run name (its two arguments); called before asking to clear.
+Lists what clearing would delete for an environment and run name (its two arguments); called once clearing is wanted,
+before asking to delete.
 
 .OUTPUTS
-An array of argument arrays, one per Run-Project.ps1 command; empty when the user stops at the settings.
+An array of ordered dictionaries, one per Run-Project.ps1 command, mapping each parameter name to its value ($true
+for a switch); empty when the user stops at the settings.
 #>
 function Read-InteractiveRun {
     param(
@@ -43,8 +53,7 @@ function Read-InteractiveRun {
     )
 
     $task = Read-InteractiveChoice 'What to run' $interactiveTasks $interactiveTasks[0]
-    # @() keeps a one-argument list (such as -RetryFailed) an array, which PowerShell would otherwise unwrap to a string
-    $taskArguments = @(Read-TaskArguments $task)
+    $taskParameters = Read-TaskParameters $task
     $runName = Read-InteractiveRunName
     $environment = if ($task -eq 'Summarise only') {
         $null
@@ -53,52 +62,74 @@ function Read-InteractiveRun {
         Read-InteractiveEnvironment $DotEnvPath $runName
     }
 
+    Write-Host ''
     & $ShowConfig $environment $runName
     if (!(Read-InteractiveYesNo 'Continue' $true)) {
         return , @()
     }
 
-    $commonArguments = @(Get-CommonArguments $environment $runName)
+    $common = Get-CommonParameters $environment $runName
+    $summarise = Join-RunProjectParameters ([ordered]@{ Summarise = $true }) (Get-CommonParameters $null $runName)
     $steps = [System.Collections.Generic.List[object]]::new()
-    if ($task -in @('Quote pages', 'One policy')) {
-        & $ShowClearOutput $environment $runName
-        if (Read-InteractiveYesNo 'Clear the output first' $false) {
-            $steps.Add(@('-ClearOutput') + $commonArguments)
-        }
-    }
-
     if ($task -eq 'Summarise only') {
-        $steps.Add(@('-Summarise') + @(Get-CommonArguments $null $runName))
+        $steps.Add($summarise)
         return , $steps.ToArray()
     }
 
-    $steps.Add($taskArguments + $commonArguments + @(Read-RunOptions $task))
-    if (Read-InteractiveYesNo 'Summarise afterwards' $true) {
-        $steps.Add(@('-Summarise') + @(Get-CommonArguments $null $runName))
+    # Asked first, so the listing appears only once clearing is wanted, then confirmed against what it would delete
+    if ($task -in @('Quote pages', 'One policy') -and (Read-InteractiveYesNo 'Clear the output first' $false)) {
+        Write-Host ''
+        & $ShowClearOutput $environment $runName
+        if (Read-InteractiveYesNo 'Delete these' $false) {
+            $steps.Add((Join-RunProjectParameters ([ordered]@{ ClearOutput = $true }) $common))
+        }
     }
+
+    # A run is always followed by a Summarise, which reports what it compared and why any policy failed
+    $steps.Add((Join-RunProjectParameters $taskParameters $common (Read-RunOptions $task)))
+    $steps.Add($summarise)
 
     return , $steps.ToArray()
 }
 
 <#
 .SYNOPSIS
-Formats a Run-Project.ps1 argument list as the command line that runs it, quoting arguments with spaces.
+Formats Run-Project.ps1 parameters as the command line that runs them, quoting values with spaces or a leading dash.
 #>
-function Format-InteractiveCommand([string[]]$arguments) {
-    $quoted = $arguments | ForEach-Object {
-        if ($_ -match '\s') {
-            "'$($_ -replace "'", "''")'"
+function Format-InteractiveCommand([System.Collections.IDictionary]$parameters) {
+    $parts = foreach ($name in $parameters.Keys) {
+        $value = $parameters[$name]
+        if ($value -is [bool]) {
+            "-$name"
+        }
+        elseif ("$value" -match '\s|^-') {
+            "-$name '$("$value" -replace "'", "''")'"
         }
         else {
-            $_
+            "-$name $value"
         }
     }
 
-    return "./Run-Project.ps1 $($quoted -join ' ')"
+    return "./Run-Project.ps1 $($parts -join ' ')"
 }
 
-# Asks the task's own questions and returns its Run-Project.ps1 arguments
-function Read-TaskArguments([string]$task) {
+<#
+.SYNOPSIS
+Joins Run-Project.ps1 parameters, in order, into one ordered dictionary.
+#>
+function Join-RunProjectParameters {
+    $joined = [ordered]@{}
+    foreach ($parameters in $args) {
+        foreach ($name in $parameters.Keys) {
+            $joined[$name] = $parameters[$name]
+        }
+    }
+
+    return $joined
+}
+
+# Asks the task's own questions and returns its Run-Project.ps1 parameters
+function Read-TaskParameters([string]$task) {
     switch ($task) {
         'Quote pages' {
             $selection = Read-InteractiveValue 'How many policies, or one policy GUID' '250' {
@@ -110,18 +141,18 @@ function Read-TaskArguments([string]$task) {
             }
 
             if ($selection -match '^[0-9a-fA-F]{32}$') {
-                return @('-QuotePages', '-Guid', $selection)
+                return [ordered]@{ QuotePages = $true; Guid = $selection }
             }
 
-            return @('-QuotePages', '-MaxCount', $selection)
+            return [ordered]@{ QuotePages = $true; MaxCount = $selection }
         }
 
         'Retry failed' {
-            return @('-RetryFailed')
+            return [ordered]@{ RetryFailed = $true }
         }
 
         'Retry different' {
-            return @('-RetryDifferent')
+            return [ordered]@{ RetryDifferent = $true }
         }
 
         'One policy' {
@@ -141,18 +172,18 @@ function Read-TaskArguments([string]$task) {
                 }
             }
 
-            return @('-QuotePage', '-PolicyDetailsId', $policyDetailsId, '-HistoryId', $historyId)
+            return [ordered]@{ QuotePage = $true; PolicyDetailsId = $policyDetailsId; HistoryId = $historyId }
         }
 
         default {
-            return @()
+            return [ordered]@{}
         }
     }
 }
 
 # Asks for a run name, asking again while it is not a valid folder name; blank means the environment's own folder
 function Read-InteractiveRunName {
-    return Read-InteractiveValue 'Run name (blank for the environment''s own folder)' '' {
+    return Read-InteractiveValue 'Run name' '' {
         param($value)
 
         if ($value) {
@@ -161,7 +192,7 @@ function Read-InteractiveRunName {
                 "Run name `"$value`" $problem."
             }
         }
-    }
+    } "Blank for the environment's own folder (OUTPUT_DIR/<environment>), or a name for OUTPUT_DIR/<name>."
 }
 
 # Asks for the environment. A named run that already has a run.json defaults to the environment it was made with, and
@@ -213,7 +244,8 @@ function Get-RecordedRunEnvironment([string]$dotEnvPath, [string]$runName) {
     }
 
     try {
-        return (Get-Content -LiteralPath $runInfoPath -Raw | ConvertFrom-Json).environment
+        $runInfo = Get-Content -LiteralPath $runInfoPath -Raw | ConvertFrom-Json
+        return $runInfo.PSObject.Properties['environment']?.Value
     }
     catch {
         return $null
@@ -222,7 +254,7 @@ function Get-RecordedRunEnvironment([string]$dotEnvPath, [string]$runName) {
 
 # Asks for the run options: concurrency (not for one policy), skipping OCR and not fetching MRP files
 function Read-RunOptions([string]$task) {
-    $arguments = @()
+    $options = [ordered]@{}
     if ($task -ne 'One policy') {
         $concurrency = Read-InteractiveValue 'Policies run at once' '3' {
             param($value)
@@ -233,44 +265,51 @@ function Read-RunOptions([string]$task) {
         }
 
         if ($concurrency -ne '3') {
-            $arguments += @('-Concurrency', $concurrency)
+            $options.Concurrency = $concurrency
         }
 
         if (Read-InteractiveYesNo 'Use only MRP files already saved (no fetch)' $false) {
-            $arguments += '-NoFetch'
+            $options.NoFetch = $true
         }
     }
 
     if (Read-InteractiveYesNo 'Compare pixels only (no OCR)' $false) {
-        $arguments += '-NoOcr'
+        $options.NoOcr = $true
     }
 
-    return $arguments
+    return $options
 }
 
-# The arguments every command of the run shares: the environment (when asked) and the run name (when given)
-function Get-CommonArguments([string]$environment, [string]$runName) {
-    $arguments = @()
+# The parameters every command of the run shares: the environment (when asked) and the run name (when given)
+function Get-CommonParameters([string]$environment, [string]$runName) {
+    $parameters = [ordered]@{}
     if ($environment) {
-        $arguments += @('-Environment', $environment)
+        $parameters.Environment = $environment
     }
 
     if ($runName) {
-        $arguments += @('-RunName', $runName)
+        $parameters.RunName = $runName
     }
 
-    return $arguments
+    return $parameters
 }
 
-# Asks one of a fixed list of choices, by number or name; Enter takes the default
-function Read-InteractiveChoice([string]$prompt, [string[]]$choices, [string]$default) {
-    $numbered = for ($index = 0; $index -lt $choices.Count; $index++) {
-        "$($index + 1). $($choices[$index])"
+# Asks one of a fixed list of choices, listed one per line under a heading, by number or name; Enter takes the default
+function Read-InteractiveChoice([string]$heading, [string[]]$choices, [string]$default) {
+    Write-Host ''
+    Write-Host $heading -ForegroundColor Cyan
+    for ($index = 0; $index -lt $choices.Count; $index++) {
+        Write-Host "  $($index + 1). $($choices[$index])" -NoNewline
+        if ($choices[$index] -eq $default) {
+            Write-Host ' (default)' -ForegroundColor DarkGray -NoNewline
+        }
+
+        Write-Host ''
     }
 
-    Write-Host "$prompt`: $($numbered -join ', ')"
+    $defaultNumber = [array]::IndexOf($choices, $default) + 1
     while ($true) {
-        $answer = (Read-Host "$prompt [$default]").Trim()
+        $answer = Read-InteractiveAnswer "Choose 1-$($choices.Count)" "$defaultNumber"
         if (!$answer) {
             return $default
         }
@@ -280,29 +319,26 @@ function Read-InteractiveChoice([string]$prompt, [string[]]$choices, [string]$de
             return $choices[$number - 1]
         }
 
-        $match = $choices | Where-Object { $_ -ieq $answer } | Select-Object -First 1
-        if ($match) {
-            return $match
+        $match = @($choices | Where-Object { $_ -ieq $answer })
+        if ($match.Count -gt 0) {
+            return $match[0]
         }
 
         Write-Host "Choose 1 to $($choices.Count), or one of: $($choices -join ', ')." -ForegroundColor Yellow
     }
 }
 
-# Asks for a value, asking again while the check returns a problem; Enter takes the default (when there is one)
-function Read-InteractiveValue([string]$prompt, [string]$default, [scriptblock]$check) {
-    $label = if ($null -eq $default) {
-        $prompt
-    }
-    elseif ($default -eq '') {
-        "$prompt []"
-    }
-    else {
-        "$prompt [$default]"
+# Asks for a value after a blank line (and an optional grey hint), asking again while the check returns a problem;
+# Enter takes the default when there is one
+# $default is untyped: as a [string], $null (no default) would become ''
+function Read-InteractiveValue([string]$prompt, $default, [scriptblock]$check, [string]$hint) {
+    Write-Host ''
+    if ($hint) {
+        Write-Host $hint -ForegroundColor DarkGray
     }
 
     while ($true) {
-        $answer = (Read-Host $label).Trim()
+        $answer = Read-InteractiveAnswer $prompt $default
         if (!$answer) {
             if ($null -eq $default) {
                 Write-Host 'An answer is needed.' -ForegroundColor Yellow
@@ -321,7 +357,7 @@ function Read-InteractiveValue([string]$prompt, [string]$default, [scriptblock]$
     }
 }
 
-# Asks a yes or no question; Enter takes the default
+# Asks a yes or no question after a blank line; Enter takes the default
 function Read-InteractiveYesNo([string]$prompt, [bool]$default) {
     $hint = if ($default) {
         'Y/n'
@@ -330,8 +366,9 @@ function Read-InteractiveYesNo([string]$prompt, [bool]$default) {
         'y/N'
     }
 
+    Write-Host ''
     while ($true) {
-        $answer = (Read-Host "$prompt? [$hint]").Trim()
+        $answer = Read-InteractiveAnswer "${prompt}?" $hint
         if (!$answer) {
             return $default
         }
@@ -346,4 +383,17 @@ function Read-InteractiveYesNo([string]$prompt, [bool]$default) {
 
         Write-Host 'Answer y or n.' -ForegroundColor Yellow
     }
+}
+
+# Shows the prompt in green, with its default in brackets, and reads the trimmed answer
+function Read-InteractiveAnswer([string]$prompt, $default) {
+    $label = if ($null -eq $default) {
+        "${prompt}: "
+    }
+    else {
+        "$prompt [$default]: "
+    }
+
+    Write-Host $label -ForegroundColor Green -NoNewline
+    return "$(Read-Host)".Trim()
 }

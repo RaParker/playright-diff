@@ -1,4 +1,8 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0' }
+#Requires -Version 7.4
+Set-StrictMode -Version Latest                   # error on undefined variables, missing properties, bad indexing
+$ErrorActionPreference = 'Stop'                  # non-terminating errors become terminating
+$PSNativeCommandUseErrorActionPreference = $true # non-zero exit codes from native commands (git, kubectl, go…) throw
 
 BeforeAll {
     $script:createZip = Join-Path $PSScriptRoot '..' 'Create-ZipFromOutput.ps1' | Resolve-Path

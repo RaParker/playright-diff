@@ -120,7 +120,9 @@ would write its output inside the project (for example with `OUTPUT_DIR` not set
 #### Interactive mode
 
 `./Run-Project.ps1 -Interactive` asks what to run, one question at a time, each with a default in
-brackets that Enter accepts:
+brackets that Enter accepts. Questions are separated by a blank line, a list of choices sits one
+per line under a cyan heading (its default marked), prompts are green, hints grey and
+corrections yellow:
 
 1. **What to run:** Quote pages (how many `[250]`, or one policy GUID), Retry failed, Retry
    different, One policy (its policy details ID, and history ID `[1]`) or Summarise only.
@@ -128,11 +130,11 @@ brackets that Enter accepts:
 3. **Environment:** a named run's recorded environment, otherwise `.env`'s; not asked for
    Summarise only. A named run refuses another environment.
 4. **Settings:** the `-ShowConfig` block for those answers, then whether to continue `[Y]`.
-5. **Clear the output first** `[N]`, after listing what would be deleted: only for Quote pages and
-   One policy, as a retry needs the earlier results.
+5. **Clear the output first** `[N]`: only for Quote pages and One policy, as a retry needs the
+   earlier results. On yes, it lists what would be deleted and asks **Delete these** `[N]`.
 6. **Options:** policies run at once `[3]`, no MRP fetch `[N]` and no OCR `[N]`; not asked for
    Summarise only, and One policy has no concurrency or fetch option.
-7. **Summarise afterwards** `[Y]`.
+7. **Summarise:** every run is followed by a `-Summarise` of the same run, without asking.
 
 It then prints the plain commands, such as `./Run-Project.ps1 -QuotePages -MaxCount 20 -RunName
 temp2`, and runs them in turn once you confirm `[Y]`, so you can run the same without

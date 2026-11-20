@@ -132,8 +132,8 @@ environment. .env is only written when it changes.
 .PARAMETER Interactive
 Asks step by step what to run, each question with a default that Enter accepts: the task (Quote pages, Retry failed,
 Retry different, One policy or Summarise only) and its details, the run name, the environment (a named run's recorded
-one by default), then shows the settings. A fresh run offers to clear the output first, and runs offer their options
-and a Summarise afterwards. It then prints the plain commands and runs them once you confirm, so the same can be run
+one by default), then shows the settings. A fresh run offers to clear the output first, runs offer their options, and
+every run is followed by a Summarise. It then prints the plain commands and runs them once you confirm, so the same can be run
 without -Interactive next time. With -WhatIf it only prints them. It needs a console to answer in.
 
 .PARAMETER RunName
@@ -368,7 +368,10 @@ param(
     [string]$Task
 )
 
-$ErrorActionPreference = 'Stop'
+#Requires -Version 7.4
+Set-StrictMode -Version Latest                   # error on undefined variables, missing properties, bad indexing
+$ErrorActionPreference = 'Stop'                  # non-terminating errors become terminating
+$PSNativeCommandUseErrorActionPreference = $true # non-zero exit codes from native commands (git, kubectl, go…) throw
 
 $npmScriptByTask = @{
     Install        = @('install')
@@ -743,30 +746,30 @@ function Write-Overview {
 # Returns one row as styled text: its usage, then its description lined up in a column (on the next line when the
 # usage is too long), or just the note when the row has no usage
 function Format-OverviewRow([hashtable]$row) {
-    $indent = $overviewIndentByDepth[[int]$row.Depth]
-    if (!$row.Usage) {
-        return $indent + (Format-Styled $row.Description $overviewStyle.Note)
+    $indent = $overviewIndentByDepth[[int]$row['Depth']]
+    if (!$row['Usage']) {
+        return $indent + (Format-Styled $row['Description'] $overviewStyle.Note)
     }
 
-    $usageStyle = if ($row.Depth) {
+    $usageStyle = if ($row['Depth']) {
         $overviewStyle.Option
     }
     else {
         $overviewStyle.Command
     }
 
-    $text = $indent + (Format-Usage $row.Usage $usageStyle)
-    if (!$row.Description) {
+    $text = $indent + (Format-Usage $row['Usage'] $usageStyle)
+    if (!$row['Description']) {
         return $text
     }
 
-    $usedWidth = $indent.Length + $row.Usage.Length
+    $usedWidth = $indent.Length + $row['Usage'].Length
     if ($usedWidth -ge $overviewDescriptionColumn) {
         $text += "`n"
         $usedWidth = 0
     }
 
-    return $text + (' ' * ($overviewDescriptionColumn - $usedWidth)) + (Format-Styled $row.Description $overviewStyle.Description)
+    return $text + (' ' * ($overviewDescriptionColumn - $usedWidth)) + (Format-Styled $row['Description'] $overviewStyle.Description)
 }
 
 # Styles <placeholders> and the [ ] | punctuation separately from the switches and task names around them
@@ -808,11 +811,11 @@ function Invoke-InteractiveRun {
     $steps = Read-InteractiveRun -DotEnvPath (Join-Path $PSScriptRoot '.env') -ShowConfig {
         param($environment, $runName)
 
-        Invoke-RunProjectStep (@('-ShowConfig') + @(Get-CommonArguments $environment $runName)) | Out-Null
+        Invoke-RunProjectStep (Join-RunProjectParameters ([ordered]@{ ShowConfig = $true }) (Get-CommonParameters $environment $runName)) -Preview | Out-Null
     } -ShowClearOutput {
         param($environment, $runName)
 
-        Invoke-RunProjectStep (@('-ClearOutput', '-WhatIf') + @(Get-CommonArguments $environment $runName)) | Out-Null
+        Invoke-RunProjectStep (Join-RunProjectParameters ([ordered]@{ ClearOutput = $true; WhatIf = $true }) (Get-CommonParameters $environment $runName)) -Preview | Out-Null
     }
 
     if ($steps.Count -eq 0) {
@@ -820,6 +823,7 @@ function Invoke-InteractiveRun {
         return 0
     }
 
+    Write-Host ''
     Write-Host 'Commands:' -ForegroundColor Cyan
     foreach ($step in $steps) {
         Write-Host "  $(Format-InteractiveCommand $step)"
@@ -847,7 +851,7 @@ function Invoke-InteractiveSteps([object[]]$steps) {
             $firstFailure = $exitCode
         }
 
-        if ($exitCode -ne 0 -and $step[0] -eq '-ClearOutput') {
+        if ($exitCode -ne 0 -and $step.Contains('ClearOutput')) {
             break
         }
     }
@@ -855,13 +859,23 @@ function Invoke-InteractiveSteps([object[]]$steps) {
     return $firstFailure
 }
 
-# Runs this script with the given arguments and returns its exit code
-function Invoke-RunProjectStep([string[]]$arguments) {
-    Write-Host ''
-    Write-Host (Format-InteractiveCommand $arguments) -ForegroundColor Cyan
+# Runs this script with the given parameters (names to values, $true for a switch) and returns its exit code. They are
+# splatted by name: a plain argument list would bind '-ShowConfig' and the like as positional values, not parameters.
+# A -Preview (the settings or clear-output listing shown while asking) is not echoed, as it is not a chosen command.
+function Invoke-RunProjectStep([System.Collections.IDictionary]$parameters, [switch]$Preview) {
+    if (!$Preview) {
+        Write-Host ''
+        Write-Host (Format-InteractiveCommand $parameters) -ForegroundColor Cyan
+    }
+
+    $splat = @{}
+    foreach ($name in $parameters.Keys) {
+        $splat[$name] = $parameters[$name]
+    }
+
     $global:LASTEXITCODE = 0
     # To the console, not the function's output, which is only the exit code
-    & $PSCommandPath @arguments | Out-Host
+    & $PSCommandPath @splat | Out-Host
     return $LASTEXITCODE
 }
 
@@ -916,8 +930,11 @@ try {
 
     Write-Host $commandLine -ForegroundColor DarkGray
     $global:LASTEXITCODE = 0
+    # The command's exit code is this script's (quote-pages exits 1 when policies fail), so it must not throw here
+    $PSNativeCommandUseErrorActionPreference = $false
     & $command[0] @($command | Select-Object -Skip 1)
     $exitCode = $LASTEXITCODE
+    $PSNativeCommandUseErrorActionPreference = $true
 }
 finally {
     $env:QUOTE_JOURNEY_ENVIRONMENT = $savedEnvironment
