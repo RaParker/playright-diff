@@ -82,6 +82,12 @@ Describe 'Run-Project.ps1 command lines' {
 
         @{ Name = 'summarise passes the changed-answers mode'; Arguments = @('-Summarise', '-Mode', 'changed-answers'); Expected = '{cli} summarise changed-answers' }
 
+        @{ Name = 'serve starts the viewer'; Arguments = @('-Serve'); Expected = '{cli} serve' }
+
+        @{ Name = 'serve passes Port'; Arguments = @('-Serve', '-Port', '5000'); Expected = '{cli} serve --port 5000' }
+
+        @{ Name = 'serve takes a run name, passed in the environment'; Arguments = @('-Serve', '-RunName', 'temp2'); Expected = '{cli} serve' }
+
         @{ Name = 'migrate-output lists what would move'; Arguments = @('-MigrateOutput'); Expected = '{cli} migrate-output' }
 
         @{ Name = 'migrate-output resolves Root and passes Apply'; Arguments = @('-MigrateOutput', '-Root', 'scripts', '-Apply'); Expected = '{cli} migrate-output --root {root}\scripts --apply' }
@@ -212,6 +218,12 @@ Describe 'Run-Project.ps1 validation' {
         @{ Name = 'an unknown environment'; Arguments = @('-QuotePages', '-Environment', 'liv'); Message = "*parameter 'Environment'*" }
 
         @{ Name = 'Environment with Summarise'; Arguments = @('-Summarise', '-Environment', 'tst'); Message = '*Parameter set cannot be resolved*' }
+
+        @{ Name = 'a Port above 65535'; Arguments = @('-Serve', '-Port', '70000'); Message = "*parameter 'Port'*" }
+
+        @{ Name = 'Port without Serve'; Arguments = @('-Summarise', '-Port', '5000'); Message = '*Parameter set cannot be resolved*' }
+
+        @{ Name = 'Environment with Serve'; Arguments = @('-Serve', '-Environment', 'tst'); Message = '*Parameter set cannot be resolved*' }
     ) {
         # arrange
         $arguments = $Arguments + '-WhatIf'

@@ -40,6 +40,7 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 | `npm run summarise`                 | Summarise every quote-page result (alias `summarize`)        |
 | `npm run summarise differences`     | Show what differs in the quote data, counted across policies |
 | `npm run summarise changed-answers` | Combine every policy's answer changes and count them         |
+| `npm run serve`                     | Open the output viewer: NHI and MRP screenshots side by side |
 | `npm run migrate-output`            | Move output from the old layout into one folder per policy   |
 | `npm run clear-output`              | Delete this environment's output, quote GUID mapping too     |
 | `npm run help`                      | List these commands                                          |
@@ -70,6 +71,7 @@ reference.
 ./Run-Project.ps1 -RetryDifferent
 ./Run-Project.ps1 -Summarise                                     # or -Summarize
 ./Run-Project.ps1 -Summarise -Mode changed-answers               # or -Mode differences
+./Run-Project.ps1 -Serve                                         # open the viewer (-Port <n>)
 ./Run-Project.ps1 -MigrateOutput -Root D:/temp/old-output        # add -Apply to move the files
 ./Run-Project.ps1 -ClearOutput                                   # delete OUTPUT_DIR/<env>
 ./Run-Project.ps1 -ClearOutput -Environment tst -WhatIf          # list what it would delete
@@ -668,6 +670,39 @@ Saved to …/changed-answers.json
 ```
 
 A question changed more than once for one policy (such as each claim) is counted each time.
+
+### serve
+
+Opens the output viewer: a local web page for working through the policies whose screenshots
+differ, with each one's NHI and MRP screenshots side by side.
+
+```powershell
+npm run serve                          # http://127.0.0.1:4173/, opened in your browser
+npm run serve -- --port 5000 --no-open # another port; print the URL only
+./Run-Project.ps1 -Serve -RunName temp2 # a named run's output
+```
+
+`-Interactive` offers it as **View results**, which asks only for the run name.
+
+- **What it reads:** the same output folder as `summarise` (`OUTPUT_DIR/<environment>`, or
+  `OUTPUT_DIR/<run name>`), read again on every request, so **Refresh** (or reloading the page)
+  shows policies that finished since. It never changes anything in the folder.
+- **Who can reach it:** only this computer. It listens on `127.0.0.1`, and serves only the files
+  directly inside each `<policyDetailsId>-<historyId>` folder (not the saved API responses).
+- **The list:** different policies by default, counted as the summary's Totals line counts them,
+  including those whose NHI cover type was re-checked with Buildings & Contents (marked
+  **cover re-checked**). The filter also offers **Different, not re-checked** (the
+  `summarise differences` list), identical, matching end points, failed and all. Each entry
+  shows the changed percentage and whether the text changed or the difference is visual only.
+- **The screenshots:** NHI and MRP side by side at the same scale, scrolling and zooming
+  together, with each changed region outlined. **Slider** and **Blink** lay MRP over NHI;
+  **diff.png** shows the saved diff. Clicking a region number scrolls to it and shows its text
+  change.
+- **Details:** where each flow ended, page size differences, the cover type re-check, answers the
+  run changed (such as the rebuilding cost) and, for a failed policy, its issues and failure
+  screenshots.
+- **Keys:** J and K move to the next and previous policy. The selected policy is kept in the
+  URL, so a reload or a copied link opens it again.
 
 ### migrate-output
 

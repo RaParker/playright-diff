@@ -6,7 +6,8 @@ Asks, step by step, what Run-Project.ps1 -Interactive should run, and returns th
 Dot-source this file, then call Read-InteractiveRun. Each question shows its default in brackets, which Enter accepts.
 The answers only build Run-Project.ps1 parameters: the caller prints them as plain command lines, asks once more, and
 runs each by splatting them onto Run-Project.ps1 itself, so validation, .env handling and -WhatIf behave as on the
-command line. Questions follow the task chosen first: a Summarise has no environment, options or clearing, and only a
+command line. Questions follow the task chosen first: a Summarise or View results has no environment, options or clearing (and
+nothing runs after View results, which serves until Ctrl+C), and only a
 fresh run (Quote pages or One policy) offers to clear the output first (listing what that deletes only once asked,
 then confirming), as a retry needs the earlier results.
 Each question starts after a blank line; choices are listed one per line under a cyan heading, prompts are green,
@@ -22,7 +23,7 @@ $PSNativeCommandUseErrorActionPreference = $true # non-zero exit codes from nati
 . (Join-Path $PSScriptRoot 'Get-RunNameProblem.ps1')
 
 # What -Interactive can run, in the order it offers them; the first is the default
-$interactiveTasks = @('Quote pages', 'Retry failed', 'Retry different', 'One policy', 'Summarise only')
+$interactiveTasks = @('Quote pages', 'Retry failed', 'Retry different', 'One policy', 'Summarise only', 'View results')
 
 # The environments -Environment takes
 $interactiveEnvironments = @('dev', 'tst', 'stg')
@@ -55,7 +56,8 @@ function Read-InteractiveRun {
     $task = Read-InteractiveChoice 'What to run' $interactiveTasks $interactiveTasks[0]
     $taskParameters = Read-TaskParameters $task
     $runName = Read-InteractiveRunName
-    $environment = if ($task -eq 'Summarise only') {
+    # Summarising and viewing only read a run's output, so they need no environment
+    $environment = if ($task -in @('Summarise only', 'View results')) {
         $null
     }
     else {
@@ -73,6 +75,12 @@ function Read-InteractiveRun {
     $steps = [System.Collections.Generic.List[object]]::new()
     if ($task -eq 'Summarise only') {
         $steps.Add($summarise)
+        return , $steps.ToArray()
+    }
+
+    # The viewer runs until Ctrl+C, so nothing follows it
+    if ($task -eq 'View results') {
+        $steps.Add((Join-RunProjectParameters ([ordered]@{ Serve = $true }) (Get-CommonParameters $null $runName)))
         return , $steps.ToArray()
     }
 

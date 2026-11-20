@@ -115,6 +115,15 @@ Describe 'Read-InteractiveRun' {
         $script:shown | Should -Be @('config  temp2')
     }
 
+    It 'asks only for the run name for View results, and runs nothing after it' {
+        # act (task, run name, continue)
+        $commands = Invoke-ReadInteractiveRun @('6', 'temp2', '')
+
+        # assert
+        $commands | Should -Be @('./Run-Project.ps1 -Serve -RunName temp2')
+        $script:shown | Should -Be @('config  temp2')
+    }
+
     It 'asks again for <Name>' -ForEach @(
         @{ Name = 'a run name that is not a valid folder name'; Answers = @('5', 'con', 'run.', 'temp2', ''); Expected = './Run-Project.ps1 -Summarise -RunName temp2' }
 

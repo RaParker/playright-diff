@@ -93,6 +93,14 @@ retrieved, and totals including the GUID list size and Oops pages. Alias: -Summa
 Summarise only: differences (only the policies whose screenshots differed) or changed-answers (combine and count
 every policy's answer changes). Without it, the full summary is shown.
 
+.PARAMETER Serve
+Open the output viewer in the browser: a local, read-only page listing the policies as -Summarise counts them (the
+different ones first), with each policy's NHI and MRP screenshots side by side. Ctrl+C stops it. Takes -RunName to view
+a named run.
+
+.PARAMETER Port
+Serve only: port the viewer listens on, on this computer only (default: 4173; 0 picks any free port).
+
 .PARAMETER MigrateOutput
 Move output from the old layout (screenshots/ and comparisons/<policyDetailsId>-<historyId>/) into one
 <policyDetailsId>-<historyId>/ folder per policy. Without -Apply it only lists what would move.
@@ -132,13 +140,13 @@ environment. .env is only written when it changes.
 
 .PARAMETER Interactive
 Asks step by step what to run, each question with a default that Enter accepts: the task (Quote pages, Retry failed,
-Retry different, One policy or Summarise only) and its details, the run name, the environment (a named run's recorded
+Retry different, One policy, Summarise only or View results) and its details, the run name, the environment (a named run's recorded
 one by default), then shows the settings. A fresh run offers to clear the output first, runs offer their options, and
 every run is followed by a Summarise. It then prints the plain commands and runs them once you confirm, so the same can be run
 without -Interactive next time. With -WhatIf it only prints them. It needs a console to answer in.
 
 .PARAMETER RunName
-QuotePage, QuotePages, RetryFailed, RetryDifferent, Summarise, ClearOutput and ShowConfig: a separate run whose output
+QuotePage, QuotePages, RetryFailed, RetryDifferent, Summarise, Serve, ClearOutput and ShowConfig: a separate run whose output
 goes to OUTPUT_DIR/<RunName> instead of OUTPUT_DIR/<environment>, sharing the environment's MRP files. It applies to
 this command only and is never saved to .env, so pass it to each command that should use the run (for example the
 -Summarise after a -QuotePages). The name must be a valid folder name on both Windows and Linux, and not an environment
@@ -183,6 +191,12 @@ Test (all suites), TestCompare, TestQuotePage or Verify (VerifyProject.ps1).
 
 .EXAMPLE
 ./Run-Project.ps1 -Summarise -Mode changed-answers
+
+.EXAMPLE
+./Run-Project.ps1 -Serve
+
+.EXAMPLE
+./Run-Project.ps1 -Serve -RunName temp2 -Port 5000
 
 .EXAMPLE
 ./Run-Project.ps1 -MigrateOutput -Root D:/temp/playright-diff-output-full
@@ -298,6 +312,13 @@ param(
     [ValidateSet('differences', 'changed-answers')]
     [string]$Mode,
 
+    [Parameter(Mandatory, ParameterSetName = 'Serve')]
+    [switch]$Serve,
+
+    [Parameter(ParameterSetName = 'Serve')]
+    [ValidateRange(0, 65535)]
+    [int]$Port = -1,
+
     [Parameter(Mandatory, ParameterSetName = 'MigrateOutput')]
     [switch]$MigrateOutput,
 
@@ -359,6 +380,7 @@ param(
     [Parameter(ParameterSetName = 'RetryFailed')]
     [Parameter(ParameterSetName = 'RetryDifferent')]
     [Parameter(ParameterSetName = 'Summarise')]
+    [Parameter(ParameterSetName = 'Serve')]
     [Parameter(ParameterSetName = 'ClearOutput')]
     [Parameter(ParameterSetName = 'ShowConfig')]
     [ValidateNotNullOrEmpty()]
@@ -455,6 +477,15 @@ function Get-CliArguments {
             }
 
             return $arguments
+        }
+
+        'Serve' {
+            # -1 (the default) leaves the port to the CLI's own default
+            if ($Port -ge 0) {
+                return @('serve', '--port', "$Port")
+            }
+
+            return @('serve')
         }
 
         'MigrateOutput' {
@@ -636,6 +667,8 @@ $overviewSections = @(
 
             @{ Depth = 1; Usage = '-Mode <differences|changed-answers>'; Description = 'Show only that part' }
 
+            @{ Usage = '-Serve [-Port <n>]'; Description = 'Open the viewer: NHI and MRP screenshots side by side' }
+
             @{ Usage = '-RetryFailed'; Description = 'Rerun the policies that failed' }
 
             @{ Usage = '-RetryDifferent'; Description = 'Rerun the policies whose screenshots differed' }
@@ -646,7 +679,7 @@ $overviewSections = @(
 
             @{ Depth = 1; Usage = '-Environment <dev|tst|stg>'; Description = 'Environment to run against (default: dev); saved to .env, output in OUTPUT_DIR/<env>' }
 
-            @{ Depth = 1; Usage = '-RunName <name>'; Description = 'Output to OUTPUT_DIR/<name> instead; pass it to -Summarise and -ClearOutput too' }
+            @{ Depth = 1; Usage = '-RunName <name>'; Description = 'Output to OUTPUT_DIR/<name> instead; pass it to -Summarise, -Serve and -ClearOutput too' }
 
             @{ Depth = 1; Usage = '-Concurrency <n>'; Description = 'Policies run at once (default: 3)' }
 
