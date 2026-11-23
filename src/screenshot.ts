@@ -126,8 +126,11 @@ export class UnexpectedPageError extends Error {
  * until a redirect that never comes, leaving a blank screenshot.
  */
 const pageHidingStyleSelector = 'style[id^="_vis_opt_path_hides"]';
-/** How long VWO is given to show the page itself before its hiding style is removed. */
-const pageHidingWaitMs = 3000;
+/**
+ * How long VWO is given to show the page itself before its hiding style is removed. VWO removes it about 3 s after
+ * loading or after the last route change (seen on dev, including on Oops pages), so this leaves a margin over that.
+ */
+const pageHidingWaitMs = 5000;
 
 /** Quote loading screens may take longer than other steps, so they get this many times the step timeout. */
 const loadingTimeoutMultiplier = 2;
@@ -330,6 +333,11 @@ async function showHiddenPage(page: Page): Promise<void> {
         return style.id;
       })
     );
+    // VWO can remove the style itself between the timeout and this removal, leaving nothing to report.
+    if (ids.length === 0) {
+      return;
+    }
+
     console.log(
       color.Yellow(
         `The page was still hidden by the site's A/B testing tool (VWO, style ${ids.join(', ')}); removed it before the screenshot.`

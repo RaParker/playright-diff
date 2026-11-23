@@ -1210,7 +1210,7 @@ fails.
 - The site's A/B testing tool (VWO) hides the whole page with a `body{opacity:0}` style
   (`_vis_opt_path_hides`, or `_vis_opt_path_hides_split` for a split-URL test) until it has
   chosen a variant. Before capture (and before a failure or declined screenshot), both flows give
-  VWO 3 seconds to show the page; if the style
+  VWO 5 seconds to show the page (it usually does within about 3 seconds); if the style
   is still there, they remove it and log
   `The page was still hidden by the site's A/B testing tool (VWO, style _vis_opt_path_hides_split); removed it before the screenshot.`
   Without this, a split test could leave the screenshot blank apart from the masked footer.

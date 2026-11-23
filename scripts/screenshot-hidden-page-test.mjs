@@ -11,6 +11,9 @@ import { screenshot } from '../dist/screenshot.js';
 const hidingStyle =
   '<style id="_vis_opt_path_hides_split" type="text/css">body{opacity:0 !important;background:none !important;}</style>';
 
+/** How many ms after loading VWO removes its style itself, by path; a path not listed is never shown. */
+const removalDelays = { '/removed-by-vwo': 300, '/removed-by-vwo-after-3-s': 3100 };
+
 /** A page with black text on white, hidden by VWO's style; `removeAfter` ms later a script removes it, if given. */
 function pageHtml(removeAfter) {
   const remover =
@@ -32,9 +35,7 @@ let base;
 before(async () => {
   server = createServer((request, response) => {
     response.setHeader('Content-Type', 'text/html');
-    response.end(
-      request.url === '/oops' ? oopsPageHtml : pageHtml(request.url === '/removed-by-vwo' ? 300 : undefined)
-    );
+    response.end(request.url === '/oops' ? oopsPageHtml : pageHtml(removalDelays[request.url]));
   });
   await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -94,15 +95,20 @@ describe('screenshot of a page hidden by VWO', () => {
     );
   });
 
-  test('a page VWO shows itself is captured without removing anything', async (t) => {
-    // arrange
-    const log = t.mock.method(console, 'log', () => undefined);
+  for (const [name, path] of [
+    ['a page VWO shows itself', '/removed-by-vwo'],
+    ['a page VWO shows itself after about 3 s, as on dev', '/removed-by-vwo-after-3-s']
+  ]) {
+    test(`${name} is captured without removing anything`, async (t) => {
+      // arrange
+      const log = t.mock.method(console, 'log', () => undefined);
 
-    // act
-    const darkest = await captureDarkest('/removed-by-vwo');
+      // act
+      const darkest = await captureDarkest(path);
 
-    // assert
-    assert.equal(darkest, 0);
-    assert.ok(!log.mock.calls.some((call) => String(call.arguments[0]).includes('_vis_opt_path_hides')));
-  });
+      // assert
+      assert.equal(darkest, 0);
+      assert.ok(!log.mock.calls.some((call) => String(call.arguments[0]).includes('_vis_opt_path_hides')));
+    });
+  }
 });
