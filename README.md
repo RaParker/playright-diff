@@ -1206,13 +1206,17 @@ fails.
   timeout message.
 - The site's A/B testing tool (VWO) hides the whole page with a `body{opacity:0}` style
   (`_vis_opt_path_hides`, or `_vis_opt_path_hides_split` for a split-URL test) until it has
-  chosen a variant. Before capture, both flows give VWO 3 seconds to show the page; if the style
+  chosen a variant. Before capture (and before a failure or declined screenshot), both flows give
+  VWO 3 seconds to show the page; if the style
   is still there, they remove it and log
   `The page was still hidden by VWO (_vis_opt_path_hides_split); removed it before the screenshot.`
   Without this, a split test could leave the screenshot blank apart from the masked footer.
 - Both flows watch for an `h2` containing exactly `Oops` from navigation through capture.
   If one appears, the flow stops, saves a failure screenshot, and skips remaining steps and
-  the comparison. NHI first tries the [fallback](#nhi-oops-fallback).
+  the comparison. NHI first tries the [fallback](#nhi-oops-fallback). TCAS is tried up to 3
+  times in all, since its quote endpoints fail now and then on dev: each Oops before the last
+  logs `TCAS: Oops on attempt 1 of 3; trying again.`, drops that attempt's files and answer
+  changes, and starts the TCAS capture again from its URL.
 
 ### Declined quotes
 

@@ -22,13 +22,19 @@ function pageHtml(removeAfter) {
   </body></html>`;
 }
 
+/** An Oops page that VWO never shows, with a black block so a visible capture is not blank. */
+const oopsPageHtml = `<!doctype html><html><head>${hidingStyle}</head><body style="margin:0;background:#fff">
+  <h2>Oops</h2><div style="width:200px;height:100px;background:#000"></div></body></html>`;
+
 let server;
 let base;
 
 before(async () => {
   server = createServer((request, response) => {
     response.setHeader('Content-Type', 'text/html');
-    response.end(pageHtml(request.url === '/removed-by-vwo' ? 300 : undefined));
+    response.end(
+      request.url === '/oops' ? oopsPageHtml : pageHtml(request.url === '/removed-by-vwo' ? 300 : undefined)
+    );
   });
   await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -52,6 +58,23 @@ async function captureDarkest(path) {
 }
 
 describe('screenshot of a page hidden by VWO', () => {
+  test('the failure screenshot of an Oops page VWO never shows is not blank', async (t) => {
+    // arrange
+    t.mock.method(console, 'log', () => undefined);
+    t.mock.method(console, 'error', () => undefined);
+    const directory = await mkdtemp(join(tmpdir(), 'screenshot-hidden-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const output = join(directory, 'page.png');
+
+    // act
+    await assert.rejects(screenshot(`${base}/oops`, { output, width: 400, height: 300, wait: 0 }), {
+      name: 'OopsError'
+    });
+
+    // assert
+    assert.equal((await sharp(join(directory, 'page-failed.png')).stats()).channels[0].min, 0);
+  });
+
   test('a page VWO never shows is shown before the screenshot', async (t) => {
     // arrange
     const log = t.mock.method(console, 'log', () => undefined);

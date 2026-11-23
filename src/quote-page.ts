@@ -80,6 +80,9 @@ export interface QuotePageOptions {
  */
 const maskedSelectors = ['.hp-footer'];
 
+/** How many times a TCAS capture is tried before an Oops fails it (see {@link captureTcas}). */
+const tcasCaptureAttempts = 3;
+
 /**
  * How one quote-page run ended: both sides reached an end point (a quote, referral, conditional quote or decline) and
  * their screenshots were compared, with how much they differ and where each ended.
@@ -407,7 +410,7 @@ async function captureAndCompare(
   const originalTcasAttempt =
     mappedGuid === undefined
       ? startAnswerChangeAttempt(() =>
-          captureAt('TCAS', tcasUrl, tcasPaths, {
+          captureTcas(tcasUrl, tcasPaths, {
             timeout: options.timeout,
             scale: options.scale,
             beforeCapture: withAnnualPayment('TCAS', tcasQuote)
@@ -437,7 +440,7 @@ async function captureAndCompare(
     // The replacement's quote summary shows NHI's saved quote, so it is re-quoted the way the original TCAS journey's
     // Get your quote does; otherwise differences in TCAS's own pricing would not be captured.
     [tcas] = await Promise.allSettled([
-      captureAt('TCAS', replacementUrl, tcasPaths, {
+      captureTcas(replacementUrl, tcasPaths, {
         timeout: options.timeout,
         scale: options.scale,
         beforeCapture: withAnnualPayment('TCAS', inSequence(quoteSummary('TCAS'), requote('TCAS')))
@@ -684,6 +687,36 @@ async function captureNhi(
       `NHI: mapped ${artemisQuoteGuid} to new quote GUID ${replacementGuid} in ${mappingPath}; running its journey.`
     );
     return capturedReplacement(replacementGuid, await captureUnsaved(replacementGuid));
+  }
+}
+
+/**
+ * Captures TCAS (see {@link captureAt}), trying again when the site shows Oops, up to {@link tcasCaptureAttempts} times
+ * in all, since its quote endpoints fail now and then on dev. Each retry starts afresh: the failed attempt's files and
+ * answer changes are dropped, so only the last attempt's are kept.
+ * @returns Where the capture ended.
+ * @throws The last attempt's error, or at once any error that is not an {@link OopsError}.
+ */
+async function captureTcas(
+  url: string,
+  paths: FlowOutputPaths,
+  options: Pick<ScreenshotOptions, 'timeout' | 'scale' | 'beforeCapture'>
+): Promise<QuoteEndpoint> {
+  for (let attempt = 1; ; attempt++) {
+    const capture = startAnswerChangeAttempt(() => captureAt('TCAS', url, paths, options));
+    try {
+      const endpoint = await capture.result;
+      capture.keep();
+      return endpoint;
+    } catch (error) {
+      if (!(error instanceof OopsError) || attempt >= tcasCaptureAttempts) {
+        capture.keep();
+        throw error;
+      }
+
+      console.log(color.Yellow(`TCAS: Oops on attempt ${attempt} of ${tcasCaptureAttempts}; trying again.`));
+      await removeFlowOutput(paths);
+    }
   }
 }
 

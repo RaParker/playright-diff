@@ -577,7 +577,7 @@ describe('quote-page NHI Oops fallback', () => {
   });
 
   test('reports a replacement TCAS failure even though the original TCAS capture succeeded', async () => {
-    await withServer(quoteJourneyHandler(['orig-guid'], 'new-guid', {}, '<h2>Oops</h2>'), async (base) => {
+    await withServer(quoteJourneyHandler(['orig-guid'], 'new-guid', {}, '<h2>Oops</h2>'), async (base, requests) => {
       // arrange
       const { directory, env } = await fixture(base);
 
@@ -594,6 +594,40 @@ describe('quote-page NHI Oops fallback', () => {
       );
       assert.ok(result.output.includes(`${red}Quote capture failed; comparison skipped.`), result.output);
       assert.deepEqual(await readOnlyResult(directory), { outcome: 'failed', validation: false });
+      assert.equal(requests.filter((url) => url.startsWith('/tcas-replacement/')).length, 3);
+      assert.ok(result.plain.includes('TCAS: Oops on attempt 1 of 3; trying again.'), result.output);
+      assert.ok(result.plain.includes('TCAS: Oops on attempt 2 of 3; trying again.'), result.output);
+      assert.ok(!result.plain.includes('attempt 3 of 3'), result.output);
+    });
+  });
+
+  test('captures the replacement TCAS quote when it shows Oops twice and then the quote', async () => {
+    const handler = quoteJourneyHandler(['orig-guid']);
+    let replacementRequests = 0;
+    const flakyReplacementHandler = (request, response) => {
+      if (request.url.startsWith('/tcas-replacement/') && ++replacementRequests <= 2) {
+        response.setHeader('Content-Type', 'text/html');
+        response.end('<h2>Oops</h2>');
+        return;
+      }
+
+      handler(request, response);
+    };
+    await withServer(flakyReplacementHandler, async (base) => {
+      // arrange
+      const { directory, env } = await fixture(base);
+
+      // act
+      const result = await run(directory, env, ['quote-page', policyA, '1', '--no-ocr']);
+
+      // assert
+      assert.equal(result.code, 0, result.output);
+      assert.equal(replacementRequests, 3);
+      assert.ok(result.plain.includes('TCAS: Oops on attempt 2 of 3; trying again.'), result.output);
+      const folder = join(directory, `${policyA}-1`);
+      assert.equal(JSON.parse(await readFile(join(folder, 'result.json'), 'utf8')).outcome, 'compared');
+      const files = await readdir(folder);
+      assert.ok(!files.includes('screenshot-failed-mrp.png'), files.join(', '));
     });
   });
 

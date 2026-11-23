@@ -219,6 +219,7 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
       try {
         await mkdir(dirname(stopped.screenshot), { recursive: true });
         await mkdir(dirname(stopped.html), { recursive: true });
+        await showHiddenPage(stoppedPage);
         // A decline is compared like a quote page, so it is masked the same way; a failure is kept as the page showed.
         await stoppedPage.screenshot({
           path: stopped.screenshot,
