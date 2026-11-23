@@ -1209,7 +1209,7 @@ fails.
   chosen a variant. Before capture (and before a failure or declined screenshot), both flows give
   VWO 3 seconds to show the page; if the style
   is still there, they remove it and log
-  `The page was still hidden by VWO (_vis_opt_path_hides_split); removed it before the screenshot.`
+  `The page was still hidden by the site's A/B testing tool (VWO, style _vis_opt_path_hides_split); removed it before the screenshot.`
   Without this, a split test could leave the screenshot blank apart from the masked footer.
 - Both flows watch for an `h2` containing exactly `Oops` from navigation through capture.
   If one appears, the flow stops, saves a failure screenshot, and skips remaining steps and

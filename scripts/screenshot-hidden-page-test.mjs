@@ -85,7 +85,11 @@ describe('screenshot of a page hidden by VWO', () => {
     // assert
     assert.equal(darkest, 0);
     assert.ok(
-      log.mock.calls.some((call) => String(call.arguments[0]).includes('_vis_opt_path_hides_split')),
+      log.mock.calls.some((call) =>
+        String(call.arguments[0]).includes(
+          "The page was still hidden by the site's A/B testing tool (VWO, style _vis_opt_path_hides_split)"
+        )
+      ),
       'logs that it removed the hiding style'
     );
   });

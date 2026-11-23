@@ -331,7 +331,9 @@ async function showHiddenPage(page: Page): Promise<void> {
       })
     );
     console.log(
-      color.Yellow(`The page was still hidden by VWO (${ids.join(', ')}); removed it before the screenshot.`)
+      color.Yellow(
+        `The page was still hidden by the site's A/B testing tool (VWO, style ${ids.join(', ')}); removed it before the screenshot.`
+      )
     );
   }
 }
