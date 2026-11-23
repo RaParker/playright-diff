@@ -161,8 +161,9 @@ red, except validation failures, which are yellow because the site rejected the 
 answers: an error summary the [journey error auto-fixes](#journey-error-auto-fixes) cannot clear,
 shown on a journey section (its `div.av-timeline-all-sections` timeline is visible) or the
 assumptions page, in any flow. For example `NHI journey validation failed on …`,
-`NHI cover details errors: …`, `NHI assumptions errors: …` or `TCAS step 2 (click) failed:
-TCAS quote errors: …`. Errors on the quote summary page stay red. A capture failure is yellow
+`NHI: Cover details errors after Return to quote: …`, `NHI: assumptions errors after Continue: …` or
+`TCAS step 2 (click) failed: TCAS quote errors: …`, with the error summary's messages on one line,
+separated by `; `. Errors on the quote summary page stay red. A capture failure is yellow
 only when every failed side stopped on validation. Progress steps are grey; `quote-pages` shows each policy's `[n/total]` line in cyan, and
 a comparison summary is green when the images are identical and yellow when they differ or both
 flows ended on the same referral, conditional quote or decline (see [Quote end points](#quote-end-points)).
@@ -964,15 +965,17 @@ page:
 
 - A page already showing the quote is captured as it is. **No, I need to make changes** is
   never clicked.
-- An error summary after a click is reported (for example `NHI assumptions errors: …` or
-  `TCAS quote summary errors: …`) and
-  the comparison is skipped.
+- An error summary after a click is reported on one line, naming where it is shown (a journey
+  section by its heading, otherwise the step), the button clicked and the messages separated by
+  `; `, for example
+  `NHI: Contact details errors after Yes, take me to my quote: Please enter your title.; Please enter your email address`
+  or `TCAS: quote summary errors after Continue with quote: …`, and the comparison is skipped.
 - The flow stops after 5 clicks without reaching the quote.
 - If a click returns to the journey with an error the action can fix (see below), it fixes it
   once and clicks **Return to quote** (`button.hp-submit-form`, logged as for example
   `NHI: clicking Return to quote on Cover details.`), which goes straight to the quote page. An
   error shown again, or left on screen until the timeout, is reported as for example
-  `NHI cover details errors: …`.
+  `NHI: Cover details errors after Return to quote: …`.
 
 ### Cover type re-check
 

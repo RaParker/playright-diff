@@ -40,6 +40,16 @@ export async function readErrorSummary(page: Page, errorSelector: string): Promi
 }
 
 /**
+ * Puts an error summary read by {@link readErrorSummary} on one line, its messages separated by "; ", so a failure
+ * built from it is a single issue in the run's summary and its failed-policies file.
+ * @param errors Error summary text, one message per line.
+ * @returns The messages on one line.
+ */
+export function joinErrorLines(errors: string): string {
+  return errors.split('\n').join('; ');
+}
+
+/**
  * Names the failed step in its error. Oops and declines pass through unchanged (they name the page, not the step), and
  * the other error classes callers act on are kept.
  */
@@ -164,5 +174,5 @@ async function checkQuoteErrors(page: Page, errorSelector: string): Promise<void
 }
 
 function quoteErrorsError(page: Page, errors: string): Promise<Error> {
-  return errorSummaryError(page, `TCAS quote errors: ${errors}`);
+  return errorSummaryError(page, `TCAS quote errors: ${joinErrorLines(errors)}`);
 }

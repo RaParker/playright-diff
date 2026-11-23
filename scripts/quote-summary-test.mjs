@@ -26,6 +26,11 @@ import {
 const summaryButton = 'hp-summary-continue-button';
 const assumptionsButton = 'hp-assumptions-quote-button';
 const errorSummaryHtml = '<div class="av-card-error-summary"><ul><li><a>Quote unavailable</a></li></ul></div>';
+/** A journey section (its timeline shown) whose error summary lists two messages, as Contact details can. */
+const contactDetailsErrorsHtml =
+  '<div class="av-timeline-all-sections"><ul><li title="Contact details">Contact details</li></ul></div>' +
+  '<h1>Contact details</h1><div class="av-card-error-summary"><ul><li><a>Please enter your title.</a></li>' +
+  '<li><a>Please enter your email address</a></li></ul></div>';
 
 /**
  * Builds an assumptions page whose Yes button returns to the journey with an error about its test data (markup trimmed
@@ -185,7 +190,7 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
   [
     'reports the error summary shown after Continue on the assumptions page with a checkbox',
     confirmAssumptionsHtml({ continueError: true }),
-    /NHI assumptions errors: Quote unavailable/
+    /^assumptions errors after Continue: Quote unavailable$/
   ],
   ['captures a page already showing the quote without clicking', quotePageHtml, undefined],
   ['captures a page showing a conditional quote', conditionalQuotePageHtml, undefined],
@@ -215,23 +220,22 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
   [
     'reports the error summary shown after Continue with quote',
     nhiPagesHtml(summaryPageHtml, { [summaryButton]: errorSummaryHtml }),
-    /NHI quote summary errors: Quote unavailable/
+    /^quote summary errors after Continue with quote: Quote unavailable$/
   ],
   [
     'reports the error summary shown after Yes, take me to my quote',
     nhiPagesHtml(assumptionsPageHtml, { [assumptionsButton]: assumptionsPageHtml + errorSummaryHtml }),
-    /NHI assumptions errors: Quote unavailable/
+    /^assumptions errors after Yes, take me to my quote: Quote unavailable$/
+  ],
+  [
+    'names the journey section showing the errors and joins them on one line',
+    nhiPagesHtml(assumptionsPageHtml, { [assumptionsButton]: contactDetailsErrorsHtml }),
+    /^Contact details errors after Yes, take me to my quote: Please enter your title\.; Please enter your email address$/
   ],
   [
     'stops when the pages keep leading to each other',
     nhiPagesHtml(summaryPageHtml, { [summaryButton]: assumptionsPageHtml, [assumptionsButton]: summaryPageHtml }),
     /NHI quote did not appear within 5 clicks; last shown: assumptions/
-  ],
-  [
-    'prefixes errors with the flow label',
-    nhiPagesHtml(assumptionsPageHtml, { [assumptionsButton]: assumptionsPageHtml + errorSummaryHtml }),
-    /TCAS assumptions errors: Quote unavailable/,
-    'TCAS'
   ],
   [
     'reports an unexpected page when Continue with quote never shows the quote',
@@ -257,12 +261,12 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
   [
     'reports a cover start error shown again after Return to quote',
     journeyErrorHtml({ afterFix: 'new error' }),
-    /NHI cover details errors: The Cover start field needs to be between 2026-10-06/
+    /^Cover details errors after Return to quote: The Cover start field needs to be between 2026-10-06/
   ],
   [
     'reports a cover start error left in place after Return to quote',
     journeyErrorHtml({ afterFix: 'same error' }),
-    /NHI cover details errors: The Cover start field needs to be between 2026-10-06/
+    /^Cover details errors after Return to quote: The Cover start field needs to be between 2026-10-06/
   ],
   [
     'enters the replacement email address on Contact details and returns to the quote',
@@ -277,7 +281,7 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
   [
     'reports an email error shown again after Return to quote',
     journeyErrorHtml({ error: 'email', returnTo: 'Contact details', afterFix: 'new error' }),
-    /NHI contact details errors: The Email address field contains invalid characters/
+    /^Contact details errors after Return to quote: The Email address field contains invalid characters/
   ],
   [
     'opens Property circumstances from the timeline to replace the rebuilding cost',
@@ -294,7 +298,7 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
   [
     'reports a rebuilding cost error shown again after Return to quote',
     journeyErrorHtml({ error: 'rebuilding cost', returnTo: 'Property circumstances', afterFix: 'new error' }),
-    /NHI property circumstances errors: Enter the cost of rebuilding the property/
+    /^Property circumstances errors after Return to quote: Enter the cost of rebuilding the property/
   ]
 ]) {
   test(`${label} quote summary ${name}`, async (context) => {
@@ -326,7 +330,7 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
           // Error summaries on the assumptions page or a journey section are validation; the quote summary's are not.
           assert.equal(
             error instanceof ValidationError,
-            /^(NHI|TCAS) (assumptions|[a-z ]+ (details|circumstances)) errors: /.test(error.message),
+            /^(assumptions|[A-Z][a-z ]+ (details|circumstances)) errors after /.test(error.message),
             error.message
           );
           return true;

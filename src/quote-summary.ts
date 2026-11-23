@@ -1,10 +1,10 @@
 import type { Page } from 'playwright';
 import { recordAnswerChange } from './answer-changes.js';
 import { color } from './color.js';
-import { errorSummaryError, exactText, fixJourneyError } from './journey-fixes.js';
+import { errorSummaryError, exactText, fixJourneyError, journeyTimelineSelector } from './journey-fixes.js';
 import { quoteHeadingPattern } from './quote-endpoint.js';
 import { extendWhileLoading } from './screenshot.js';
-import { readErrorSummary } from './tcas-quote.js';
+import { joinErrorLines, readErrorSummary } from './tcas-quote.js';
 
 export { quoteHeadingPattern } from './quote-endpoint.js';
 
@@ -150,7 +150,7 @@ export function selectBuildingsAndContents(label: string, reason: string): (page
 async function followToQuote(page: Page, label: string, clicked: QuoteStep | undefined): Promise<void> {
   const fixed = new Set<string>();
   for (let clicks = 0; ; clicks++) {
-    const outcome = await waitForClickResult(page, label, clicked);
+    const outcome = await waitForClickResult(page, clicked);
     if (outcome === 'quote') {
       return;
     }
@@ -162,7 +162,7 @@ async function followToQuote(page: Page, label: string, clicked: QuoteStep | und
       const errors = await readErrorSummary(page, errorSelector);
       const section = await fixJourneyError(page, label, errors, fixed);
       if (section === undefined) {
-        throw await errorSummaryError(page, `${label} ${clicked?.name ?? 'quote'} errors: ${errors}`);
+        throw await errorSummaryError(page, await describeErrorSummary(page, clicked, errors));
       }
 
       step = { ...returnToQuote, name: section.toLowerCase() };
@@ -235,10 +235,32 @@ async function tickConfirmation(
 }
 
 /**
+ * Describes an error summary the flow cannot fix, on one line: where it is shown, the button clicked before it, and its
+ * messages (see {@link joinErrorLines}), such as `Contact details errors after Yes, take me to my quote: …`. A journey
+ * section (its timeline shown) is named by its heading; other pages by the step's name, since headings such as the
+ * quote summary's welcome can hold the customer's name. The flow is left out: the capture's failure names it.
+ * @param page Page showing the error summary.
+ * @param clicked Step clicked before the errors appeared, or `undefined` when none was.
+ * @param errors Error summary text, one message per line, or `undefined` when none is shown.
+ * @returns The description.
+ */
+async function describeErrorSummary(
+  page: Page,
+  clicked: QuoteStep | undefined,
+  errors: string | undefined
+): Promise<string> {
+  const onJourney = await page.locator(journeyTimelineSelector).first().isVisible();
+  const heading = onJourney ? (await page.locator('h1').first().textContent())?.trim() : undefined;
+  const shownOn = heading !== undefined && heading.length > 0 ? heading : (clicked?.name ?? 'quote');
+  const after = clicked === undefined ? '' : ` after ${clicked.button}`;
+  return `${shownOn} errors${after}: ${joinErrorLines(errors ?? '')}`;
+}
+
+/**
  * Waits for {@link waitForPage}, reporting an error summary that stays on screen after a click until the wait times out
  * (for example a cover start date still out of range after Return to quote).
  */
-async function waitForClickResult(page: Page, label: string, clicked: QuoteStep | undefined): Promise<string> {
+async function waitForClickResult(page: Page, clicked: QuoteStep | undefined): Promise<string> {
   try {
     return await waitForPage(page, clicked?.selector);
   } catch (error) {
@@ -247,7 +269,7 @@ async function waitForClickResult(page: Page, label: string, clicked: QuoteStep 
       throw error;
     }
 
-    throw await errorSummaryError(page, `${label} ${clicked.name} errors: ${errors}`, error);
+    throw await errorSummaryError(page, await describeErrorSummary(page, clicked, errors), error);
   }
 }
 

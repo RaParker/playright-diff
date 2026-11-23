@@ -4,7 +4,8 @@ import { color } from './color.js';
 import { ValidationError } from './screenshot.js';
 
 /** Section timeline shown on every journey section. */
-const journeyTimelineSelector = 'div.av-timeline-all-sections';
+/** The journey's section timeline, shown on every journey section. */
+export const journeyTimelineSelector = 'div.av-timeline-all-sections';
 /**
  * The assumptions page's buttons, in either of its layouts: Yes, take me to my quote, or the button group holding the
  * assumptions checkbox and Continue.

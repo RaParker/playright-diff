@@ -4,7 +4,7 @@ import { color } from './color.js';
 import { fixJourneyError, rebuildingCostFixName } from './journey-fixes.js';
 import { quoteHeadingPattern } from './quote-summary.js';
 import { extendWhileLoading, UnexpectedPageError, ValidationError } from './screenshot.js';
-import { readErrorSummary } from './tcas-quote.js';
+import { joinErrorLines, readErrorSummary } from './tcas-quote.js';
 
 const errorSelector = 'div.av-card-error-summary';
 /**
@@ -59,7 +59,7 @@ export async function unsavedQuote(page: Page): Promise<void> {
 
       if (++returns > maxReturns) {
         throw new ValidationError(
-          `NHI journey returned to ${returnedTo} after Get your quote ${returns} times${errors === undefined ? '' : `: ${errors}`}`
+          `NHI journey returned to ${returnedTo} after Get your quote ${returns} times${errors === undefined ? '' : `: ${joinErrorLines(errors)}`}`
         );
       }
 
@@ -72,7 +72,7 @@ export async function unsavedQuote(page: Page): Promise<void> {
     console.log(color.Gray(`NHI: clicking Continue on ${section}.`));
     const errors = await continueFrom(page, section);
     if (errors !== undefined && (await fixJourneyError(page, 'NHI', errors, fixed)) === undefined) {
-      throw new ValidationError(`NHI journey validation failed on ${section}: ${errors}`);
+      throw new ValidationError(`NHI journey validation failed on ${section}: ${joinErrorLines(errors)}`);
     }
   }
 

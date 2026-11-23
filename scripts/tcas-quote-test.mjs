@@ -205,7 +205,7 @@ const cases = [
         document.body.innerHTML += '<div class="av-card-error-summary"><h2>Check your details</h2><ul><li><a href="#contact"> Missing contact details </a></li><li><a href="#email">Please enter your email</a></li></ul></div>';
       };
     </script>`,
-    /step 2 \(click\) failed: TCAS quote errors: Missing contact details\nPlease enter your email$/
+    /step 2 \(click\) failed: TCAS quote errors: Missing contact details; Please enter your email$/
   ],
   [
     'errors after quote click',
