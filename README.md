@@ -1378,6 +1378,13 @@ The Quote Journey API reference is in [docs/api-documentation.json](docs/api-doc
   [Every policy fails with NHI Oops](#every-policy-fails-with-nhi-oops). After a successful
   retry, the first attempt's `screenshot-failed-nhi.png` stays in the policy's folder — this is
   expected.
+- **`Check previous unhandled Web API exception for full details`** in a policy's `api-nhi/` or
+  `api-mrp/` responses — an external service the site depends on failed (usually
+  `https://quote-<env>.homeprotect.co.uk/api/…`, such as `Quote/CalculateQuotePremium` returning
+  500, often after about 30 seconds). Nothing in this project can fix it: the cause is in that
+  service's own logs, so raise it with whoever owns the environment, then `-RetryFailed` once
+  it is working again. A TCAS `Timed out waiting for quote loading screen to disappear` in the
+  same run usually has the same cause, with the request never answering instead of failing.
 - **`The output folder … is inside this project`** — `OUTPUT_DIR` is not set, or points
   inside the project. Set it in `.env` to a folder outside the project; runs never write
   anything into the project except `.env`. **`The output path … is inside this project`** is
