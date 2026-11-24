@@ -374,6 +374,11 @@ export function questionErrorHtml(id, message, field) {
  * true).
  * @param {boolean} [options.rebuildingCostDropped] Whether a Get your quote return to bounceTo drops the entered
  * rebuilding cost while its field still shows it, so it is reported again until it is entered again.
+ * @param {'lookup' | 'click'} [options.rebuildingCostRedrawn] How the rebuilding cost question is redrawn with the BCIS
+ * estimate selected and its field hidden, as when the site fetches the estimate again: 'lookup' accepts the estimate on
+ * Continue, but a Get your quote return to bounceTo reports the rebuilding cost missing and requests
+ * `/api/rebuild-estimate` 200 ms later, redrawing the question when that responds; 'click' redraws it in place of the
+ * first click on "Choose another amount".
  * @param {{ section: string, id: string, message: string, field: string, expected: string }[]} [options.questions]
  * Questions (see {@link questionErrorHtml}) shown on their section only; Continue from a section reports each of its
  * questions whose answer (see {@link questionScript}) is not `expected`, with an error summary of their messages.
@@ -396,6 +401,7 @@ export function unsavedJourneyHtml({
   rebuildingCostOther = true,
   rebuildingCostEstimate = true,
   rebuildingCostDropped = false,
+  rebuildingCostRedrawn,
   questions = []
 } = {}) {
   const timelineHtml =
@@ -429,9 +435,24 @@ export function unsavedJourneyHtml({
     const rebuildingCostError = ${JSON.stringify(rebuildingCostError)};
     const rebuildingCostFixable = ${JSON.stringify(rebuildingCostFixable)};
     const rebuildingCostDropped = ${JSON.stringify(rebuildingCostDropped)};
+    const rebuildingCostRedrawn = ${JSON.stringify(rebuildingCostRedrawn ?? null)};
     const rebuildingCost = () => document.querySelector('input[name="rebuildingCost"]');
     let rebuildingCostEntered = false;
-    rebuildingCost()?.addEventListener('input', () => { rebuildingCostEntered = true; });
+    let rebuildingCostRequired = rebuildingCostError && rebuildingCostRedrawn !== 'lookup';
+    let otherAmountRedraws = rebuildingCostRedrawn === 'click' ? 1 : 0;
+    document.addEventListener('input', (event) => {
+      if (event.target.name === 'rebuildingCost') rebuildingCostEntered = true;
+    });
+    const redrawRebuildingCost = () => {
+      document.getElementById('rebuilding').outerHTML = ${JSON.stringify(rebuildingCostHtml(false))};
+      show();
+    };
+    document.addEventListener('click', (event) => {
+      if (otherAmountRedraws === 0 || event.target.closest('label[id$="~Kother"]') === null) return;
+      otherAmountRedraws--;
+      event.stopImmediatePropagation();
+      redrawRebuildingCost();
+    }, true);
     const questions = ${JSON.stringify(questions.map(({ section, id, message, expected }) => ({ section, id, message, expected })))};
     const unanswered = () =>
       questions.filter(({ section, id, expected }) => section === sections[index] && answerOf(document.getElementById('QP' + id)) !== expected);
@@ -475,7 +496,7 @@ export function unsavedJourneyHtml({
       }
 
       if (
-        rebuildingCostError &&
+        rebuildingCostRequired &&
         sections[index] === 'Property circumstances' &&
         !(
           rebuildingCostFixable &&
@@ -527,7 +548,13 @@ export function unsavedJourneyHtml({
         index = sections.indexOf(bounceTo);
         show();
         document.querySelector('.av-card-error-summary')?.remove();
-        document.body.insertAdjacentHTML('beforeend', summary('Enter the number of bedrooms'));
+        if (rebuildingCostRedrawn === 'lookup') {
+          rebuildingCostRequired = true;
+          document.body.insertAdjacentHTML('beforeend', summary('Enter the cost of rebuilding the property'));
+          setTimeout(() => fetch('/api/rebuild-estimate').then(redrawRebuildingCost), 200);
+        } else {
+          document.body.insertAdjacentHTML('beforeend', summary('Enter the number of bedrooms'));
+        }
         lookupDone = false;
         document.getElementById('lookup').hidden = false;
         setTimeout(() => {

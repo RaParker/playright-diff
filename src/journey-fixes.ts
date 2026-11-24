@@ -23,6 +23,10 @@ export const replacementRebuildingCost = '249995';
  * fix be made again.
  */
 export const rebuildingCostFixName = 'rebuilding cost';
+/** Milliseconds the rebuilding cost field is given to show after "Choose another amount" is clicked. */
+const costFieldShowTimeout = 2000;
+/** Clicks on "Choose another amount" before giving up, as a late redraw of the question can undo the first. */
+const maxOtherAmountClicks = 2;
 
 /** Cover start date field, beside the Cover details calendar. */
 const coverStartInputSelector = 'input.hp-date-input-single';
@@ -530,19 +534,39 @@ async function chooseDate(page: Page, question: Locator, date: string): Promise<
 async function enterRebuildingCost(page: Page, label: string): Promise<FixedAnswer[]> {
   const costField = page.locator('input[name="rebuildingCost"]');
   const before = await readValue(costField);
-  // When a BCIS estimate is offered, the cost field is only shown once "Choose another amount" is selected; without an
-  // estimate, the cost field is shown on its own.
-  const otherAmount = page.locator('label[id$="~Kother"]').filter({ hasText: 'Choose another amount' });
-  if (
-    (await otherAmount.count()) > 0 &&
-    !(await otherAmount.evaluate((element) => element.classList.contains('active')))
-  ) {
-    console.log(color.Gray(`${label}: selecting Choose another amount.`));
-    await otherAmount.click();
-  }
-
+  await chooseAnotherAmount(page, costField, label);
   await costField.fill(replacementRebuildingCost);
   return [{ question: 'rebuilding cost', before, after: replacementRebuildingCost }];
+}
+
+/**
+ * Selects "Choose another amount" so the rebuilding cost field shows. When a BCIS estimate is offered, the field is only
+ * shown once that option is selected; without an estimate, the field is shown on its own and nothing is clicked. A late
+ * redraw of the question (as when the site fetches the rebuild estimate again) can select the estimate again and hide
+ * the field, so the option is clicked again, up to {@link maxOtherAmountClicks} times, when the field does not show.
+ * @param page Page showing Property circumstances.
+ * @param costField The rebuilding cost field.
+ * @param label Flow name used in log lines, e.g. `NHI`.
+ * @throws The wait's timeout when the field still does not show after the last click.
+ */
+async function chooseAnotherAmount(page: Page, costField: Locator, label: string): Promise<void> {
+  const otherAmount = page.locator('label[id$="~Kother"]').filter({ hasText: 'Choose another amount' });
+  for (let clicks = 1; (await otherAmount.count()) > 0 && !(await isActiveLabel(otherAmount)); clicks++) {
+    console.log(color.Gray(`${label}: selecting Choose another amount.`));
+    await otherAmount.click();
+    try {
+      await costField.waitFor({ state: 'visible', timeout: costFieldShowTimeout });
+      return;
+    } catch (error) {
+      if (!(error instanceof errors.TimeoutError) || clicks >= maxOtherAmountClicks) {
+        throw error;
+      }
+    }
+  }
+}
+
+async function isActiveLabel(label: Locator): Promise<boolean> {
+  return label.evaluate((element) => element.classList.contains('active'));
 }
 
 async function selectCoverStart(page: Page, dateText: string): Promise<FixedAnswer[]> {

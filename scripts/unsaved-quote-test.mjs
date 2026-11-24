@@ -134,6 +134,33 @@ for (const [name, journey, expectedError, expectedLogs = [], absentLogs = []] of
     ]
   ],
   [
+    'waits for the rebuild estimate to be fetched again before fixing the rebuilding cost after a return',
+    {
+      sections: rebuildingCostSections,
+      rebuildingCostError: true,
+      rebuildingCostOther: false,
+      rebuildingCostRedrawn: 'lookup',
+      bounceTo: 'Property circumstances'
+    },
+    undefined,
+    [
+      'NHI: entering rebuilding cost 249995 on Property circumstances.',
+      'NHI: selecting Choose another amount.',
+      'NHI: Get your quote returned to Property circumstances; walking the journey again.'
+    ]
+  ],
+  [
+    'selects Choose another amount again when a redraw undoes the first click',
+    {
+      sections: rebuildingCostSections,
+      rebuildingCostError: true,
+      rebuildingCostOther: false,
+      rebuildingCostRedrawn: 'click'
+    },
+    undefined,
+    ['NHI: selecting Choose another amount.', 'NHI: selecting Choose another amount.']
+  ],
+  [
     'stops when Get your quote returns a second time after the rebuilding cost is entered again',
     {
       sections: rebuildingCostSections,

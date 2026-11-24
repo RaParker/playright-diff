@@ -24,7 +24,8 @@ const lookupInProgressPattern = /^Checking property details$/i;
 /**
  * Drives an unsaved quote journey (opened with `nhi=false`) to its quote page, which saves the quote to NHI.
  * Clicks Continue through each section until Get your quote appears, clicks it, and waits for the quote heading.
- * If Get your quote returns to a section, that section's lookups are waited for and the journey is walked again.
+ * If Get your quote returns to a section, that section's lookups are waited for (before any fix) and the journey is
+ * walked again.
  * Test data the journey rejects (reported by Continue or by a return), such as a cover start date out of range or an
  * invalid email address, is fixed once (see {@link fixJourneyError}) and the journey is walked again from there. The
  * rebuilding cost can be fixed once more after each return that is not fixed, as the site can drop the saved cost.
@@ -50,6 +51,9 @@ export async function unsavedQuote(page: Page): Promise<void> {
         return;
       }
 
+      // The section returned to can fetch its lookups again (e.g. the rebuild estimate) and redraw its answers, undoing
+      // a fix made before they finish.
+      await waitForLookups(page, apiRequests);
       const returnedTo = await readSection(page);
       const errors = await readErrorSummary(page, errorSelector);
       if ((await fixJourneyError(page, 'NHI', errors, fixed)) !== undefined) {
