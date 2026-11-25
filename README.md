@@ -1058,6 +1058,9 @@ Some errors come from the test data rather than the quote, so the action fixes t
 - **"Enter the cost of rebuilding the property"** (**Property circumstances**): selects
   **Choose another amount** (`label[id$="~Kother"]`) unless it already has the `active` class
   or is not offered (no BCIS estimate), then enters `249995` in `input[name="rebuildingCost"]`.
+  The cost field is given 2 s to show after the click; if it does not (a late redraw of the
+  question can select the estimate again), **Choose another amount** is clicked once more, and
+  the fix fails with the timeout if the field still does not show.
 
 - Each fix first opens its section from the timeline
   (`div.av-timeline-all-sections > ul > li[title="…"]`), unless that `<h1>` heading is
@@ -1308,6 +1311,9 @@ Enter the year built`, unless it is one of the [journey error auto-fixes](#journ
   A return is shown by a new section heading or an error summary that was not on screen
   before the click, or by a summary that stays in place until the step timeout with no loading
   screen shown.
+  Before reading or fixing the returned section, the flow waits for its lookups again: the
+  section can fetch them again (e.g. the rebuild estimate) and redraw its answers, undoing a
+  fix made before they finish.
   The site can drop the saved rebuilding cost on such a return while its field still shows
   `249,995`, so the rebuilding cost fix can be made once more on that walk.
 - The journey stops after 40 sections (counting sections walked again after a fix or a
