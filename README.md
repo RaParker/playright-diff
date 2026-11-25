@@ -1281,7 +1281,7 @@ them: `campaign:combination` pairs separated by commas, set as VWO's own
 each page opens. A campaign that does not run on the page has no effect, so one list covers every
 environment.
 
-The committed `.env` sets `49:3,60:3`: the "Agg assumptions URL test" split tests on dev (49) and
+The committed `.env` sets `49:3,60:3` (why: [open issue 14](docs/open-issues.md#14-tcas-hangs-on-vwos-before-you-continue-variant)): the "Agg assumptions URL test" split tests on dev (49) and
 stg (60). Their combination 3 opens the quote summary; combination 2 opens "Before you continue"
 first, where TCAS (`source=tcas`) never loads its answers and the capture times out on its
 loading screen, and combination 1 never loaded on dev. Campaign IDs and combinations are listed in

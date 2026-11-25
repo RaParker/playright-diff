@@ -1,7 +1,7 @@
 # Open issues
 
 **Draft for review by the relevant teams before anyone acts on it.** Raised while investigating the NHI and MRP quote
-differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last updated 2026-10-22.
+differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last updated 2026-11-25.
 
 | #   | Issue                                                   | Status      | Needs                          |
 | --- | ------------------------------------------------------- | ----------- | ------------------------------ |
@@ -18,6 +18,7 @@ differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last update
 | 11  | MRP drops Contents insurance for a home owner           | Open        | Investigate                    |
 | 12  | playwright-diff flags rendering noise                   | Open        | playwright-diff tweak          |
 | 13  | NHI's saved quote and its re-quote disagree             | Open        | NHI investigation              |
+| 14  | TCAS hangs on VWO's "Before you continue" variant       | PR raised   | Review PR 26871, deploy, rerun |
 
 ## Assumptions to verify
 
@@ -256,6 +257,25 @@ differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last update
 - **Next step:** compare the answers in each policy's saved NHI quote with those in its re-quote
   (`nhi-api/*-GET-answers-*.json` and `*-POST-answers-*.json` in the playwright-diff output folder), then take the
   difference to NHI.
+
+## 14. TCAS hangs on VWO's "Before you continue" variant
+
+- **What:** on dev since 2026-11-25, about half of all TCAS quote summaries (`source=tcas`) stay on "Loading your
+  quote" for good: every MRP capture that opened on `…,assumptions` timed out, and every one that opened on
+  `…,summary` worked (19 of 25 policies failed in one run). The same policy could fail in one run and pass in the next.
+- **Why the split:** VWO's "Agg assumptions URL test" (campaign 49 on dev, 60 on stg) sends each new browser at random to
+  `,assumptions` (combination 2, the editable assumptions page "Before you continue") or `,summary` (combination 3).
+  QuestionSetQuote shows the editable assumptions page to NHI and TCAS journeys alike.
+- **Cause:** QuestionSetQuote PR 26757 (merged 2026-11-24) made TCAS journeys on the editable assumptions page load
+  their answers through `getQuoteSummary`, but the page still told `getQuoteSummary` not to load answers
+  (`getAnswers: false`). With no answers the page never leaves its loading widget. The MRP side's `api-mrp/` shows
+  `quote-summary` and nothing after it; `failed-mrp.html` holds the loading screen, with no assumptions in it.
+- **Fix:** QuestionSetQuote PR 26871 passes `getAnswers: false` for NHI journeys only. Its
+  `documentation/tcasDataSource.md` ("Quote summary split test") has the details.
+- **Workaround here:** `VWO_COMBINATIONS=49:3,60:3` in `.env` keeps every capture on the quote summary, so NHI and
+  MRP also always see the same variant (see the README's "VWO A/B tests").
+- **Next step:** review and deploy PR 26871, then check a TCAS quote on the assumptions variant (cookie
+  `_vis_opt_exp_49_combi=2` on `.homeprotect.co.uk`) and rerun `-RetryFailed`.
 
 ## Closed
 
