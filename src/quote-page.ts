@@ -51,6 +51,7 @@ import {
 import { readEndorsementTitles, standardiseQuotePage } from './standardise-page.js';
 import { tcasQuote } from './tcas-quote.js';
 import { unsavedQuote } from './unsaved-quote.js';
+import type { VwoCombination } from './vwo-combinations.js';
 import { outputPath } from './output-paths.js';
 
 export interface QuotePageOptions {
@@ -70,6 +71,8 @@ export interface QuotePageOptions {
   scale?: number;
   /** Names the comparison's region crops end with, `region-N-<name>.png` (default `before` and `after`). */
   imageNames?: ImageNames;
+  /** VWO combinations every NHI and TCAS capture is put in (see {@link ScreenshotOptions.vwoCombinations}). */
+  vwoCombinations?: readonly VwoCombination[];
   /** When set, an NHI Oops requests a replacement quote GUID, records it, and retries NHI once. */
   quoteGuidFallback?: QuoteGuidFallbackOptions;
 }
@@ -413,6 +416,7 @@ async function captureAndCompare(
           captureTcas(tcasUrl, tcasPaths, {
             timeout: options.timeout,
             scale: options.scale,
+            vwoCombinations: options.vwoCombinations,
             beforeCapture: withAnnualPayment('TCAS', tcasQuote)
           })
         )
@@ -443,6 +447,7 @@ async function captureAndCompare(
       captureTcas(replacementUrl, tcasPaths, {
         timeout: options.timeout,
         scale: options.scale,
+        vwoCombinations: options.vwoCombinations,
         beforeCapture: withAnnualPayment('TCAS', inSequence(quoteSummary('TCAS'), requote('TCAS')))
       })
     ]);
@@ -625,6 +630,7 @@ async function captureNhi(
     captureAt('NHI', templateUrl(options.nhiQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), paths, {
       timeout: options.timeout,
       scale: options.scale,
+      vwoCombinations: options.vwoCombinations,
       beforeCapture: withAnnualPayment('NHI', inSequence(quoteSummary('NHI'), ...extraSteps))
     });
   const captured = (quoteGuid: string, endpoint: QuoteEndpoint): NhiCapture => ({
@@ -645,6 +651,7 @@ async function captureNhi(
     captureAt('NHI', templateUrl(fallback.unsavedQuotePageUrlTemplate, { artemisQuoteGuid: quoteGuid }), paths, {
       timeout: options.timeout,
       scale: options.scale,
+      vwoCombinations: options.vwoCombinations,
       beforeCapture: withAnnualPayment('NHI', inSequence(unsavedQuote, ...extraSteps))
     });
   // A replacement quote opens on its quote page once saved to NHI, and runs its journey while NHI still shows Oops.
@@ -700,7 +707,7 @@ async function captureNhi(
 async function captureTcas(
   url: string,
   paths: FlowOutputPaths,
-  options: Pick<ScreenshotOptions, 'timeout' | 'scale' | 'beforeCapture'>
+  options: Pick<ScreenshotOptions, 'timeout' | 'scale' | 'beforeCapture' | 'vwoCombinations'>
 ): Promise<QuoteEndpoint> {
   for (let attempt = 1; ; attempt++) {
     const capture = startAnswerChangeAttempt(() => captureAt('TCAS', url, paths, options));
@@ -753,7 +760,7 @@ async function captureAt(
   label: string,
   url: string,
   paths: FlowOutputPaths,
-  options: Pick<ScreenshotOptions, 'timeout' | 'scale' | 'beforeCapture'>
+  options: Pick<ScreenshotOptions, 'timeout' | 'scale' | 'beforeCapture' | 'vwoCombinations'>
 ): Promise<QuoteEndpoint> {
   console.log(`${label}: opening ${url}`);
   try {

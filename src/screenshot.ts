@@ -6,6 +6,7 @@ import { color } from './color.js';
 import { assertOutsideProject, outputPath } from './output-paths.js';
 import { formatPageConsole, printConsoleTail, recordPageConsole, type PageConsole } from './page-console.js';
 import { checkScreenshotScale, defaultScreenshotScale } from './screenshot-scale.js';
+import { vwoCookies, type VwoCombination } from './vwo-combinations.js';
 
 export interface ScreenshotOptions {
   output?: string;
@@ -37,6 +38,11 @@ export interface ScreenshotOptions {
    * named by {@link stoppedScreenshotPath}.
    */
   stoppedOutputs?: Record<CaptureStop, StoppedOutput>;
+  /**
+   * VWO combinations the browser is put in before the page opens (see {@link vwoCookies}), so an A/B test cannot send
+   * one capture to a different version of the site from the next; none when omitted.
+   */
+  vwoCombinations?: readonly VwoCombination[];
 }
 
 /** Why a capture stopped: the site declined to quote, or anything else went wrong. */
@@ -203,6 +209,10 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
   let apiResponses: ApiResponseRecorder | undefined;
   try {
     page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
+    if (options.vwoCombinations !== undefined && options.vwoCombinations.length > 0) {
+      await page.context().addCookies(vwoCookies(options.vwoCombinations, url.origin));
+    }
+
     pageConsole = recordPageConsole(page);
     pageConsoles.set(page, pageConsole);
     if (options.apiResponsesFolder !== undefined) {

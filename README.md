@@ -789,7 +789,7 @@ npm run show-config
 
 - **Settings:** `COMPARE_AFTER_NAME`, `COMPARE_BEFORE_NAME`, `MRP_AND_QUOTE_PROJECT_DIR`,
   `OUTPUT_DIR`, `QUOTE_GUID_LIST_PATH`, `QUOTE_JOURNEY_ENVIRONMENT`, `QUOTE_JOURNEY_HOST`,
-  `QUOTE_JOURNEY_RUN_NAME`, `QUOTE_PAGE_TIMEOUT` and `SCREENSHOT_SCALE`, in that (alphabetical)
+  `QUOTE_JOURNEY_RUN_NAME`, `QUOTE_PAGE_TIMEOUT`, `SCREENSHOT_SCALE` and `VWO_COMBINATIONS`, in that (alphabetical)
   order, each with its value and source: `.env`, or `environment` when the shell (or
   `Run-Project.ps1 -Environment` or `-RunName`) set it.
   Sources are grey, unset settings yellow and errors red.
@@ -851,11 +851,12 @@ environment (see [PowerShell wrapper](#powershell-wrapper)).
 | `QUOTE_JOURNEY_BRANCH_CODE`                   | both                              | Fallback request `branchCode`                                                                        |
 | `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both                              | Fallback request `callMediaUser`                                                                     |
 | `QUOTE_GUID_LIST_PATH`                        | `quote-pages`                     | GUID list file, one policy ID per line (also used by `retry-failed`)                                 |
+| `VWO_COMBINATIONS`                            | all captures                      | Optional VWO `campaign:combination` pairs, e.g. `49:3,60:3` (see [VWO A/B tests](#vwo-ab-tests))     |
 
 All variables listed for a command are required, except `MRP_AND_QUOTE_PROJECT_DIR` (needed
 only when MRP files are missing; without it such a run stops, unless `--no-fetch`), `QUOTE_JOURNEY_ENVIRONMENT` (without it there are no
 `<env>/` subfolders, and the fetch uses mrp-and-quote's own `SOURCE_ENVIRONMENT`),
-`QUOTE_JOURNEY_HOST` (only needed while the templates refer to it), `QUOTE_JOURNEY_RUN_NAME`, `QUOTE_PAGE_TIMEOUT`, `SCREENSHOT_SCALE`, `COMPARE_BEFORE_NAME` and
+`QUOTE_JOURNEY_HOST` (only needed while the templates refer to it), `QUOTE_JOURNEY_RUN_NAME`, `QUOTE_PAGE_TIMEOUT`, `SCREENSHOT_SCALE`, `VWO_COMBINATIONS`, `COMPARE_BEFORE_NAME` and
 `COMPARE_AFTER_NAME`. The output folder is `OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>`: policy
 folders, `quote-guid-mapping.json`, `quote-pages-failed.json`, `changed-answers.json`, the
 `mrp-and-quote/` MRP files, and the `screenshots/`, `comparisons/` and OCR cache defaults in this
@@ -1269,6 +1270,28 @@ The quote page's kind is read from its welcome heading, which the site builds fr
 Runs from before end points were recorded count as two quotes. Their both-declined results
 were not compared; `summarise` counts them as "both declined before declines were compared",
 so run them again to compare them.
+
+### VWO A/B tests
+
+The site runs A/B tests with VWO, which puts each new visitor in a combination (variant) of every
+campaign at random. Every capture starts a new browser, so without help NHI and MRP could see
+different versions of the site, and one run could differ from the next. `VWO_COMBINATIONS` fixes
+them: `campaign:combination` pairs separated by commas, set as VWO's own
+`_vis_opt_exp_<campaign>_combi` cookies on the site's parent domain (`.homeprotect.co.uk`) before
+each page opens. A campaign that does not run on the page has no effect, so one list covers every
+environment.
+
+The committed `.env` sets `49:3,60:3`: the "Agg assumptions URL test" split tests on dev (49) and
+stg (60). Their combination 3 opens the quote summary; combination 2 opens "Before you continue"
+first, where TCAS (`source=tcas`) never loads its answers and the capture times out on its
+loading screen, and combination 1 never loaded on dev. Campaign IDs and combinations are listed in
+the browser console as `window._vwo_exp` (`combination_chosen` is the one VWO picked, and
+`sections` the URLs of a split test).
+
+Two things do not work: blocking VWO's requests, and VWO's opt-out cookie `_vis_opt_out`. Either way
+the site waits for VWO and stays on "Loading your quote". Loading many pages from one machine in a
+short time can also make VWO answer with redirects (`j.php` 307, then `swg_a2bc=1`) and no
+campaigns, with the same effect; wait before running again.
 
 ### Failure screenshots and HTML
 

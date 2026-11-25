@@ -20,6 +20,7 @@ import {
 } from './mrp-fetch.js';
 import { screenshot, ValidationError } from './screenshot.js';
 import { parseScreenshotScale } from './screenshot-scale.js';
+import { parseVwoCombinations } from './vwo-combinations.js';
 import { loadEnvironment } from './environment.js';
 import { isMissing } from './fs-helpers.js';
 import {
@@ -341,11 +342,13 @@ async function runScreenshot(args: string[]): Promise<void> {
     throw new Error(screenshotHelp);
   }
 
+  const environment = await loadEnvironment();
   await screenshot(url, {
     output: values.output,
     width: values.width === undefined ? undefined : Number(values.width),
     height: values.height === undefined ? undefined : Number(values.height),
-    scale: readScreenshotScale(await loadEnvironment()),
+    scale: readScreenshotScale(environment),
+    vwoCombinations: parseVwoCombinations(optional(environment, 'VWO_COMBINATIONS')),
     wait: values.wait === undefined ? undefined : Number(values.wait),
     timeout: values.timeout === undefined ? undefined : Number(values.timeout)
   });
@@ -888,6 +891,7 @@ function quotePageOptions(environment: Record<string, string | undefined>, useOc
     timeout: parseQuotePageTimeout(optional(environment, 'QUOTE_PAGE_TIMEOUT')),
     scale: imageScale,
     imageNames,
+    vwoCombinations: parseVwoCombinations(optional(environment, 'VWO_COMBINATIONS')),
     quoteGuidFallback: {
       quoteGuidUrl: required(environment, 'QUOTE_JOURNEY_QUOTE_GUID_URL'),
       agentId: required(environment, 'QUOTE_JOURNEY_AGENT_ID'),

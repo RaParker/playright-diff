@@ -2,6 +2,7 @@ import { color } from './color.js';
 import { settingSource } from './environment.js';
 import { environmentFolder, mrpAndQuotePath, outputPath } from './output-paths.js';
 import { validateRunName } from './run-name.js';
+import { parseVwoCombinations } from './vwo-combinations.js';
 
 /** The settings a quote-page run depends on, in alphabetical order, as they are printed. */
 const shownSettings = [
@@ -14,13 +15,15 @@ const shownSettings = [
   'QUOTE_JOURNEY_HOST',
   'QUOTE_JOURNEY_RUN_NAME',
   'QUOTE_PAGE_TIMEOUT',
-  'SCREENSHOT_SCALE'
+  'SCREENSHOT_SCALE',
+  'VWO_COMBINATIONS'
 ];
 
 /** Settings whose value is checked as it is shown, so a bad one shows its error rather than stopping the command. */
 const settingChecks: Record<string, (value: string) => unknown> = {
   QUOTE_JOURNEY_ENVIRONMENT: (value) => environmentFolder('.', value),
-  QUOTE_JOURNEY_RUN_NAME: validateRunName
+  QUOTE_JOURNEY_RUN_NAME: validateRunName,
+  VWO_COMBINATIONS: parseVwoCombinations
 };
 
 /** Width of the name column, so the values line up. */
