@@ -1221,7 +1221,7 @@ describe('quote-pages', () => {
       await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n${policyB}\n`);
 
       // act
-      const result = await run(directory, env, ['quote-pages', '--no-ocr']);
+      const result = await run(directory, env, ['quote-pages', '--no-fetch', '--no-ocr']);
 
       // assert
       assert.notEqual(result.code, 0);
@@ -1266,7 +1266,7 @@ describe('quote-pages', () => {
       );
 
       // act
-      const result = await run(directory, env, ['quote-pages', 'retry-failed', '--no-ocr']);
+      const result = await run(directory, env, ['quote-pages', 'retry-failed', '--no-fetch', '--no-ocr']);
 
       // assert
       assert.notEqual(result.code, 0);
@@ -1687,7 +1687,7 @@ ${policyB}
       await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyB}\n${policyC}\n${policyA}\n`);
 
       // act
-      const result = await run(directory, env, ['quote-pages', '--concurrency', '3', '--no-ocr']);
+      const result = await run(directory, env, ['quote-pages', '--concurrency', '3', '--no-fetch', '--no-ocr']);
 
       // assert
       assert.notEqual(result.code, 0);
@@ -1724,7 +1724,7 @@ ${policyB}
     });
   });
 
-  test('without --no-fetch, tries to fetch the missing MRP files', async () => {
+  test('without --no-fetch, stops before any policy when the MRP files cannot be fetched', async () => {
     // arrange
     const { directory, env } = await fixture('http://127.0.0.1:1', {});
     await writeFile(env.QUOTE_GUID_LIST_PATH, `${policyA}\n`);
@@ -1733,11 +1733,12 @@ ${policyB}
     const result = await run(directory, env, ['quote-pages', '--no-ocr']);
 
     // assert
+    assert.notEqual(result.code, 0);
     assert.match(
       result.plain,
-      /MRP files missing, but .* is not the mrp-and-quote project \(no go\.mod\); not fetching\./
+      /is not the mrp-and-quote project \(no go\.mod\), so 1 missing MRP files cannot be fetched\. Fix it in \.env, or run with --no-fetch\./
     );
-    assert.doesNotMatch(result.plain, /--no-fetch/);
+    assert.doesNotMatch(result.plain, /Quote pages summary/);
   });
 
   test('reports a missing QUOTE_GUID_LIST_PATH', async () => {

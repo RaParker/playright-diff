@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { color } from './color.js';
 
+/** File mrp-and-quote writes to its output folder listing the quotes a fetch failed on. */
+export const failedElementsReportName = 'failed-elements.txt';
+
 /** History ID of every policy that mrp-and-quote's `fetch` saves (it reads one TCAS ID per line, at history 1). */
 export const fetchedHistoryId = 1;
 
@@ -37,13 +40,16 @@ export type MrpFetchRunner = (
 /**
  * Fetches any missing `-mrp.json` files for the given policies with one mrp-and-quote `fetch --keep-output` run, so
  * only those policies are fetched and every existing file is kept. Policies not in the GUID list cannot be fetched and
- * are only reported, as is a project folder with no `go.mod` (not the mrp-and-quote project).
+ * are only reported. A fetch that fails on quotes (mrp-and-quote writes {@link failedElementsReportName}) is only
+ * reported too, so those policies fail individually; mrp-and-quote not running at all stops the run.
  * @param policyDetailsIds Policies about to run.
  * @param historyId History ID of the run; nothing is fetched unless it is {@link fetchedHistoryId}.
  * @param guidList mrp-and-quote's GUID list (uppercase), in file order.
  * @param folders mrp-and-quote's output folder, the project folder `fetch` runs in, and the environment it fetches from.
  * @param runner Runs the fetch (default: `go run . fetch --guid-file <file> --keep-output`, with `OUTPUT_DIR` set to
- * the output folder and `SOURCE_ENVIRONMENT` to the environment). A failed fetch is only reported, so the run continues.
+ * the output folder and `SOURCE_ENVIRONMENT` to the environment).
+ * @throws When files are missing and no project folder is given, the project folder has no `go.mod`, or the fetch
+ * fails without writing {@link failedElementsReportName} (it did not build, start or reach the quotes).
  */
 export async function prefetchMissingMrpFiles(
   policyDetailsIds: string[],
@@ -83,20 +89,33 @@ export async function prefetchMissingMrpFiles(
   const outputDir = resolve(folders.outputDir);
   const projectDir = resolve(folders.projectDir);
   if (!(await exists(resolve(projectDir, 'go.mod')))) {
-    console.log(
-      color.Yellow(`MRP files missing, but ${projectDir} is not the mrp-and-quote project (no go.mod); not fetching.`)
+    throw new Error(
+      `MRP_AND_QUOTE_PROJECT_DIR (${projectDir}) is not the mrp-and-quote project (no go.mod), so ${fetchable.length} ` +
+        'missing MRP files cannot be fetched. Fix it in .env, or run with --no-fetch.'
     );
-    return;
   }
 
   console.log(color.Gray(`Fetching ${fetchable.length} missing MRP files with mrp-and-quote in ${projectDir}`));
+  // With --keep-output mrp-and-quote leaves an earlier report in place, which would pass for one from this fetch.
+  const reportPath = resolve(outputDir, failedElementsReportName);
+  await rm(reportPath, { force: true });
   try {
     await runner(projectDir, outputDir, fetchable, folders.sourceEnvironment);
   } catch (error) {
-    // A quote without a saved MRP fails the whole fetch; warn and carry on so the other policies still run, while
-    // those without an MRP file fail individually.
     const message = error instanceof Error ? error.message : String(error);
-    console.log(color.Yellow(`${message} Continuing; policies still missing an MRP file will fail.`));
+    // mrp-and-quote writes the report only once it has tried the quotes (it exits non-zero only when all of them fail),
+    // so with no report it did not build, start or get that far, and no policy can be compared.
+    if (!(await exists(reportPath))) {
+      throw new Error(
+        `${message} mrp-and-quote did not run, so the run is stopped; see its output above (e.g. run its ` +
+          'GetAzurePackages.ps1 when packages are missing), or run with --no-fetch to use only the saved MRP files.',
+        { cause: error }
+      );
+    }
+
+    console.log(
+      color.Yellow(`${message} Quotes it could not fetch are listed in ${reportPath}; continuing, and they will fail.`)
+    );
   }
 }
 

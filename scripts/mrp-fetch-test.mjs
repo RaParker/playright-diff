@@ -3,7 +3,12 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { after, describe, test } from 'node:test';
-import { mrpFetchEnvironment, prefetchMissingMrpFiles, reportMissingMrpFiles } from '../dist/mrp-fetch.js';
+import {
+  failedElementsReportName,
+  mrpFetchEnvironment,
+  prefetchMissingMrpFiles,
+  reportMissingMrpFiles
+} from '../dist/mrp-fetch.js';
 
 const policyA = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const policyB = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
@@ -114,10 +119,11 @@ describe('prefetchMissingMrpFiles', () => {
     assert.deepEqual(calls, []);
   });
 
-  test('resolves when the fetch fails', async () => {
+  test('continues when the fetch fails on quotes, writing its failed-elements report', async () => {
     // arrange
     const { projectDir, outputDir } = await createOutputDir([]);
     const runner = async () => {
+      await writeFile(join(outputDir, failedElementsReportName), `${policyA}\n`);
       throw new Error('fetch failed');
     };
 
@@ -127,6 +133,29 @@ describe('prefetchMissingMrpFiles', () => {
     // assert
     await assert.doesNotReject(prefetch);
   });
+
+  for (const [name, earlierReport] of [
+    ['no failed-elements report', false],
+    ['only a failed-elements report from an earlier fetch', true]
+  ]) {
+    test(`stops when the fetch fails leaving ${name}`, async () => {
+      // arrange
+      const { projectDir, outputDir } = await createOutputDir([]);
+      if (earlierReport) {
+        await writeFile(join(outputDir, failedElementsReportName), `${policyB}\n`);
+      }
+
+      const runner = async () => {
+        throw new Error('mrp-and-quote fetch failed with exit code 1.');
+      };
+
+      // act
+      const prefetch = prefetchMissingMrpFiles([policyA], 1, guidList, { outputDir, projectDir }, runner);
+
+      // assert
+      await assert.rejects(prefetch, /exit code 1\. mrp-and-quote did not run, so the run is stopped.*--no-fetch/);
+    });
+  }
 
   test('fetches in the given project folder into an output folder outside it', async (context) => {
     // arrange
@@ -143,15 +172,16 @@ describe('prefetchMissingMrpFiles', () => {
     assert.deepEqual(calls, [{ projectDir, outputDir, policyDetailsIds: [policyB] }]);
   });
 
-  test('fetches nothing when the given project folder is not a Go project', async () => {
+  test('stops without fetching when the given project folder is not a Go project', async () => {
     // arrange
     const { projectDir, outputDir } = await createOutputDir([], false);
     const { calls, runner } = recordingRunner();
 
     // act
-    await prefetchMissingMrpFiles([policyA], 1, guidList, { outputDir, projectDir }, runner);
+    const prefetch = prefetchMissingMrpFiles([policyA], 1, guidList, { outputDir, projectDir }, runner);
 
     // assert
+    await assert.rejects(prefetch, /is not the mrp-and-quote project \(no go\.mod\)/);
     assert.deepEqual(calls, []);
   });
 

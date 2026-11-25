@@ -353,8 +353,11 @@ the missing policies are fetched and every existing file is kept (this needs an 
 with `--guid-file` and `--keep-output` support). The fetch runs with mrp-and-quote's own `OUTPUT_DIR` set to
 that environment's MRP folder and `SOURCE_ENVIRONMENT` to the environment, which mrp-and-quote's
 own `.env` does not override, so the files are always saved where they are read from. Policies not in the list are reported in yellow and not
-fetched, as is a project folder with no `go.mod`. Missing files with no `MRP_AND_QUOTE_PROJECT_DIR` stop the run with an error (set it, or use `--no-fetch`). A failed fetch (e.g. quotes without saved MRPs) is reported in yellow and the run
-continues; policies still missing an MRP file then fail individually.
+fetched. Missing files with no `MRP_AND_QUOTE_PROJECT_DIR`, or one with no `go.mod`, stop the run with an error (fix it, or use `--no-fetch`).
+A fetch that fails on quotes (e.g. quotes without saved MRPs, listed in mrp-and-quote's `failed-elements.txt`) is
+reported in yellow and the run continues; policies still missing an MRP file then fail individually. A fetch that
+fails without writing `failed-elements.txt` means mrp-and-quote did not run at all (e.g. it does not build because
+its `packages` folder is missing; run its `GetAzurePackages.ps1`), so the run stops before any policy is opened.
 
 `--no-fetch` skips that fetch and uses only the MRP files already saved: it reports how many
 policies have none (in yellow), and those policies fail with "No saved MRP for this quote", so

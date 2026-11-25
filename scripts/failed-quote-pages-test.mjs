@@ -23,6 +23,20 @@ describe('failed quote pages file', () => {
     assert.ok((await readFile(path, 'utf8')).endsWith('\n'));
   });
 
+  test('creates the folder when it does not exist yet', async (context) => {
+    // arrange
+    const directory = await mkdtemp(join(tmpdir(), 'failed-quote-pages-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'cleared', 'failed.json');
+    const failures = { historyId: 1, failed: [{ policyDetailsId: policyA, issues: ['first'] }] };
+
+    // act
+    await writeFailedQuotePages(path, failures);
+
+    // assert
+    assert.deepEqual(await readFailedQuotePages(path), failures);
+  });
+
   for (const [name, existing] of [
     ['an existing file', true],
     ['no existing file', false]

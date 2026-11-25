@@ -1,4 +1,5 @@
-import { rm } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { parseJson, readOptionalTextFile, replaceFile } from './fs-helpers.js';
 import { outputPath } from './output-paths.js';
 
@@ -23,7 +24,8 @@ export interface FailedQuotePages {
 }
 
 /**
- * Replaces the failed-policies file with the failures of the latest run, or deletes it when none failed.
+ * Replaces the failed-policies file with the failures of the latest run, or deletes it when none failed. Its folder is
+ * created when missing (e.g. after `clear-output`).
  * @param path File path.
  * @param failures The run's history ID and failed policies.
  * @throws When the file cannot be written or deleted.
@@ -34,6 +36,7 @@ export async function writeFailedQuotePages(path: string, failures: FailedQuoteP
     return;
   }
 
+  await mkdir(dirname(path), { recursive: true });
   await replaceFile(path, `${JSON.stringify(failures, null, 2)}\n`);
 }
 
