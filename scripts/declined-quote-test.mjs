@@ -45,7 +45,11 @@ for (const [name, html, beforeCapture, expectedDeclined] of [
       // assert
       if (expectedDeclined) {
         await assert.rejects(capture, DeclinedError);
-        assert.deepEqual((await readdir(directory)).sort(), ['quote-declined.html', 'quote-declined.png']);
+        assert.deepEqual((await readdir(directory)).sort(), [
+          'quote-declined-console.log',
+          'quote-declined.html',
+          'quote-declined.png'
+        ]);
         assert.match(await readFile(join(directory, 'quote-declined.html'), 'utf8'), /unable to offer you a quote/);
       } else {
         await capture;

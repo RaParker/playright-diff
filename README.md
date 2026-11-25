@@ -267,8 +267,10 @@ npm run quote-page -- ABCDEF1234567890ABCDEF1234567890 42 --no-ocr
   ├── screenshot-quote-page-nhi.png  screenshots (NHI = before, MRP = after; likewise -mrp)
   ├── quote-page-nhi.html            the captured page's HTML as rendered (likewise -mrp)
   ├── quote-page-standardized-nhi.html  the same, standardised as screenshotted (likewise -mrp)
-  ├── screenshot-failed-nhi.png, failed-nhi.html      when a flow failed (likewise -mrp)
-  ├── screenshot-declined-nhi.png, declined-nhi.html  when a flow declined (likewise -mrp)
+  ├── screenshot-failed-nhi.png, failed-nhi.html, console-failed-nhi.log
+  │                                  when a flow failed (likewise -mrp)
+  ├── screenshot-declined-nhi.png, declined-nhi.html, console-declined-nhi.log
+  │                                  when a flow declined (likewise -mrp)
   ├── api-nhi/, api-mrp/             API responses (see below)
   ├── diff.png, region-N-nhi.png, region-N-mrp.png  (names from COMPARE_*_NAME)
   ├── report.md, report.json         the comparison
@@ -1201,10 +1203,12 @@ fails.
 - Both flows wait for `<h2>Loading your quote</h2>` and `div.hp-loading-widget-screen` to
   disappear, and check again just before capture. Loading screens get twice the step timeout
   (60 seconds by default, against 30 for every other step); a loading screen that never clears
-  fails without saving a screenshot of it.
+  fails, and like any other failure saves its screenshot, HTML and
+  [browser console](#failure-screenshots-and-html).
 - If a wait for the quote page times out while a loading screen is still shown, the flow logs
-  `Loading screen still shown; allowing up to 30 s more.`, waits for the loading screen to
-  clear within that time, and then waits for the quote page once more.
+  `Loading screen still shown; allowing up to 30 s more.`, followed by the last 10 lines the
+  browser console has recorded so far (if any), waits for the loading screen to clear within
+  that time, and then waits for the quote page once more.
 - Only a loading screen that does not clear is reported as a timeout. When a wait for the next
   page (TCAS step 4, a quote summary click, or the unsaved journey's quote) runs out with no
   loading screen shown, the page has settled somewhere unexpected rather than being slow, so it
@@ -1274,8 +1278,18 @@ next to the intended output with a `-failed.png` suffix (quote-page names it
 `ABCDEF1234567890ABCDEF1234567890-42/screenshot-failed-mrp.png`), along with its rendered DOM as
 `-failed.html` (`failed-<flow>.html` for quote-page; `document.documentElement.outerHTML`, so it holds what React built, not the
 served source; typed input values are not included). Use the HTML to build test fixtures.
-The original error is still reported. If the failure screenshot or HTML can't be saved, that
-error is logged without hiding the original.
+This happens even when a loading screen is still on the page, visible or not.
+
+The browser console is recorded from the moment the page opens, and saved beside them as
+`-failed-console.log` (`console-failed-<flow>.log` for quote-page; `-declined-` for a
+decline): console errors and warnings, uncaught page errors, failed requests and HTTP 4xx/5xx
+responses, one per line with the seconds since the page opened. A failure also prints the last
+10 of those lines (cut to 300 characters each), so a stuck or broken page shows what the site
+reported without opening the file. The site's info and log messages are left out, since it
+writes a lot of them.
+
+The original error is still reported. If the failure screenshot, HTML or console can't be
+saved, that error is logged without hiding the original.
 
 ### NHI Oops fallback
 
@@ -1393,7 +1407,8 @@ The Quote Journey API reference is in [docs/api-documentation.json](docs/api-doc
   500, often after about 30 seconds). Nothing in this project can fix it: the cause is in that
   service's own logs, so raise it with whoever owns the environment, then `-RetryFailed` once
   it is working again. A TCAS `Timed out waiting for quote loading screen to disappear` in the
-  same run usually has the same cause, with the request never answering instead of failing.
+  same run can have the same cause, with the request never answering instead of failing;
+  check `console-failed-mrp.log` and `screenshot-failed-mrp.png` in the policy's folder.
 - **`The output folder … is inside this project`** — `OUTPUT_DIR` is not set, or points
   inside the project. Set it in `.env` to a folder outside the project; runs never write
   anything into the project except `.env`. **`The output path … is inside this project`** is

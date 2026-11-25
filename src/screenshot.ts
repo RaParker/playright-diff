@@ -4,6 +4,7 @@ import { chromium, errors, type Page } from 'playwright';
 import { recordApiResponses, type ApiResponseRecorder } from './api-responses.js';
 import { color } from './color.js';
 import { assertOutsideProject, outputPath } from './output-paths.js';
+import { formatPageConsole, printConsoleTail, recordPageConsole, type PageConsole } from './page-console.js';
 import { checkScreenshotScale, defaultScreenshotScale } from './screenshot-scale.js';
 
 export interface ScreenshotOptions {
@@ -41,11 +42,13 @@ export interface ScreenshotOptions {
 /** Why a capture stopped: the site declined to quote, or anything else went wrong. */
 export type CaptureStop = 'declined' | 'failed';
 
-/** Where a capture that stopped saves its screenshot and the page's HTML. */
+/** Where a capture that stopped saves its screenshot, the page's HTML and what the browser reported. */
 export interface StoppedOutput {
   /** The screenshot, always a PNG. */
   screenshot: string;
   html: string;
+  /** The browser's console errors and warnings, page errors and failed requests (see {@link recordPageConsole}). */
+  console: string;
 }
 
 /**
@@ -136,6 +139,8 @@ const pageHidingWaitMs = 5000;
 const loadingTimeoutMultiplier = 2;
 /** Longest wait for each page's quote loading screen to clear. */
 const loadingTimeouts = new WeakMap<Page, number>();
+/** What each page has reported, printed when a loading wait is extended and saved when a capture stops. */
+const pageConsoles = new WeakMap<Page, PageConsole>();
 
 /**
  * Runs a wait, and if it times out while a quote loading screen is still shown, waits for the loading screen to clear
@@ -163,6 +168,11 @@ export async function extendWhileLoading<T>(page: Page, wait: () => Promise<T>):
 
     const extra = loadingTimeout - loadingTimeout / loadingTimeoutMultiplier;
     console.log(color.Gray(`Loading screen still shown; allowing up to ${Math.round(extra / 1000)} s more.`));
+    const pageConsole = pageConsoles.get(page);
+    if (pageConsole !== undefined) {
+      printConsoleTail(pageConsole, 'while the loading screen was shown');
+    }
+
     await waitForQuoteLoading(page, extra);
     try {
       return await wait();
@@ -189,9 +199,12 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
   const { url, width, height, scale, wait, timeout, output, extension } = validateOptions(urlArgument, options);
   const browser = await chromium.launch();
   let page: Page | undefined;
+  let pageConsole: PageConsole | undefined;
   let apiResponses: ApiResponseRecorder | undefined;
   try {
     page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
+    pageConsole = recordPageConsole(page);
+    pageConsoles.set(page, pageConsole);
     if (options.apiResponsesFolder !== undefined) {
       apiResponses = await recordApiResponses(page, url.origin, options.apiResponsesFolder);
     }
@@ -213,12 +226,17 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
     ]);
     console.log(`Screenshot saved to ${output}`);
   } catch (error) {
-    // A page that cannot be checked (e.g. it closed) is not loading, so its failure is still captured and rethrown.
-    if (page !== undefined && !(await isQuoteLoading(page).catch(() => false))) {
+    // Saved even while a loading screen is shown (visible or not), since a loading screen that never clears is a
+    // failure like any other, and its screenshot, HTML and console are the only record of what the page was doing.
+    if (page !== undefined) {
       const stoppedPage = page;
       const declined = error instanceof DeclinedError;
       const stop = declined ? 'declined' : 'failed';
       const stopped = options.stoppedOutputs?.[stop] ?? defaultStoppedOutput(output, stop);
+      if (pageConsole !== undefined) {
+        await saveConsole(pageConsole, stopped.console, declined);
+      }
+
       try {
         await mkdir(dirname(stopped.screenshot), { recursive: true });
         await mkdir(dirname(stopped.html), { recursive: true });
@@ -254,7 +272,26 @@ export async function screenshot(urlArgument: string, options: ScreenshotOptions
 /** Where a capture that stopped saves its files when not told: beside the normal screenshot, `<name>-<stop>.png/.html`. */
 function defaultStoppedOutput(output: string, stop: CaptureStop): StoppedOutput {
   const screenshot = stoppedScreenshotPath(output, stop);
-  return { screenshot, html: `${screenshot.slice(0, -'.png'.length)}.html` };
+  const name = screenshot.slice(0, -'.png'.length);
+  return { screenshot, html: `${name}.html`, console: `${name}-console.log` };
+}
+
+/**
+ * Saves what the browser reported to the stopped capture's console file and, for a failure (a decline is a result),
+ * prints its last lines. A save that fails is logged without hiding the capture's own error.
+ */
+async function saveConsole(pageConsole: PageConsole, path: string, declined: boolean): Promise<void> {
+  if (!declined) {
+    printConsoleTail(pageConsole, 'before the failure');
+  }
+
+  try {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, formatPageConsole(pageConsole));
+    console.error(color.Gray(`Browser console saved to ${path}`));
+  } catch (saveError) {
+    console.error(color.Red(`Could not save the browser console: ${String(saveError)}`));
+  }
 }
 
 /** Where and how {@link capturePage} saves its screenshot. */

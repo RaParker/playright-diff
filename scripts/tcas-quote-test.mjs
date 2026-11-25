@@ -269,7 +269,11 @@ test('Oops appearing during capture cannot produce a normal screenshot', async (
 
     // assert
     await assert.rejects(capture, /Website displayed <h2>Oops<\/h2>/);
-    assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
+    assert.deepEqual((await readdir(directory)).sort(), [
+      'quote-failed-console.log',
+      'quote-failed.html',
+      'quote-failed.png'
+    ]);
   } finally {
     server.closeAllConnections();
     await new Promise((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
@@ -333,7 +337,12 @@ for (const loading of ['<h2>Loading your quote</h2>', '<div class="hp-loading-wi
           assert.ok(png.readUInt32BE(20) >= 1800);
         } else {
           await assert.rejects(capture, /Timed out waiting for quote loading screen/);
-          assert.deepEqual(await readdir(directory), []);
+          // A loading screen that never clears is a failure like any other, so its page is saved.
+          assert.deepEqual((await readdir(directory)).sort(), [
+            'quote-failed-console.log',
+            'quote-failed.html',
+            'quote-failed.png'
+          ]);
         }
       } finally {
         server.closeAllConnections();
@@ -374,7 +383,11 @@ for (const [name, html, expectedError, expectedLogs = []] of cases) {
           assert.equal(error instanceof UnexpectedPageError, unexpectedPageCases.has(name), error.message);
           return true;
         });
-        assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
+        assert.deepEqual((await readdir(directory)).sort(), [
+          'quote-failed-console.log',
+          'quote-failed.html',
+          'quote-failed.png'
+        ]);
         const image = await readFile(join(directory, 'quote-failed.png'));
         assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
       }

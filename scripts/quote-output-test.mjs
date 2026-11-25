@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, test } from 'node:test';
 import { outputPath, setOutputRoot } from '../dist/output-paths.js';
-import { removeQuoteOutput } from '../dist/quote-output.js';
+import { flowOutputPaths } from '../dist/flow-output.js';
+import { removeFlowOutput, removeQuoteOutput } from '../dist/quote-output.js';
 
 const policy = 'ABCDEF1234567890ABCDEF1234567890';
 const basename = `${policy}-1`;
@@ -58,5 +59,32 @@ describe('removeQuoteOutput', () => {
     // assert
     assert.equal(removed, false);
     assert.deepEqual(await readdir(directory), [`${policy}-12`]);
+  });
+});
+
+describe('removeFlowOutput', () => {
+  test("removes one flow's files, console logs included, and keeps the other flow's", async (context) => {
+    // arrange
+    const directory = await mkdtemp(join(tmpdir(), 'quote-output-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    await mkdir(join(directory, 'api-mrp'));
+    const mrpFiles = [
+      'screenshot-quote-page-mrp.png',
+      'screenshot-failed-mrp.png',
+      'failed-mrp.html',
+      'console-failed-mrp.log',
+      'console-declined-mrp.log',
+      join('api-mrp', '001-GET-x.json')
+    ];
+    const kept = ['console-failed-nhi.log', 'failed-nhi.html'];
+    for (const file of [...mrpFiles, ...kept]) {
+      await writeFile(join(directory, file), '');
+    }
+
+    // act
+    await removeFlowOutput(flowOutputPaths(directory, 'mrp'));
+
+    // assert
+    assert.deepEqual((await readdir(directory)).sort(), kept);
   });
 });

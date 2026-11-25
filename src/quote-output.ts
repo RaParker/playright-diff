@@ -29,13 +29,13 @@ export async function removeQuoteOutput(basename: string): Promise<boolean> {
 }
 
 /**
- * Deletes what one flow's capture saved (see {@link FlowOutputPaths}): its screenshot, HTML, stopped-capture files and
+ * Deletes what one flow's capture saved (see {@link FlowOutputPaths}): its screenshot, HTML, stopped-capture files (console included) and
  * API responses, so a capture that replaces it leaves nothing of the first behind. Files that do not exist are skipped.
  * @param paths The flow's files.
  * @throws When a file or folder exists but cannot be removed.
  */
 export async function removeFlowOutput(paths: FlowOutputPaths): Promise<void> {
-  const stopped = Object.values(paths.stopped).flatMap(({ screenshot, html }) => [screenshot, html]);
+  const stopped = Object.values(paths.stopped).flatMap(({ screenshot, html, console }) => [screenshot, html, console]);
   await Promise.all(
     [paths.screenshot, paths.html, paths.standardisedHtml, ...stopped, paths.apiResponses].map((path) =>
       rm(path, { recursive: true, force: true })

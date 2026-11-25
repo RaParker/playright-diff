@@ -13,8 +13,9 @@ export interface FlowOutputPaths {
   /** The quote page's HTML as the screenshot shows it, `quote-page-standardized-<flow>.html`. */
   standardisedHtml: string;
   /**
-   * What a capture that stops saves instead: `screenshot-declined-<flow>.png` and `declined-<flow>.html` for a decline,
-   * `screenshot-failed-<flow>.png` and `failed-<flow>.html` for any other failure.
+   * What a capture that stops saves instead: `screenshot-declined-<flow>.png`, `declined-<flow>.html` and
+   * `console-declined-<flow>.log` for a decline, `screenshot-failed-<flow>.png`, `failed-<flow>.html` and
+   * `console-failed-<flow>.log` for any other failure.
    */
   stopped: Record<CaptureStop, StoppedOutput>;
   /** Folder of the API responses the page received, `api-<flow>`. */
@@ -46,9 +47,14 @@ export function flowOutputPaths(folder: string, flow: FlowName): FlowOutputPaths
     stopped: {
       declined: {
         screenshot: join(folder, `screenshot-declined-${flow}.png`),
-        html: join(folder, `declined-${flow}.html`)
+        html: join(folder, `declined-${flow}.html`),
+        console: join(folder, `console-declined-${flow}.log`)
       },
-      failed: { screenshot: join(folder, `screenshot-failed-${flow}.png`), html: join(folder, `failed-${flow}.html`) }
+      failed: {
+        screenshot: join(folder, `screenshot-failed-${flow}.png`),
+        html: join(folder, `failed-${flow}.html`),
+        console: join(folder, `console-failed-${flow}.log`)
+      }
     },
     apiResponses: join(folder, `api-${flow}`)
   };

@@ -16,11 +16,13 @@ describe('flowOutputPaths', () => {
         stopped: {
           declined: {
             screenshot: join(folder, `screenshot-declined-${flow}.png`),
-            html: join(folder, `declined-${flow}.html`)
+            html: join(folder, `declined-${flow}.html`),
+            console: join(folder, `console-declined-${flow}.log`)
           },
           failed: {
             screenshot: join(folder, `screenshot-failed-${flow}.png`),
-            html: join(folder, `failed-${flow}.html`)
+            html: join(folder, `failed-${flow}.html`),
+            console: join(folder, `console-failed-${flow}.log`)
           }
         },
         apiResponses: join(folder, `api-${flow}`)

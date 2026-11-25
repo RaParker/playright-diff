@@ -270,6 +270,7 @@ for (const [flow, delayed] of ['nhi', 'tcas'].flatMap((flow) => [false, true].ma
           `screenshot-quote-page-${other}.png`,
           `quote-page-${other}.html`,
           `quote-page-standardized-${other}.html`,
+          `console-failed-${name}.log`,
           `failed-${name}.html`,
           `screenshot-failed-${name}.png`,
           'result.json'
@@ -317,6 +318,8 @@ test('quote-page stops after an HTTP failure and respects environment over .env'
     assert.equal(saved.issues[0], 'Quote capture failed; comparison skipped.');
     assert.equal(saved.validation, false);
     assert.deepEqual((await readdir(join(directory, 'ABCDEF1234567890ABCDEF1234567890-42'))).sort(), [
+      'console-failed-mrp.log',
+      'console-failed-nhi.log',
       'failed-mrp.html',
       'failed-nhi.html',
       'result.json',

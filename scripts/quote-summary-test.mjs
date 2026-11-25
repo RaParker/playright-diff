@@ -335,7 +335,11 @@ for (const [name, html, expectedError, label = 'NHI', expectedLogs = []] of [
           );
           return true;
         });
-        assert.deepEqual((await readdir(directory)).sort(), ['quote-failed.html', 'quote-failed.png']);
+        assert.deepEqual((await readdir(directory)).sort(), [
+          'quote-failed-console.log',
+          'quote-failed.html',
+          'quote-failed.png'
+        ]);
       }
       assertGreyLogsInOrder(log, expectedLogs);
     } finally {
