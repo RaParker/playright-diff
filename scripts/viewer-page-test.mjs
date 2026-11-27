@@ -229,7 +229,8 @@ describe('viewer page', () => {
     await selectPolicy(page, failed);
 
     // act
-    await selectPolicy(page, different);
+    // Blink mode hides the NHI pane's image, so wait for the overlay rather than selectPolicy's visible NHI image
+    await page.locator(`#policy-list li[data-name="${different}"]`).click();
     await page.locator('#pane-overlay img[src$="screenshot-quote-page-mrp.png"]').waitFor({ state: 'attached' });
 
     // assert
