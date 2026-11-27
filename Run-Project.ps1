@@ -73,10 +73,21 @@ Run quote-page (history ID 1) for the policies in QUOTE_GUID_LIST_PATH: the firs
 the first -MaxCount, or the single -Guid.
 
 .PARAMETER MaxCount
-Number of entries to run from the start of the GUID list.
+QuotePages: number of entries to run from the start of the GUID list.
+NewGuidList: most policies to put in the new list (default: 1000).
 
 .PARAMETER Guid
 One GUID list entry to run (32 hex characters, case-insensitive).
+
+.PARAMETER NewGuidList
+(Re)create -Environment's GUID list (QUOTE_GUID_LIST_PATH, testdata/quoteGuids-<environment>.txt) from its NHI
+database, using Windows authentication: unpurchased home quotes, direct and agent quotes first, then newest first,
+keeping only those the Policy API finds in TCAS. Policy IDs only exist in the environment they came from, so each
+environment has its own list, and quote-pages refuses a list made for another. Leaves .env as it is. An existing list
+is only replaced with -Force.
+
+.PARAMETER Force
+NewGuidList only: replace the environment's existing list.
 
 .PARAMETER RetryFailed
 Rerun only the policies saved in quote-pages-failed.json by the last quote-pages run.
@@ -133,6 +144,7 @@ Quote pages, RetryFailed and RetryDifferent: number of policies run at once (def
 QuotePage, QuotePages, RetryFailed and RetryDifferent: environment to run against, dev, tst or stg (default: dev).
 ClearOutput: environment whose output folder to delete (default: the one already in .env).
 ShowConfig: environment to show the settings for, without writing it to .env (default: the one already in .env).
+NewGuidList: environment to make the list for (required), without writing it to .env.
 Before the command runs, .env's QUOTE_JOURNEY_ENVIRONMENT is set to it. QUOTE_JOURNEY_HOST must refer to it, for
 example quotes-${QUOTE_JOURNEY_ENVIRONMENT}.homeprotect.co.uk, or quotes-feature-${QUOTE_JOURNEY_ENVIRONMENT} for
 feature builds (which only reach dev and tst), so the host decides feature or not. The MRP fetch reads from the same
@@ -179,6 +191,9 @@ Test (all suites), TestCompare, TestQuotePage or Verify (VerifyProject.ps1).
 
 .EXAMPLE
 ./Run-Project.ps1 -QuotePages -MaxCount 1300 -Concurrency 5
+
+.EXAMPLE
+./Run-Project.ps1 -NewGuidList -Environment stg -Force
 
 .EXAMPLE
 ./Run-Project.ps1 -RetryFailed
@@ -291,12 +306,19 @@ param(
     [switch]$QuotePages,
 
     [Parameter(Mandatory, ParameterSetName = 'QuotePagesCount')]
+    [Parameter(ParameterSetName = 'NewGuidList')]
     [ValidateRange(1, [int]::MaxValue)]
     [int]$MaxCount,
 
     [Parameter(Mandatory, ParameterSetName = 'QuotePagesGuid')]
     [ValidatePattern('^[0-9a-fA-F]{32}$')]
     [string]$Guid,
+
+    [Parameter(Mandatory, ParameterSetName = 'NewGuidList')]
+    [switch]$NewGuidList,
+
+    [Parameter(ParameterSetName = 'NewGuidList')]
+    [switch]$Force,
 
     [Parameter(Mandatory, ParameterSetName = 'RetryFailed')]
     [switch]$RetryFailed,
@@ -370,6 +392,7 @@ param(
     [Parameter(ParameterSetName = 'RetryDifferent')]
     [Parameter(ParameterSetName = 'ClearOutput')]
     [Parameter(ParameterSetName = 'ShowConfig')]
+    [Parameter(Mandatory, ParameterSetName = 'NewGuidList')]
     [ValidateSet('dev', 'tst', 'stg')]
     [string]$Environment = 'dev',
 
@@ -460,6 +483,19 @@ function Get-CliArguments {
 
         'QuotePages*' {
             return @('quote-pages') + (Get-QuotePagesSelector) + (Get-QuotePagesOptionArguments) + (Get-NoOcrArgument)
+        }
+
+        'NewGuidList' {
+            $arguments = @('new-guid-list')
+            if ($script:boundParameterNames -contains 'maxcount') {
+                $arguments += @("$MaxCount")
+            }
+
+            if ($Force) {
+                $arguments += @('--force')
+            }
+
+            return $arguments
         }
 
         'RetryFailed' {
@@ -638,10 +674,8 @@ $overviewSections = @(
     @{
         Title = '1. Set up (once)'
         Rows  = @(
-            @{ Usage = '-Task Install'; Description = 'Install the npm packages' }
-
-            @{ Usage = '-Task InstallBrowser'; Description = 'Install Playwright Chromium' }
-
+            @{ Usage = '-Task Install'; Description = 'Install the npm packages' },
+            @{ Usage = '-Task InstallBrowser'; Description = 'Install Playwright Chromium' },
             @{ Description = 'Then set the .env values (README: Configuration), e.g. QUOTE_GUID_LIST_PATH and OUTPUT_DIR.' }
         )
     }
@@ -649,42 +683,26 @@ $overviewSections = @(
     @{
         Title = '2. Compare NHI and TCAS quote pages (main workflow, in this order)'
         Rows  = @(
-            @{ Usage = '-Interactive'; Description = 'Answer questions (with defaults) and it runs the commands below' }
-
-            @{ Usage = '-ClearOutput'; Description = "Optional: delete this environment's output to start afresh" }
-
-            @{ Depth = 1; Usage = '[-Environment <dev|tst|stg>]'; Description = 'Environment to clear (default: the one in .env)' }
-
-            @{ Description = 'Also deletes its quote GUID mapping: clear it when every policy fails with NHI Oops.' }
-
-            @{ Usage = '-QuotePages'; Description = 'Run the first 250 policies in the GUID list' }
-
-            @{ Depth = 1; Usage = '-MaxCount <n>'; Description = '...or the first n' }
-
-            @{ Depth = 1; Usage = '-Guid <guid>'; Description = '...or just this one' }
-
-            @{ Usage = '-Summarise'; Description = 'Read the results: differences, failures and totals' }
-
-            @{ Depth = 1; Usage = '-Mode <differences|changed-answers>'; Description = 'Show only that part' }
-
-            @{ Usage = '-Serve [-Port <n>]'; Description = 'Open the viewer: NHI and MRP screenshots side by side' }
-
-            @{ Usage = '-RetryFailed'; Description = 'Rerun the policies that failed' }
-
-            @{ Usage = '-RetryDifferent'; Description = 'Rerun the policies whose screenshots differed' }
-
-            @{ Description = 'After a retry, run -Summarise again.' }
-
-            @{ Description = 'Options for -QuotePages, -RetryFailed and -RetryDifferent:' }
-
-            @{ Depth = 1; Usage = '-Environment <dev|tst|stg>'; Description = 'Environment to run against (default: dev); saved to .env, output in OUTPUT_DIR/<env>' }
-
-            @{ Depth = 1; Usage = '-RunName <name>'; Description = 'Output to OUTPUT_DIR/<name> instead; pass it to -Summarise, -Serve and -ClearOutput too' }
-
-            @{ Depth = 1; Usage = '-Concurrency <n>'; Description = 'Policies run at once (default: 3)' }
-
-            @{ Depth = 1; Usage = '-NoFetch'; Description = 'Only use MRP files already saved' }
-
+            @{ Usage = '-Interactive'; Description = 'Answer questions (with defaults) and it runs the commands below' },
+            @{ Usage = '-ClearOutput'; Description = "Optional: delete this environment's output to start afresh" },
+            @{ Depth = 1; Usage = '[-Environment <dev|tst|stg>]'; Description = 'Environment to clear (default: the one in .env)' },
+            @{ Description = 'Also deletes its quote GUID mapping: clear it when every policy fails with NHI Oops.' },
+            @{ Usage = '-NewGuidList -Environment <dev|tst|stg>'; Description = "Optional: (re)make the environment's GUID list from its database" },
+            @{ Depth = 1; Usage = '[-MaxCount <n>] [-Force]'; Description = 'Most policies (default: 1000); -Force replaces an existing list' },
+            @{ Usage = '-QuotePages'; Description = 'Run the first 250 policies in the GUID list' },
+            @{ Depth = 1; Usage = '-MaxCount <n>'; Description = '...or the first n' },
+            @{ Depth = 1; Usage = '-Guid <guid>'; Description = '...or just this one' },
+            @{ Usage = '-Summarise'; Description = 'Read the results: differences, failures and totals' },
+            @{ Depth = 1; Usage = '-Mode <differences|changed-answers>'; Description = 'Show only that part' },
+            @{ Usage = '-Serve [-Port <n>]'; Description = 'Open the viewer: NHI and MRP screenshots side by side' },
+            @{ Usage = '-RetryFailed'; Description = 'Rerun the policies that failed' },
+            @{ Usage = '-RetryDifferent'; Description = 'Rerun the policies whose screenshots differed' },
+            @{ Description = 'After a retry, run -Summarise again.' },
+            @{ Description = 'Options for -QuotePages, -RetryFailed and -RetryDifferent:' },
+            @{ Depth = 1; Usage = '-Environment <dev|tst|stg>'; Description = 'Environment to run against (default: dev); saved to .env, output in OUTPUT_DIR/<env>' },
+            @{ Depth = 1; Usage = '-RunName <name>'; Description = 'Output to OUTPUT_DIR/<name> instead; pass it to -Summarise, -Serve and -ClearOutput too' },
+            @{ Depth = 1; Usage = '-Concurrency <n>'; Description = 'Policies run at once (default: 3)' },
+            @{ Depth = 1; Usage = '-NoFetch'; Description = 'Only use MRP files already saved' },
             @{ Depth = 1; Usage = '-NoOcr'; Description = 'Compare pixels only, without reading text' }
         )
     }
@@ -692,20 +710,13 @@ $overviewSections = @(
     @{
         Title = '3. Single runs and tools (any time)'
         Rows  = @(
-            @{ Usage = '-QuotePage -PolicyDetailsId <id> -HistoryId <n>'; Description = 'Compare one policy' }
-
-            @{ Depth = 1; Usage = '[-Environment <dev|tst|stg>] [-NoOcr]' }
-
-            @{ Usage = '-Screenshot -Url <url> [-Output <file>]'; Description = 'Capture one page' }
-
-            @{ Depth = 1; Usage = '[-Width <px>] [-Height <px>] [-Wait <ms>] [-Timeout <ms>]' }
-
-            @{ Usage = '-Compare -Before <file> -After <file>'; Description = 'Compare two images' }
-
-            @{ Depth = 1; Usage = '[-Output <dir>] [-Threshold <0-255>] [-Language <code>] [-NoOcr]' }
-
-            @{ Usage = '-MigrateOutput [-Root <dir>] [-Apply]'; Description = 'Move output from the old folder layout' }
-
+            @{ Usage = '-QuotePage -PolicyDetailsId <id> -HistoryId <n>'; Description = 'Compare one policy' },
+            @{ Depth = 1; Usage = '[-Environment <dev|tst|stg>] [-NoOcr]' },
+            @{ Usage = '-Screenshot -Url <url> [-Output <file>]'; Description = 'Capture one page' },
+            @{ Depth = 1; Usage = '[-Width <px>] [-Height <px>] [-Wait <ms>] [-Timeout <ms>]' },
+            @{ Usage = '-Compare -Before <file> -After <file>'; Description = 'Compare two images' },
+            @{ Depth = 1; Usage = '[-Output <dir>] [-Threshold <0-255>] [-Language <code>] [-NoOcr]' },
+            @{ Usage = '-MigrateOutput [-Root <dir>] [-Apply]'; Description = 'Move output from the old folder layout' },
             @{ Usage = '-ShowConfig [-Environment <dev|tst|stg>]'; Description = 'Print the settings a run would use, and their source' }
         )
     }
@@ -720,10 +731,8 @@ $overviewSections = @(
     @{
         Title = 'More help'
         Rows  = @(
-            @{ Usage = '-WhatIf'; Description = 'Add to any command to print it without running it' }
-
-            @{ Usage = 'Get-Help ./Run-Project.ps1 -Parameter <Name>'; Description = 'One parameter in detail' }
-
+            @{ Usage = '-WhatIf'; Description = 'Add to any command to print it without running it' },
+            @{ Usage = 'Get-Help ./Run-Project.ps1 -Parameter <Name>'; Description = 'One parameter in detail' },
             @{ Usage = 'Get-Help ./Run-Project.ps1 -Full'; Description = 'Everything' }
         )
     }
@@ -964,8 +973,10 @@ if (-not $isDryRun -and -not $PSCmdlet.ShouldProcess($commandLine, 'Run')) {
     exit 0
 }
 
-# -WhatIf and -ShowConfig leave .env as it is, so the environment is passed to the command directly (it wins over .env)
+# -WhatIf, -ShowConfig and -NewGuidList leave .env as it is, so the environment is passed to the command directly (it
+# wins over .env)
 $passesEnvironment = $appliesEnvironment -or
+($PSCmdlet.ParameterSetName -eq 'NewGuidList') -or
 ($PSCmdlet.ParameterSetName -eq 'ShowConfig' -and $PSBoundParameters.ContainsKey('Environment'))
 $savedEnvironment = $env:QUOTE_JOURNEY_ENVIRONMENT
 # -RunName applies to this command only: without it, a run name left in the shell is cleared for the command

@@ -1,7 +1,7 @@
 # Open issues
 
 **Draft for review by the relevant teams before anyone acts on it.** Raised while investigating the NHI and MRP quote
-differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last updated 2026-11-25.
+differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last updated 2026-11-27.
 
 | #   | Issue                                                   | Status      | Needs                          |
 | --- | ------------------------------------------------------- | ----------- | ------------------------------ |
@@ -19,6 +19,7 @@ differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last update
 | 12  | playwright-diff flags rendering noise                   | Open        | playwright-diff tweak          |
 | 13  | NHI's saved quote and its re-quote disagree             | Open        | NHI investigation              |
 | 14  | TCAS hangs on VWO's "Before you continue" variant       | PR raised   | Review PR 26871, deploy, rerun |
+| 15  | TCAS journeys are switched off on stg                   | Open        | Octopus setting, rerun stg     |
 
 ## Assumptions to verify
 
@@ -276,6 +277,18 @@ differences (see [the findings](nhi-vs-mrp-conviction-findings.md)); last update
   MRP also always see the same variant (see the README's "VWO A/B tests").
 - **Next step:** review and deploy PR 26871, then check a TCAS quote on the assumptions variant (cookie
   `_vis_opt_exp_49_combi=2` on `.homeprotect.co.uk`) and rerun `-RetryFailed`.
+
+## 15. TCAS journeys are switched off on stg
+
+- **Seen:** 2026-11-27, `-QuotePages -MaxCount 5 -Environment stg` with stg's new GUID list. Every
+  policy failed with `TCAS: Website returned HTTP 404`, and NHI's replacement quote GUID request
+  also returned 404. mrp-and-quote saved the policy and MRP files, so the policies exist in TCAS.
+- **Cause:** `https://quotes-stg.homeprotect.co.uk/landing?policyDetailsId=…&source=tcas` answers
+  `{"success":false,"message":"The \"policyApi\" feature is currently disabled"}`. QSQ reads this
+  switch from `IS_POLICY_API_FEATURE_ENABLED` (`server/configuration.ts`), set per environment in
+  Octopus. It is off on stg; dev runs TCAS journeys, and tst wasn't checked.
+- **Next step:** decide whether stg should run TCAS journeys. If so, turn the setting on in Octopus,
+  redeploy and rerun `-QuotePages -Environment stg`. Until then, stg runs can't compare anything.
 
 ## Closed
 

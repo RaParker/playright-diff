@@ -62,6 +62,10 @@ Describe 'Run-Project.ps1 command lines' {
 
         @{ Name = 'retry-failed reruns saved failures'; Arguments = @('-RetryFailed'); Expected = '{cli} quote-pages retry-failed' }
 
+        @{ Name = 'new-guid-list keeps its own default count'; Arguments = @('-NewGuidList', '-Environment', 'stg'); Expected = '{cli} new-guid-list' }
+
+        @{ Name = 'new-guid-list passes MaxCount and Force'; Arguments = @('-NewGuidList', '-Environment', 'tst', '-MaxCount', '300', '-Force'); Expected = '{cli} new-guid-list 300 --force' }
+
         @{ Name = 'retry-different reruns different policies'; Arguments = @('-RetryDifferent', '-NoOcr'); Expected = '{cli} quote-pages retry-different --no-ocr' }
 
         @{ Name = 'quote-pages passes Concurrency'; Arguments = @('-QuotePages', '-MaxCount', '1300', '-Concurrency', '5', '-NoOcr'); Expected = '{cli} quote-pages 1300 --concurrency 5 --no-ocr' }
@@ -190,6 +194,8 @@ Describe 'Run-Project.ps1 validation' {
         @{ Name = 'a negative history ID'; Arguments = @('-QuotePage', '-PolicyDetailsId', 'ABCDEF1234567890ABCDEF1234567890', '-HistoryId', '-1'); Message = "*parameter 'HistoryId'*" }
 
         @{ Name = 'a MaxCount of zero'; Arguments = @('-QuotePages', '-MaxCount', '0'); Message = "*parameter 'MaxCount'*" }
+
+        @{ Name = 'NewGuidList without Environment'; Arguments = @('-NewGuidList'); Message = '*missing mandatory parameters: Environment*' }
 
         @{ Name = 'MaxCount together with Guid'; Arguments = @('-QuotePages', '-MaxCount', '3', '-Guid', '6819e30c2058490b8d1d9e25d267b002'); Message = '*Parameter set cannot be resolved*' }
 

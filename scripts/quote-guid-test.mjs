@@ -209,6 +209,46 @@ describe('readQuoteGuidList', () => {
     // assert
     await assert.rejects(result, /line 2: "not-a-guid"/);
   });
+
+  test('skips comment lines and accepts its own environment', async (context) => {
+    // arrange
+    const directory = await mkdtemp(join(tmpdir(), 'quote-guid-list-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'quoteGuids-stg.txt');
+    await writeFile(path, `# made from stg\n# environment: stg\n${policyA}\n`);
+
+    // act
+    const guids = await readQuoteGuidList(path, 'STG');
+
+    // assert
+    assert.deepEqual(guids, [policyA]);
+  });
+
+  test('refuses a list made for another environment', async (context) => {
+    // arrange
+    const directory = await mkdtemp(join(tmpdir(), 'quote-guid-list-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'quoteGuids-dev.txt');
+    await writeFile(path, `# environment: dev\n${policyA}\n`);
+
+    // act
+    const result = readQuoteGuidList(path, 'stg');
+
+    // assert
+    await assert.rejects(result, /lists dev policies, but the run is against stg/);
+  });
+
+  test('explains how to make a missing list', async (context) => {
+    // arrange
+    const directory = await mkdtemp(join(tmpdir(), 'quote-guid-list-'));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+
+    // act
+    const result = readQuoteGuidList(join(directory, 'quoteGuids-tst.txt'), 'tst');
+
+    // assert
+    await assert.rejects(result, /No GUID list at .*Run-Project\.ps1 -NewGuidList -Environment tst/);
+  });
 });
 
 describe('selectQuoteGuids', () => {

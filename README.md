@@ -37,6 +37,7 @@ npm run screenshot -- https://example.com --output screenshots/example.png
 | `npm run compare`                   | Compare two images and report changed regions and text       |
 | `npm run quote-page`                | Capture NHI and TCAS versions of one quote and compare them  |
 | `npm run quote-pages`               | Run `quote-page` for every policy in a GUID list             |
+| `npm run new-guid-list`             | Make the environment's GUID list from its NHI database       |
 | `npm run summarise`                 | Summarise every quote-page result (alias `summarize`)        |
 | `npm run summarise differences`     | Show what differs in the quote data, counted across policies |
 | `npm run summarise changed-answers` | Combine every policy's answer changes and count them         |
@@ -67,6 +68,7 @@ reference.
 ./Run-Project.ps1 -QuotePages -MaxCount 10
 ./Run-Project.ps1 -QuotePages -MaxCount 10 -Environment tst      # dev (default), tst or stg
 ./Run-Project.ps1 -QuotePages -Guid 6819e30c2058490b8d1d9e25d267b002
+./Run-Project.ps1 -NewGuidList -Environment stg -Force          # remake stg's GUID list
 ./Run-Project.ps1 -RetryFailed
 ./Run-Project.ps1 -RetryDifferent
 ./Run-Project.ps1 -Summarise                                     # or -Summarize
@@ -342,9 +344,9 @@ See [How quote-page works](#how-quote-page-works) for the journey, error handlin
 
 ### quote-pages
 
-Runs `quote-page` (with `historyId` 1) for each entry in `QUOTE_GUID_LIST_PATH` — the same
-list of TCAS-format policy IDs that drives `mrp-and-quote`'s `fetch`/`compare`/`diff`
-commands, one per line.
+Runs `quote-page` (with `historyId` 1) for each entry in `QUOTE_GUID_LIST_PATH`, the environment's
+list of TCAS-format policy IDs, one per line (`#` lines are comments). Each environment has its own
+list; see [new-guid-list](#new-guid-list) to make or replace one.
 
 Before any policy runs (including `retry-failed` and `retry-different`), policies with no `-1-mrp.json` in
 the environment's MRP folder (`OUTPUT_DIR/<QUOTE_JOURNEY_ENVIRONMENT>/mrp-and-quote`) are written to a
@@ -493,6 +495,41 @@ Would retry 3 failed or unfinished policies from D:\temp\playright-diff-output\d
 1 MRP files would be fetched first: 8230224DF66644A1A52173E3757EE8BD
 D:\temp\playright-diff-output\dev\quote-pages-failed.json would be replaced with the policies that fail.
 ```
+
+### new-guid-list
+
+Each environment has its own GUID list, `testdata/quoteGuids-<environment>.txt` (committed), as
+policy IDs only exist in the environment they were made in: dev's IDs give 404s on tst and stg.
+`QUOTE_GUID_LIST_PATH` picks the list through `${QUOTE_JOURNEY_ENVIRONMENT}`, and `quote-pages`
+refuses a list whose `# environment: <name>` header names another environment. A missing list
+stops the run with the command that makes it.
+
+```powershell
+./Run-Project.ps1 -NewGuidList -Environment stg                 # make stg's list (up to 1000)
+./Run-Project.ps1 -NewGuidList -Environment tst -Force          # replace tst's list
+./Run-Project.ps1 -NewGuidList -Environment stg -MaxCount 300 -Force
+```
+
+`npm run new-guid-list -- [maxCount] [--force]` does the same for the environment in `.env`;
+the wrapper passes `-Environment` to the command without writing `.env`. It:
+
+1. Runs `sql/quote-guids.sql` with `sqlcmd` and Windows authentication against
+   `QUOTE_GUID_DB_SERVER`/`QUOTE_GUID_DB_NAME` (`<env>SQL03.nhiservices.local`,
+   `NHI_Applications_SystemTest`) for three candidates per policy wanted. Candidates are each
+   policy's first NHI agreement that is linked to a TCAS policy, never purchased and over an hour
+   old: direct (affiliate 1) and agent quotes first, then aggregator quotes, newest first in each.
+2. Checks each candidate with the Policy API (`QUOTE_GUID_POLICY_API_URL`, ten at a time) and
+   keeps those it returns, as TCAS data only comes from PolicyApiService. A 404 means TCAS has no
+   such policy; any other failure stops the command. After 200 misses in a row it stops looking,
+   as the rest are unlikely to be found either.
+3. Writes the list with a header saying when and where it was made. An existing list is only
+   replaced with `-Force` (`--force`), and nothing is written when no candidate is found.
+
+On stg and tst nearly all quotes are bulk aggregator quotes with no TCAS policy (about 1.8 million
+on stg on 2026-11-27, none found in a sample of 150), so their lists hold the few hundred direct
+and agent quotes (777 on stg and 213 on tst that day). Dev's aggregator quotes do have TCAS
+policies; dev's list is still the one copied from mrp-and-quote's `testdata/quoteGuids.txt`, so dev
+runs keep comparing the same policies until it is remade with `-Force`.
 
 ### summarise
 
@@ -850,7 +887,10 @@ environment (see [PowerShell wrapper](#powershell-wrapper)).
 | `QUOTE_JOURNEY_AGENT_ID`                      | both                              | Fallback request `agentId`                                                                           |
 | `QUOTE_JOURNEY_BRANCH_CODE`                   | both                              | Fallback request `branchCode`                                                                        |
 | `QUOTE_JOURNEY_CALL_MEDIA_USER`               | both                              | Fallback request `callMediaUser`                                                                     |
-| `QUOTE_GUID_LIST_PATH`                        | `quote-pages`                     | GUID list file, one policy ID per line (also used by `retry-failed`)                                 |
+| `QUOTE_GUID_DB_NAME`                          | `new-guid-list`                   | NHI applications database the list's candidates come from                                            |
+| `QUOTE_GUID_DB_SERVER`                        | `new-guid-list`                   | Its SQL Server host, queried with Windows authentication                                             |
+| `QUOTE_GUID_LIST_PATH`                        | `quote-pages`, `new-guid-list`    | The environment's GUID list, one policy ID per line (also used by `retry-failed`)                    |
+| `QUOTE_GUID_POLICY_API_URL`                   | `new-guid-list`                   | Policy API URL with `{policyDetailsId}`; candidates it does not find are left out                    |
 | `VWO_COMBINATIONS`                            | all captures                      | Optional VWO `campaign:combination` pairs, e.g. `49:3,60:3` (see [VWO A/B tests](#vwo-ab-tests))     |
 
 All variables listed for a command are required, except `MRP_AND_QUOTE_PROJECT_DIR` (needed
@@ -1432,6 +1472,14 @@ The Quote Journey API reference is in [docs/api-documentation.json](docs/api-doc
   it is working again. A TCAS `Timed out waiting for quote loading screen to disappear` in the
   same run can have the same cause, with the request never answering instead of failing;
   check `console-failed-mrp.log` and `screenshot-failed-mrp.png` in the policy's folder.
+- **`… lists dev policies, but the run is against stg`** or **`No GUID list at …`** — each
+  environment needs its own GUID list: check `QUOTE_GUID_LIST_PATH` refers to
+  `${QUOTE_JOURNEY_ENVIRONMENT}`, or make the list with `./Run-Project.ps1 -NewGuidList -Environment <env>`
+  (see [new-guid-list](#new-guid-list)).
+- **Every stg policy fails with `TCAS: Website returned HTTP 404`** — open the `/landing` URL from
+  the message: `{"message":"The \"policyApi\" feature is currently disabled"}` means QSQ's
+  `IS_POLICY_API_FEATURE_ENABLED` is off in that environment (Octopus), so no TCAS journey can run
+  there until it is turned on. See [open issue 15](docs/open-issues.md).
 - **`The output folder … is inside this project`** — `OUTPUT_DIR` is not set, or points
   inside the project. Set it in `.env` to a folder outside the project; runs never write
   anything into the project except `.env`. **`The output path … is inside this project`** is

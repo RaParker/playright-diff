@@ -12,6 +12,7 @@ import {
 } from './quote-page.js';
 import { failedQuotePagesFileName, failedQuotePagesPath, readFailedQuotePages } from './failed-quote-pages.js';
 import { isQuoteGuid, readQuoteGuidList, selectQuoteGuids } from './quote-guid-list.js';
+import { createQuoteGuidList, defaultNewGuidListCount } from './new-guid-list.js';
 import {
   fetchedHistoryId,
   filterMissingMrpFiles,
@@ -54,6 +55,7 @@ Actions:
   compare           Compare two images and report changed regions and text
   quote-page        Capture NHI and TCAS versions of one quote and compare them
   quote-pages       Run quote-page for every policy in a GUID list
+  new-guid-list     Make the environment's GUID list from its NHI database
   summarise         Summarise every quote-page result (alias: summarize)
   migrate-output    Move output from the old layout into one folder per policy
   clear-output      Delete the output folder (OUTPUT_DIR) and everything in it
@@ -240,6 +242,25 @@ Notes:
   - The environment's MRP files (mrp-and-quote/) are deleted with it, so the next quote-pages run
     fetches them again. Other environments' folders are never touched.`;
 
+const newGuidListHelp = `Usage: npm run new-guid-list -- [maxCount] [--force]
+
+Makes the GUID list (QUOTE_GUID_LIST_PATH) for QUOTE_JOURNEY_ENVIRONMENT from that environment's NHI
+database: up to maxCount (default: ${defaultNewGuidListCount}) unpurchased home quotes linked to a TCAS policy, direct
+and agent quotes first, then newest first (sql/quote-guids.sql, run with sqlcmd and Windows authentication). Only
+quotes the Policy API finds are kept: on stg and tst most aggregator quotes have no TCAS policy. The list starts
+with a "# environment: <name>" line, and quote-pages refuses a list made for another environment.
+
+Options:
+  --force           Replace an existing list
+  -h, --help        Show help
+
+Environment:
+  QUOTE_GUID_LIST_PATH   The list to write, e.g. testdata/quoteGuids-\${QUOTE_JOURNEY_ENVIRONMENT}.txt
+  QUOTE_GUID_DB_SERVER   SQL Server host, e.g. \${QUOTE_JOURNEY_ENVIRONMENT}SQL03.nhiservices.local
+  QUOTE_GUID_DB_NAME     NHI applications database, e.g. NHI_Applications_SystemTest
+  QUOTE_GUID_POLICY_API_URL  Policy API URL with {policyDetailsId}, e.g.
+                         https://wkservices-\${QUOTE_JOURNEY_ENVIRONMENT}.avantiagroup.co.uk/policyapiservice/api/policy/{policyDetailsId}/1`;
+
 const showConfigHelp = `Usage: npm run show-config
 
 Prints the settings a quote-page or quote-pages run would use, without running anything: each
@@ -288,6 +309,11 @@ async function main(): Promise<void> {
 
   if (action === 'quote-pages') {
     await runQuotePages(args);
+    return;
+  }
+
+  if (action === 'new-guid-list') {
+    await runNewGuidList(args, environment);
     return;
   }
 
@@ -444,6 +470,7 @@ async function runQuotePages(args: string[]): Promise<void> {
   const environment = await loadEnvironment();
   printRunSettings(environment);
   await checkNamedRun(environment, values['dry-run'] !== true);
+  const runEnvironment = optional(environment, 'QUOTE_JOURNEY_ENVIRONMENT');
   const options: QuotePagesOptions = {
     ...quotePageOptions(environment, values['no-ocr'] !== true),
     concurrency: parseConcurrency(values.concurrency)
@@ -461,14 +488,15 @@ async function runQuotePages(args: string[]): Promise<void> {
       ? await planRetryFailed()
       : positionals[0] === 'retry-different'
         ? await planRetryDifferent()
-        : await planListRun(required(environment, 'QUOTE_GUID_LIST_PATH'), positionals[0]);
+        : await planListRun(required(environment, 'QUOTE_GUID_LIST_PATH'), positionals[0], runEnvironment);
   if (plan.historyIds.length === 0) {
     console.log(plan.nothingToDo);
     return;
   }
 
   // Read only once there is something to run, so a retry with nothing to do needs no GUID list.
-  const guidList = plan.guidList ?? (await readQuoteGuidList(required(environment, 'QUOTE_GUID_LIST_PATH')));
+  const guidList =
+    plan.guidList ?? (await readQuoteGuidList(required(environment, 'QUOTE_GUID_LIST_PATH'), runEnvironment));
   await noteMissingMrpFolder(options.mrpAndQuoteOutputDir);
   if (values['dry-run'] === true) {
     await printQuotePagesPlan(plan, guidList, options.mrpAndQuoteOutputDir, values['no-fetch'] !== true);
@@ -670,6 +698,47 @@ async function runClearOutput(args: string[]): Promise<void> {
   }
 }
 
+/**
+ * Makes the environment's GUID list from its NHI database (see {@link createQuoteGuidList}).
+ * @param args Command-line arguments after `new-guid-list`: an optional maxCount and `--force`.
+ * @param environment The loaded settings.
+ */
+async function runNewGuidList(args: string[], environment: Record<string, string | undefined>): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { force: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } }
+  });
+  if (values.help === true) {
+    console.log(newGuidListHelp);
+    return;
+  }
+
+  const [count, ...extra] = positionals;
+  if (extra.length > 0 || (count !== undefined && !/^[1-9]\d*$/.test(count))) {
+    throw new Error(
+      usageError(
+        `new-guid-list takes at most one maxCount, a positive whole number (got ${positionals.join(' ')}).`,
+        'Usage: npm run new-guid-list -- [maxCount] [--force]',
+        'new-guid-list'
+      )
+    );
+  }
+
+  const options = {
+    listPath: required(environment, 'QUOTE_GUID_LIST_PATH'),
+    environment: required(environment, 'QUOTE_JOURNEY_ENVIRONMENT'),
+    server: required(environment, 'QUOTE_GUID_DB_SERVER'),
+    database: required(environment, 'QUOTE_GUID_DB_NAME'),
+    policyApiUrlTemplate: required(environment, 'QUOTE_GUID_POLICY_API_URL'),
+    maxCount: count === undefined ? defaultNewGuidListCount : Number(count),
+    force: values.force === true
+  };
+  console.log(`Querying ${options.server}/${options.database} for up to ${options.maxCount} policies…`);
+  const written = await createQuoteGuidList(options);
+  console.log(color.Green(`Wrote ${written} ${options.environment} policies to ${options.listPath}.`));
+}
+
 function runShowConfig(args: string[], environment: Record<string, string | undefined>): void {
   const { values, positionals } = parseArgs({
     args,
@@ -735,8 +804,12 @@ interface QuotePagesPlan {
  * Plans a run of the policies picked from the GUID list. It always runs (an empty selection prints an empty summary),
  * and it replaces the saved failures unless it is a one-off run.
  */
-async function planListRun(listPath: string, selector: string | undefined): Promise<QuotePagesPlan> {
-  const guidList = await readQuoteGuidList(listPath);
+async function planListRun(
+  listPath: string,
+  selector: string | undefined,
+  runEnvironment: string | undefined
+): Promise<QuotePagesPlan> {
+  const guidList = await readQuoteGuidList(listPath, runEnvironment);
   const policies = selectQuoteGuids(guidList, selector).map((policyDetailsId) => ({ policyDetailsId, historyId: 1 }));
   const policiesFrom = `${policies.length} policies from ${listPath}`;
   return {

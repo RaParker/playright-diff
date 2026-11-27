@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { isMissing } from './fs-helpers.js';
 
 /** Number of policies processed when no maxCount or GUID is given, matching mrp-and-quote. */
 export const defaultQuoteGuidCount = 250;
@@ -12,17 +13,24 @@ export function isQuoteGuid(value: string): boolean {
   return /^[0-9a-f]{32}$/i.test(value);
 }
 
+/** Header line naming the environment a GUID list was made from, e.g. `# environment: stg`. */
+const environmentHeader = /^#\s*environment:\s*(\S+)\s*$/i;
+
 /**
- * Reads a GUID list (TCAS format, one per line), as used by mrp-and-quote's testdata/quoteGuids.txt.
+ * Reads a GUID list (TCAS format, one per line), such as testdata/quoteGuids-<environment>.txt.
  * @param path List file path.
- * @returns Uppercase policy details IDs in file order; blank lines are skipped.
- * @throws When the file cannot be read or a line is not 32 hexadecimal characters.
+ * @param expectedEnvironment Environment the run uses (e.g. `stg`); when given, a list whose
+ * `# environment: <name>` header names another environment is refused. Lists without the header are not checked.
+ * @returns Uppercase policy details IDs in file order; blank lines and `#` comment lines are skipped.
+ * @throws When the file is missing or cannot be read, names another environment, or a line is not 32 hexadecimal
+ * characters.
  */
-export async function readQuoteGuidList(path: string): Promise<string[]> {
-  const lines = (await readFile(path, 'utf8')).split(/\r?\n/);
+export async function readQuoteGuidList(path: string, expectedEnvironment?: string): Promise<string[]> {
+  const lines = (await readListFile(path, expectedEnvironment)).split(/\r?\n/);
+  checkListEnvironment(path, lines, expectedEnvironment);
   return lines.flatMap((line, index) => {
     const guid = line.trim();
-    if (guid.length === 0) {
+    if (guid.length === 0 || guid.startsWith('#')) {
       return [];
     }
 
@@ -60,4 +68,40 @@ export function selectQuoteGuids(guids: string[], selector?: string): string[] {
   }
 
   return guids.slice(0, Number(selector));
+}
+
+/** Reads the list, explaining how to make one when it is missing. */
+async function readListFile(path: string, environment: string | undefined): Promise<string> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch (error) {
+    if (isMissing(error)) {
+      const forEnvironment = environment === undefined ? '' : ` -Environment ${environment}`;
+      throw new Error(
+        `No GUID list at ${path}. Make one from the environment's database with .\\Run-Project.ps1 -NewGuidList${forEnvironment}.`,
+        { cause: error }
+      );
+    }
+
+    throw error;
+  }
+}
+
+/** Throws when the list's `# environment:` header names an environment other than the expected one. */
+function checkListEnvironment(path: string, lines: string[], expected: string | undefined): void {
+  const listEnvironment = lines
+    .map((line) => environmentHeader.exec(line.trim())?.[1])
+    .find((name) => name !== undefined);
+  if (
+    expected === undefined ||
+    listEnvironment === undefined ||
+    listEnvironment.toLowerCase() === expected.toLowerCase()
+  ) {
+    return;
+  }
+
+  throw new Error(
+    `${path} lists ${listEnvironment} policies, but the run is against ${expected}: its policy IDs do not exist there. ` +
+      'Point QUOTE_GUID_LIST_PATH at the list for this environment (testdata/quoteGuids-<environment>.txt).'
+  );
 }
